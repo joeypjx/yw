@@ -1,5 +1,40 @@
 # Dependencies Installation Guide
 
+## MySQL Client Library
+
+### macOS (Homebrew)
+
+```bash
+# Install MySQL client
+brew install mysql-client
+
+# Or install full MySQL server
+brew install mysql
+```
+
+### Linux (Ubuntu/Debian)
+
+```bash
+# Install MySQL client library
+sudo apt-get update
+sudo apt-get install libmysqlclient-dev
+
+# Or install full MySQL server
+sudo apt-get install mysql-server mysql-client
+```
+
+### Verification
+
+After installation, verify the installation:
+
+```bash
+# Check if library exists
+ls /usr/local/lib/libmysqlclient.* || ls /opt/homebrew/lib/libmysqlclient.*
+
+# Check if header exists
+ls /usr/local/include/mysql/mysql.h || ls /opt/homebrew/include/mysql/mysql.h
+```
+
 ## TDengine Client Library
 
 ### macOS (Homebrew)
@@ -39,7 +74,7 @@ ls /usr/local/include/taos.h || ls /opt/homebrew/include/taos.h
 
 ## Build Instructions
 
-After installing TDengine client library:
+After installing MySQL client library and TDengine client library:
 
 ```bash
 mkdir build
@@ -51,9 +86,28 @@ make
 ## Run Tests
 
 ```bash
-# Make sure TDengine server is running first
+# Make sure both MySQL and TDengine servers are running first
 cd build
 make test
+```
+
+## MySQL Server Setup
+
+If you need to run MySQL server locally:
+
+```bash
+# macOS
+brew services start mysql
+
+# Linux
+sudo systemctl start mysql
+sudo systemctl enable mysql
+```
+
+Connect to MySQL server:
+```bash
+mysql -h 127.0.0.1 -u test -p
+# Password: HZ715Net
 ```
 
 ## TDengine Server Setup

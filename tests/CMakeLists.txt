@@ -1,18 +1,5 @@
-include(FetchContent)
-FetchContent_Declare(
-  googletest
-  GIT_REPOSITORY https://github.com/google/googletest.git
-  GIT_TAG        release-1.12.1
-)
-FetchContent_MakeAvailable(googletest)
-
-# Find nlohmann/json
-FetchContent_Declare(
-  nlohmann_json
-  GIT_REPOSITORY https://github.com/nlohmann/json.git
-  GIT_TAG        v3.11.3
-)
-FetchContent_MakeAvailable(nlohmann_json)
+# Use local nlohmann/json header file
+# json.hpp is included in the parent include/ directory
 
 # Find TDengine library
 find_library(TAOS_LIBRARY 
@@ -29,11 +16,33 @@ find_path(TAOS_INCLUDE_DIR
     NO_DEFAULT_PATH
 )
 
+# Find MySQL library
+find_library(MYSQL_LIBRARY 
+    NAMES mysqlclient
+    PATHS /usr/local/lib /usr/lib /opt/homebrew/lib
+    DOC "MySQL client library"
+    NO_DEFAULT_PATH
+)
+
+find_path(MYSQL_INCLUDE_DIR
+    NAMES mysql.h
+    PATHS /usr/local/include/mysql /usr/include/mysql /opt/homebrew/include/mysql
+    DOC "MySQL include directory"
+    NO_DEFAULT_PATH
+)
+
 if(TAOS_LIBRARY AND TAOS_INCLUDE_DIR)
     message(STATUS "Found TDengine for tests: ${TAOS_LIBRARY}")
     set(TAOS_FOUND TRUE)
 else()
     message(FATAL_ERROR "TDengine library not found for tests. Please install TDengine client library.")
+endif()
+
+if(MYSQL_LIBRARY AND MYSQL_INCLUDE_DIR)
+    message(STATUS "Found MySQL for tests: ${MYSQL_LIBRARY}")
+    set(MYSQL_FOUND TRUE)
+else()
+    message(FATAL_ERROR "MySQL client library not found for tests. Please install MySQL client library.")
 endif()
 
 # Include source files for tests
@@ -44,8 +53,8 @@ file(GLOB_RECURSE PROJECT_SOURCES "../src/*.cpp")
 list(FILTER PROJECT_SOURCES EXCLUDE REGEX ".*main\\.cpp$")
 
 add_executable(tests ${TEST_SOURCES} ${PROJECT_SOURCES})
-target_link_libraries(tests gtest_main ${TAOS_LIBRARY} nlohmann_json::nlohmann_json)
-target_include_directories(tests PRIVATE ${TAOS_INCLUDE_DIR} ../include)
+target_link_libraries(tests gtest_main ${TAOS_LIBRARY} ${MYSQL_LIBRARY})
+target_include_directories(tests PRIVATE ${TAOS_INCLUDE_DIR} ${MYSQL_INCLUDE_DIR} ../include)
 
 # Fix library path on macOS
 if(APPLE)

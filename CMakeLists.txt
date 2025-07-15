@@ -1,19 +1,15 @@
 cmake_minimum_required(VERSION 3.10)
 project(MyProject)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 include_directories(include)
 
-# Find nlohmann/json
-include(FetchContent)
-FetchContent_Declare(
-  nlohmann_json
-  GIT_REPOSITORY https://github.com/nlohmann/json.git
-  GIT_TAG        v3.11.3
-)
-FetchContent_MakeAvailable(nlohmann_json)
+# Use local nlohmann/json header file
+# json.hpp is included in the include/ directory
+
+add_subdirectory(third_party/googletest EXCLUDE_FROM_ALL)
 
 # Find TDengine library
 find_library(TAOS_LIBRARY 
@@ -30,6 +26,21 @@ find_path(TAOS_INCLUDE_DIR
     NO_DEFAULT_PATH
 )
 
+# Find MySQL library
+find_library(MYSQL_LIBRARY 
+    NAMES mysqlclient
+    PATHS /usr/local/lib /usr/lib /opt/homebrew/lib /opt/homebrew/Cellar/mysql-client/9.3.0/lib/
+    DOC "MySQL client library"
+    NO_DEFAULT_PATH
+)
+
+find_path(MYSQL_INCLUDE_DIR
+    NAMES mysql.h
+    PATHS /usr/local/include/mysql /usr/include/mysql /opt/homebrew/include/mysql /opt/homebrew/Cellar/mysql-client/9.3.0/include/mysql
+    DOC "MySQL include directory"
+    NO_DEFAULT_PATH
+)
+
 if(TAOS_LIBRARY AND TAOS_INCLUDE_DIR)
     message(STATUS "Found TDengine: ${TAOS_LIBRARY}")
     set(TAOS_FOUND TRUE)
@@ -37,14 +48,25 @@ else()
     message(FATAL_ERROR "TDengine library not found. Please install TDengine client library.")
 endif()
 
+if(MYSQL_LIBRARY AND MYSQL_INCLUDE_DIR)
+    message(STATUS "Found MySQL: ${MYSQL_LIBRARY}")
+    set(MYSQL_FOUND TRUE)
+else()
+    message(FATAL_ERROR "MySQL client library not found. Please install MySQL client library.")
+endif()
+
 file(GLOB_RECURSE SOURCES "src/*.cpp")
 file(GLOB_RECURSE HEADERS "include/*.h")
 
 add_executable(${PROJECT_NAME} ${SOURCES} ${HEADERS})
 
+# Note: Old test executables have been removed.
+# All tests are now in the tests/ directory and can be run with 'make tests'
+
 # Link libraries
-target_link_libraries(${PROJECT_NAME} ${TAOS_LIBRARY} nlohmann_json::nlohmann_json)
-target_include_directories(${PROJECT_NAME} PRIVATE ${TAOS_INCLUDE_DIR})
+target_link_libraries(${PROJECT_NAME} ${TAOS_LIBRARY} ${MYSQL_LIBRARY})
+target_include_directories(${PROJECT_NAME} PRIVATE ${TAOS_INCLUDE_DIR} ${MYSQL_INCLUDE_DIR})
+
 
 # Fix library path on macOS
 if(APPLE)

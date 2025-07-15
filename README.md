@@ -1,12 +1,12 @@
 # MyProject
 
-A C++ 17 project with TDengine resource monitoring capabilities.
+A C++ 14 project with TDengine resource monitoring capabilities.
 
 ## Prerequisites
 
 - TDengine client library (see INSTALL_DEPENDENCIES.md)
 - CMake 3.10 or higher
-- C++17 compatible compiler
+- C++14 compatible compiler
 
 ## Build Instructions
 

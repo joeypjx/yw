@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 #include "resource_storage.h"
-#include <nlohmann/json.hpp>
+#include "json.hpp"
 
 class ResourceStorageTest : public ::testing::Test {
 protected:

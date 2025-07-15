@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Build System
 
-This is a modern C++ project using CMake with C++17 standard. The build system uses CMake's FetchContent to automatically download and build dependencies.
+This is a modern C++ project using CMake with C++14 standard. The build system uses CMake's FetchContent to automatically download and build dependencies.
 
 ### Common Commands
 
@@ -45,7 +45,7 @@ The project uses Google Test (GoogleTest) framework version 1.12.1, fetched auto
 ### CMake Configuration
 
 The main CMakeLists.txt:
-- Sets C++17 standard as required
+- Sets C++14 standard as required
 - Includes headers from `include/` directory
 - Recursively finds all `.cpp` files in `src/` and `.h` files in `include/`
 - Creates a single executable target named `MyProject`

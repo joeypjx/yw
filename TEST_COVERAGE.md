@@ -46,6 +46,7 @@
 - **Pass Rate**: 100% (12/12 tests passed)
 - **Execution Time**: ~1.6 seconds
 - **Coverage**: All resource types, special characters, and error conditions covered
+- **C++ Standard**: C++14 compatible
 
 ## Test Data Examples
 

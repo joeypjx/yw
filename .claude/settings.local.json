@@ -9,10 +9,10 @@
       "Bash(otool:*)",
       "Bash(make:*)",
       "Bash(cmake:*)",
-      "Bash(rm:*)",
       "Bash(install_name_tool:*)",
       "Bash(./MyProject)",
-      "Bash(./tests/tests:*)"
+      "Bash(./tests/tests:*)",
+      "Bash(grep:*)"
     ],
     "deny": []
   }

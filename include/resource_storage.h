@@ -3,7 +3,7 @@
 #include <string>
 #include <memory>
 #include <taos.h>
-#include <nlohmann/json.hpp>
+#include "json.hpp"
 
 class ResourceStorage {
 public:

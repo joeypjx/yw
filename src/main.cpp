@@ -1,9 +1,13 @@
 #include <iostream>
 #include "resource_storage.h"
-#include <nlohmann/json.hpp>
+#include "alarm_rule_storage.h"
+#include "alarm_rule_engine.h"
+#include "json.hpp"
+#include <thread>
+#include <chrono>
 
 int main() {
-    std::cout << "Resource Storage Demo" << std::endl;
+    std::cout << "Resource Storage and Alarm Rule Storage Demo" << std::endl;
     
     // Create ResourceStorage instance
     ResourceStorage storage("127.0.0.1", "test", "HZ715Net");
@@ -118,6 +122,160 @@ int main() {
     } else {
         std::cerr << "Failed to insert resource data" << std::endl;
         return 1;
+    }
+    
+    std::cout << "\n=== Alarm Rule Storage Demo ===\n" << std::endl;
+    
+    // Create AlarmRuleStorage instance
+    AlarmRuleStorage alarm_storage("127.0.0.1", 3306, "test", "HZ715Net", "alarm");
+    
+    // Connect to MySQL
+    if (!alarm_storage.connect()) {
+        std::cerr << "Failed to connect to MySQL" << std::endl;
+        return 1;
+    }
+    
+    // Create database and table
+    if (!alarm_storage.createDatabase()) {
+        std::cerr << "Failed to create alarm database" << std::endl;
+        return 1;
+    }
+    
+    if (!alarm_storage.createTable()) {
+        std::cerr << "Failed to create alarm_rules table" << std::endl;
+        return 1;
+    }
+    
+    // Create sample alarm rules based on docs/alarm.md
+    
+    // Rule 1: High CPU or Memory usage on web cluster
+    nlohmann::json web_cluster_expression = {
+        {"and", {
+            {
+                {"stable", "cpu_metrics"},
+                {"tag", "cluster"},
+                {"operator", "=="},
+                {"value", "web"}
+            },
+            {
+                {"or", {
+                    {
+                        {"stable", "cpu_metrics"},
+                        {"metric", "usage_percent"},
+                        {"agg_func", "AVG"},
+                        {"operator", ">"},
+                        {"threshold", 90.0}
+                    },
+                    {
+                        {"stable", "memory_metrics"},
+                        {"metric", "usage_percent"},
+                        {"agg_func", "AVG"},
+                        {"operator", ">"},
+                        {"threshold", 95.0}
+                    }
+                }}
+            }
+        }}
+    };
+    
+    std::string rule_id1 = alarm_storage.insertAlarmRule(
+        "HighCpuOrMemOnWeb",
+        web_cluster_expression,
+        "5m",
+        "critical",
+        "Web集群资源使用率过高",
+        "节点 {{host_ip}} 资源使用率异常。CPU: {{usage_percent}}%, 内存: {{usage_percent}}%。"
+    );
+    
+    // Rule 2: High disk usage
+    nlohmann::json disk_expression = {
+        {"stable", "disk_metrics"},
+        {"metric", "usage_percent"},
+        {"agg_func", "AVG"},
+        {"operator", ">"},
+        {"threshold", 85.0}
+    };
+    
+    std::string rule_id2 = alarm_storage.insertAlarmRule(
+        "HighDiskUsage",
+        disk_expression,
+        "10m",
+        "warning",
+        "磁盘使用率过高",
+        "节点 {{host_ip}} 磁盘 {{device}} 使用率达到 {{usage_percent}}%"
+    );
+    
+    if (!rule_id1.empty() && !rule_id2.empty()) {
+        std::cout << "Successfully inserted alarm rules:" << std::endl;
+        std::cout << "Rule 1 ID: " << rule_id1 << std::endl;
+        std::cout << "Rule 2 ID: " << rule_id2 << std::endl;
+        
+        // Get all rules
+        std::vector<AlarmRule> all_rules = alarm_storage.getAllAlarmRules();
+        std::cout << "\nTotal alarm rules: " << all_rules.size() << std::endl;
+        
+        // Display first rule details
+        if (!all_rules.empty()) {
+            const auto& first_rule = all_rules[0];
+            std::cout << "\nFirst rule details:" << std::endl;
+            std::cout << "Alert Name: " << first_rule.alert_name << std::endl;
+            std::cout << "Severity: " << first_rule.severity << std::endl;
+            std::cout << "For Duration: " << first_rule.for_duration << std::endl;
+            std::cout << "Summary: " << first_rule.summary << std::endl;
+            std::cout << "Enabled: " << (first_rule.enabled ? "true" : "false") << std::endl;
+        }
+    } else {
+        std::cerr << "Failed to insert alarm rules" << std::endl;
+        return 1;
+    }
+    
+    std::cout << "\n=== Alarm Rule Engine Demo ===\n" << std::endl;
+    
+    // Create shared pointers for alarm rule engine
+    auto rule_storage_ptr = std::make_shared<AlarmRuleStorage>(alarm_storage);
+    auto resource_storage_ptr = std::make_shared<ResourceStorage>(storage);
+    
+    // Create alarm rule engine
+    AlarmRuleEngine engine(rule_storage_ptr, resource_storage_ptr);
+    
+    // Set up alarm event callback
+    std::vector<AlarmEvent> received_events;
+    engine.setAlarmEventCallback([&received_events](const AlarmEvent& event) {
+        std::cout << "Received alarm event: " << event.fingerprint << " - " << event.status << std::endl;
+        std::cout << "Event details: " << event.toJson() << std::endl;
+        received_events.push_back(event);
+    });
+    
+    // Set evaluation interval to 5 seconds for demo
+    engine.setEvaluationInterval(std::chrono::seconds(5));
+    
+    // Start the engine
+    std::cout << "Starting alarm rule engine..." << std::endl;
+    if (!engine.start()) {
+        std::cerr << "Failed to start alarm rule engine" << std::endl;
+        return 1;
+    }
+    
+    std::cout << "Alarm rule engine started. Running for 30 seconds..." << std::endl;
+    
+    // Let the engine run for 30 seconds
+    std::this_thread::sleep_for(std::chrono::seconds(30));
+    
+    // Stop the engine
+    std::cout << "Stopping alarm rule engine..." << std::endl;
+    engine.stop();
+    
+    // Display results
+    std::cout << "\nAlarm Engine Results:" << std::endl;
+    std::cout << "Total alarm events generated: " << received_events.size() << std::endl;
+    
+    // Get current alarm instances
+    std::vector<AlarmInstance> instances = engine.getCurrentAlarmInstances();
+    std::cout << "Current alarm instances: " << instances.size() << std::endl;
+    
+    for (const auto& instance : instances) {
+        std::cout << "  - " << instance.fingerprint << " (state: " << 
+                     static_cast<int>(instance.state) << ", value: " << instance.value << ")" << std::endl;
     }
     
     return 0;
