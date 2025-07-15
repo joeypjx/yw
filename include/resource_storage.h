@@ -2,8 +2,18 @@
 
 #include <string>
 #include <memory>
+#include <vector>
+#include <map>
+#include <chrono>
 #include <taos.h>
 #include "json.hpp"
+
+// 查询结果结构
+struct QueryResult {
+    std::map<std::string, std::string> labels;  // 标签
+    double value;                                // 值
+    std::chrono::system_clock::time_point timestamp;
+};
 
 class ResourceStorage {
 public:
@@ -15,6 +25,9 @@ public:
     bool createDatabase(const std::string& dbName);
     bool createResourceTable();
     bool insertResourceData(const std::string& hostIp, const nlohmann::json& resourceData);
+    
+    // 查询接口
+    std::vector<QueryResult> executeQuerySQL(const std::string& sql);
 
 private:
     std::string m_host;

@@ -254,9 +254,9 @@ description: 告警的详细描述，支持模板变量。
 
 **SQL生成模板**：
 ```sql
-SELECT {metric} as value, ts, {tag_fields...}
+SELECT {metric} , ts, {tag_fields...}
 FROM {stable}
-WHERE {tag_conditions} AND {metric_conditions} AND ts > now() - INTERVAL '5 MINUTE'
+WHERE {tag_conditions} AND {metric_conditions} 
 ORDER BY ts DESC
 ```
 
@@ -274,9 +274,9 @@ expression:
 
 ```sql
 -- 生成的SQL
-SELECT usage_percent as value, ts, host_ip 
+SELECT usage_percent , ts, host_ip 
 FROM cpu_metrics 
-WHERE usage_percent > 90.0 AND ts > now() - INTERVAL '5 MINUTE' 
+WHERE usage_percent > 90.0  
 ORDER BY ts DESC
 ```
 
@@ -297,9 +297,9 @@ expression:
 
 ```sql
 -- 生成的SQL
-SELECT usage_percent as value, ts, host_ip 
+SELECT usage_percent , ts, host_ip 
 FROM cpu_metrics 
-WHERE (host_ip = '192.168.1.100') AND (usage_percent > 80.0) AND ts > now() - INTERVAL '5 MINUTE' 
+WHERE (host_ip = '192.168.1.100') AND (usage_percent > 80.0)  
 ORDER BY ts DESC
 ```
 
@@ -320,9 +320,9 @@ expression:
 
 ```sql
 -- 生成的SQL
-SELECT usage_percent as value, ts, host_ip, device, mount_point 
+SELECT usage_percent , ts, host_ip, device, mount_point 
 FROM disk_metrics 
-WHERE (usage_percent > 85.0 OR free < 1000000000) AND ts > now() - INTERVAL '5 MINUTE' 
+WHERE (usage_percent > 85.0 OR free < 1000000000)  
 ORDER BY ts DESC
 ```
 
@@ -348,9 +348,9 @@ expression:
 
 ```sql
 -- 生成的SQL（只处理第一个stable：cpu_metrics）
-SELECT usage_percent as value, ts, host_ip 
+SELECT usage_percent , ts, host_ip 
 FROM cpu_metrics 
-WHERE (host_ip = '192.168.1.100') AND (usage_percent > 90.0 OR usage_percent > 95.0) AND ts > now() - INTERVAL '5 MINUTE' 
+WHERE (host_ip = '192.168.1.100') AND (usage_percent > 90.0 OR usage_percent > 95.0)  
 ORDER BY ts DESC
 ```
 
@@ -433,7 +433,6 @@ Resolved: 此前处于Firing状态的告警，条件不再满足。如果在Reso
   },
   "starts_at": "2025-07-15T15:50:00Z", // 首次满足条件的时间 (进入Pending状态的时间)
   "ends_at": null, // 告警恢复的时间 (仅在status为resolved时有值)
-  "generator_url": "http://my-monitor.com/graph?rule=HighCpuUsage" // (可选) 指向监控图表的链接
 }
 
 磁盘告警事件示例:
@@ -454,7 +453,6 @@ Resolved: 此前处于Firing状态的告警，条件不再满足。如果在Reso
   },
   "starts_at": "2025-07-15T15:50:00Z",
   "ends_at": null,
-  "generator_url": "http://my-monitor.com/graph?rule=HighDiskUsage"
 }
 
 2.6. 告警管理器工作逻辑设计

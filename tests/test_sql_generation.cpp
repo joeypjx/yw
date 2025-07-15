@@ -50,9 +50,9 @@ TEST_F(SQLGenerationTest, SimpleMetricConditionTest) {
     };
     
     // Expected SQL format:
-    // SELECT usage_percent as value, ts, host_ip 
+    // SELECT usage_percent , ts, host_ip 
     // FROM cpu_metrics 
-    // WHERE usage_percent > 90.0 AND ts > now() - INTERVAL '5 MINUTE' 
+    // WHERE usage_percent > 90.0  
     // ORDER BY ts DESC
     
     AlarmRule rule;
@@ -89,9 +89,9 @@ TEST_F(SQLGenerationTest, ANDLogicConditionTest) {
     };
     
     // Expected SQL format:
-    // SELECT usage_percent as value, ts, host_ip 
+    // SELECT usage_percent , ts, host_ip 
     // FROM cpu_metrics 
-    // WHERE (host_ip = '192.168.1.100') AND (usage_percent > 80.0) AND ts > now() - INTERVAL '5 MINUTE' 
+    // WHERE (host_ip = '192.168.1.100') AND (usage_percent > 80.0)  
     // ORDER BY ts DESC
     
     AlarmRule rule;
@@ -127,9 +127,9 @@ TEST_F(SQLGenerationTest, ORLogicConditionTest) {
     };
     
     // Expected SQL format:
-    // SELECT usage_percent as value, ts, host_ip, device, mount_point 
+    // SELECT usage_percent , ts, host_ip, device, mount_point 
     // FROM disk_metrics 
-    // WHERE (usage_percent > 85.0 OR free < 1000000000) AND ts > now() - INTERVAL '5 MINUTE' 
+    // WHERE (usage_percent > 85.0 OR free < 1000000000)  
     // ORDER BY ts DESC
     
     AlarmRule rule;
@@ -175,9 +175,9 @@ TEST_F(SQLGenerationTest, NestedLogicConditionTest) {
     };
     
     // Expected SQL format:
-    // SELECT usage_percent as value, ts, host_ip 
+    // SELECT usage_percent , ts, host_ip 
     // FROM cpu_metrics 
-    // WHERE (host_ip = '192.168.1.100') AND (usage_percent > 90.0 OR load_avg_1m > 2.0) AND ts > now() - INTERVAL '5 MINUTE' 
+    // WHERE (host_ip = '192.168.1.100') AND (usage_percent > 90.0 OR load_avg_1m > 2.0)  
     // ORDER BY ts DESC
     
     AlarmRule rule;
@@ -203,9 +203,9 @@ TEST_F(SQLGenerationTest, GPUMetricConditionTest) {
     };
     
     // Expected SQL format:
-    // SELECT compute_usage as value, ts, host_ip, gpu_index, gpu_name 
+    // SELECT compute_usage , ts, host_ip, gpu_index, gpu_name 
     // FROM gpu_metrics 
-    // WHERE compute_usage >= 85.0 AND ts > now() - INTERVAL '5 MINUTE' 
+    // WHERE compute_usage >= 85.0  
     // ORDER BY ts DESC
     
     AlarmRule rule;
@@ -241,9 +241,9 @@ TEST_F(SQLGenerationTest, NetworkMetricConditionTest) {
     };
     
     // Expected SQL format:
-    // SELECT rx_errors as value, ts, host_ip, interface 
+    // SELECT rx_errors , ts, host_ip, interface 
     // FROM network_metrics 
-    // WHERE (interface = 'eth0') AND (rx_errors > 0) AND ts > now() - INTERVAL '5 MINUTE' 
+    // WHERE (interface = 'eth0') AND (rx_errors > 0)  
     // ORDER BY ts DESC
     
     AlarmRule rule;
@@ -269,9 +269,9 @@ TEST_F(SQLGenerationTest, MemoryMetricConditionTest) {
     };
     
     // Expected SQL format:
-    // SELECT usage_percent as value, ts, host_ip 
+    // SELECT usage_percent , ts, host_ip 
     // FROM memory_metrics 
-    // WHERE usage_percent >= 95.0 AND ts > now() - INTERVAL '5 MINUTE' 
+    // WHERE usage_percent >= 95.0  
     // ORDER BY ts DESC
     
     AlarmRule rule;
@@ -307,9 +307,9 @@ TEST_F(SQLGenerationTest, DiskMetricWithTagConditionTest) {
     };
     
     // Expected SQL format:
-    // SELECT usage_percent as value, ts, host_ip, device, mount_point 
+    // SELECT usage_percent , ts, host_ip, device, mount_point 
     // FROM disk_metrics 
-    // WHERE (mount_point = '/') AND (usage_percent > 80.0) AND ts > now() - INTERVAL '5 MINUTE' 
+    // WHERE (mount_point = '/') AND (usage_percent > 80.0)  
     // ORDER BY ts DESC
     
     AlarmRule rule;

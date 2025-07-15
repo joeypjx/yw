@@ -1,4 +1,5 @@
 #include "alarm_rule_engine.h"
+#include "alarm_manager.h"
 #include <iostream>
 #include <sstream>
 #include <regex>
@@ -8,7 +9,14 @@
 
 AlarmRuleEngine::AlarmRuleEngine(std::shared_ptr<AlarmRuleStorage> rule_storage,
                                std::shared_ptr<ResourceStorage> resource_storage)
-    : m_rule_storage(rule_storage), m_resource_storage(resource_storage),
+    : m_rule_storage(rule_storage), m_resource_storage(resource_storage), m_alarm_manager(nullptr),
+      m_running(false), m_evaluation_interval(std::chrono::seconds(30)) {
+}
+
+AlarmRuleEngine::AlarmRuleEngine(std::shared_ptr<AlarmRuleStorage> rule_storage,
+                               std::shared_ptr<ResourceStorage> resource_storage,
+                               std::shared_ptr<AlarmManager> alarm_manager)
+    : m_rule_storage(rule_storage), m_resource_storage(resource_storage), m_alarm_manager(alarm_manager),
       m_running(false), m_evaluation_interval(std::chrono::seconds(30)) {
 }
 
@@ -220,7 +228,7 @@ std::string AlarmRuleEngine::convertRuleToSQL(const nlohmann::json& expression, 
     }
     
     // 构建SELECT子句 - 不使用聚合函数
-    sql << metric << " as value, ts, ";
+    sql << metric << " , ts, ";
     
     // 添加标签字段
     std::vector<std::string> tag_fields = {"host_ip"};
@@ -248,28 +256,25 @@ std::string AlarmRuleEngine::convertRuleToSQL(const nlohmann::json& expression, 
     // FROM子句
     sql << " FROM " << stable;
     
-    // WHERE子句
+    // WHERE子句 - 只包含标签条件和时间条件，不包含度量条件
     std::string where_clause = buildWhereClause(expression);
-    std::string metric_condition = buildMetricCondition(expression);
-    std::string time_condition = "ts > now() - INTERVAL '5 MINUTE'";
     
     std::vector<std::string> conditions;
     if (!where_clause.empty()) {
         conditions.push_back(where_clause);
     }
-    if (!metric_condition.empty()) {
-        conditions.push_back(metric_condition);
-    }
-    conditions.push_back(time_condition);
     
-    sql << " WHERE ";
+    if (conditions.size() > 0) {
+        sql << " WHERE ";
+    }
+    
     for (size_t i = 0; i < conditions.size(); ++i) {
         if (i > 0) sql << " AND ";
         sql << conditions[i];
     }
     
     // 按时间戳降序排序，获取最新的记录
-    sql << " ORDER BY ts DESC";
+    sql << " ORDER BY ts DESC LIMIT 1";
     
     return sql.str();
 }
@@ -414,24 +419,15 @@ std::string AlarmRuleEngine::convertOperator(const std::string& op) {
 }
 
 std::vector<QueryResult> AlarmRuleEngine::executeQuery(const std::string& sql) {
-    std::vector<QueryResult> results;
-    
-    // 这里简化实现，实际应该使用TDengine连接
-    // 由于ResourceStorage类没有提供查询接口，我们先模拟一些结果
-    
     logDebug("Executing query: " + sql);
     
-    // 模拟查询结果
-    if (sql.find("cpu_usage_percent") != std::string::npos) {
-        QueryResult result;
-        result.labels["host_ip"] = "192.168.1.100";
-        result.labels["alertname"] = "HighCpuUsage";
-        result.value = 85.5;  // 模拟CPU使用率
-        result.timestamp = std::chrono::system_clock::now();
-        results.push_back(result);
+    // 使用ResourceStorage的executeQuery接口
+    if (m_resource_storage) {
+        return m_resource_storage->executeQuerySQL(sql);
     }
     
-    return results;
+    logError("ResourceStorage not available for query execution");
+    return std::vector<QueryResult>();
 }
 
 bool AlarmRuleEngine::evaluateCondition(double value, const std::string& op, double threshold) {
@@ -542,6 +538,11 @@ void AlarmRuleEngine::generateAlarmEvent(const AlarmInstance& instance, const Al
                    instance.state_changed_at : std::chrono::system_clock::time_point{};
     
     logInfo("Generated alarm event: " + event.toJson());
+    
+    // 发送事件到告警管理器
+    if (m_alarm_manager) {
+        m_alarm_manager->processAlarmEvent(event);
+    }
     
     // 调用回调函数
     if (m_alarm_event_callback) {

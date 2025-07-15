@@ -31,6 +31,14 @@ find_path(MYSQL_INCLUDE_DIR
     NO_DEFAULT_PATH
 )
 
+# Find UUID library (for alarm manager)
+find_library(UUID_LIBRARY
+    NAMES uuid
+    PATHS /usr/local/lib /usr/lib /opt/homebrew/lib
+    DOC "UUID library"
+    NO_DEFAULT_PATH
+)
+
 if(TAOS_LIBRARY AND TAOS_INCLUDE_DIR)
     message(STATUS "Found TDengine for tests: ${TAOS_LIBRARY}")
     set(TAOS_FOUND TRUE)
@@ -45,6 +53,13 @@ else()
     message(FATAL_ERROR "MySQL client library not found for tests. Please install MySQL client library.")
 endif()
 
+if(UUID_LIBRARY)
+    message(STATUS "Found UUID for tests: ${UUID_LIBRARY}")
+    set(UUID_FOUND TRUE)
+else()
+    message(FATAL_ERROR "UUID library not found for tests. Please install UUID library.")
+endif()
+
 # Include source files for tests
 file(GLOB_RECURSE TEST_SOURCES "*.cpp")
 file(GLOB_RECURSE PROJECT_SOURCES "../src/*.cpp")
@@ -53,7 +68,7 @@ file(GLOB_RECURSE PROJECT_SOURCES "../src/*.cpp")
 list(FILTER PROJECT_SOURCES EXCLUDE REGEX ".*main\\.cpp$")
 
 add_executable(tests ${TEST_SOURCES} ${PROJECT_SOURCES})
-target_link_libraries(tests gtest_main ${TAOS_LIBRARY} ${MYSQL_LIBRARY})
+target_link_libraries(tests gtest_main ${TAOS_LIBRARY} ${MYSQL_LIBRARY} ${UUID_LIBRARY})
 target_include_directories(tests PRIVATE ${TAOS_INCLUDE_DIR} ${MYSQL_INCLUDE_DIR} ../include)
 
 # Fix library path on macOS

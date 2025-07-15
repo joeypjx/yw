@@ -429,3 +429,98 @@ bool ResourceStorage::insertGpuData(const std::string& hostIp, const nlohmann::j
 
     return success;
 }
+
+std::vector<QueryResult> ResourceStorage::executeQuerySQL(const std::string& sql) {
+    std::vector<QueryResult> results;
+    
+    if (!m_connected || !m_taos) {
+        std::cerr << "ResourceStorage: Not connected to TDengine" << std::endl;
+        return results;
+    }
+    
+    std::cout << "[DEBUG] ResourceStorage: Executing query: " << sql << std::endl;
+    
+    TAOS_RES* res = taos_query(m_taos, sql.c_str());
+    if (taos_errno(res) != 0) {
+        std::cerr << "ResourceStorage: Query failed: " << taos_errstr(res) << std::endl;
+        std::cerr << "ResourceStorage: SQL: " << sql << std::endl;
+        taos_free_result(res);
+        return results;
+    }
+    
+    // 获取字段信息
+    int field_count = taos_field_count(res);
+    TAOS_FIELD* fields = taos_fetch_fields(res);
+    
+    if (field_count == 0) {
+        taos_free_result(res);
+        return results;
+    }
+    
+    // 处理查询结果
+    TAOS_ROW row;
+    while ((row = taos_fetch_row(res))) {
+        QueryResult result;
+        int* lengths = taos_fetch_lengths(res);
+        
+        // 默认设置时间戳为当前时间
+        result.timestamp = std::chrono::system_clock::now();
+        result.value = 0.0;
+        
+        for (int i = 0; i < field_count; i++) {
+            if (row[i] == nullptr) continue;
+            
+            std::string field_name = fields[i].name;
+            
+            // 处理不同类型的字段
+            if (field_name == "ts") {
+                // 时间戳字段
+                if (fields[i].type == TSDB_DATA_TYPE_TIMESTAMP) {
+                    int64_t timestamp = *(int64_t*)row[i];
+                    result.timestamp = std::chrono::system_clock::from_time_t(timestamp / 1000);
+                }
+            } else if (field_name == "value" || field_name == "usage_percent" || 
+                       field_name == "compute_usage" || field_name == "mem_usage" ||
+                       field_name == "load_avg_1m" || field_name == "free") {
+                // 数值字段
+                if (fields[i].type == TSDB_DATA_TYPE_FLOAT) {
+                    result.value = *(float*)row[i];
+                } else if (fields[i].type == TSDB_DATA_TYPE_DOUBLE) {
+                    result.value = *(double*)row[i];
+                } else if (fields[i].type == TSDB_DATA_TYPE_INT) {
+                    result.value = *(int*)row[i];
+                } else if (fields[i].type == TSDB_DATA_TYPE_BIGINT) {
+                    result.value = *(int64_t*)row[i];
+                } else if (fields[i].type == TSDB_DATA_TYPE_SMALLINT) {
+                    result.value = *(int16_t*)row[i];
+                } else if (fields[i].type == TSDB_DATA_TYPE_TINYINT) {
+                    result.value = *(int8_t*)row[i];
+                }
+            } else {
+                // 标签字段
+                if (fields[i].type == TSDB_DATA_TYPE_NCHAR || fields[i].type == TSDB_DATA_TYPE_BINARY) {
+                    result.labels[field_name] = std::string((char*)row[i], lengths[i]);
+                } else if (fields[i].type == TSDB_DATA_TYPE_INT) {
+                    result.labels[field_name] = std::to_string(*(int*)row[i]);
+                } else if (fields[i].type == TSDB_DATA_TYPE_BIGINT) {
+                    result.labels[field_name] = std::to_string(*(int64_t*)row[i]);
+                } else if (fields[i].type == TSDB_DATA_TYPE_SMALLINT) {
+                    result.labels[field_name] = std::to_string(*(int16_t*)row[i]);
+                } else if (fields[i].type == TSDB_DATA_TYPE_TINYINT) {
+                    result.labels[field_name] = std::to_string(*(int8_t*)row[i]);
+                } else if (fields[i].type == TSDB_DATA_TYPE_FLOAT) {
+                    result.labels[field_name] = std::to_string(*(float*)row[i]);
+                } else if (fields[i].type == TSDB_DATA_TYPE_DOUBLE) {
+                    result.labels[field_name] = std::to_string(*(double*)row[i]);
+                }
+            }
+        }
+        
+        results.push_back(result);
+    }
+    
+    taos_free_result(res);
+    
+    std::cout << "[DEBUG] ResourceStorage: Query returned " << results.size() << " rows" << std::endl;
+    return results;
+}
