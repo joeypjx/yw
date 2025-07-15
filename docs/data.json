@@ -1,0 +1,86 @@
+{
+    "api_version" : 1,
+    "data":{
+        "host_ip": "192.168.10.29，string，点分十进制，主机ip",
+        "resource": {
+            "cpu" : {
+                "usage_percent": "double，cpu使用率百分比",
+                "load_avg_1m": "double，cpu1分钟负载",
+                "load_avg_5m": "double，cpu5分钟负载",
+                "load_avg_15m": "double，cpu15分钟负载" ,
+                "core_count": "int，cpu核数",
+                "core_allocated": "int, cpu已分配核数",
+                "temperature": "double, 温度, 摄氏度",
+                "voltage": "double，电压，伏特",
+                "current": "double，电流，安培",
+                "power": "double 功耗，瓦特"
+            },
+            "memory": {
+                "total" : "uint64_t，内存总大小，字节", 
+                "used" : "uint64_t，内存已使用大小，字节",
+                "free" : "uint64_t，内存剩余大小，字节",
+                "usage_percent" : "double，内存使用率，百分比"
+            },
+            "network": [
+                {
+                    "interface": "string，网卡名",
+                    "rx_bytes": "uint64_t，接收字节",
+                    "tx_bytes": "uint64_t，发送字节",
+                    "rx_packets": "uint64_t，接收报文",
+                    "tx_packets": "uint64_t，发送报文",
+                    "rx_errors": "int，接收错误",
+                    "tx_errors": "int，发送错误"
+                }
+            ],
+            "disk":[
+                {
+                    "device": "string，设备名称",
+                    "mount_point": "string，挂载路径",
+                    "total": "uint64_t，总大小，字节",
+                    "used": "uint64_t，已使用大小，字节",
+                    "free": "uint64_t， 剩余大小，字节",
+                    "usage_percent": "double，使用率，百分比"
+                }
+            ],
+            "gpu":[
+                {
+                    "index": "int，gpu设备序号",
+                    "name": "string，gpu设备名称",
+                    "compute_usage": "double，gpu计算使用率",
+                    "mem_usage": "double， gpu内存使用率",
+                    "mem_used": "uint64_t,显存已使用大小，字节",
+                    "mem_total": "uint64_t，显存总大小，字节",
+                    "temperature": "double, 温度, 摄氏度",
+                    "voltage": "double，电压，伏特",
+                    "current": "double，电流，安培",
+                    "power": "double 功耗，瓦特"
+                }
+            ]
+        },
+        "component": [
+            {
+                "instance_id": "string, 容器所属的业务示例id",
+                "uuid": "string，容器所属的组件实例uuid",
+                "index": "int",
+                "config": {
+                    "name": "string，容器name",
+                    "id": "string，容器ID", // docker id
+                },
+                "state": "PENDING/RUNNING/FAILED/STOPPED/SLEEPING，string，容器运行状态",
+                "resource":{ // 容器资源使用情况
+                    "cpu" : {
+                        "load": "double,负载率，百分比"
+                    },
+                    "memory": {
+                        "mem_used" : "uint64_t，内存占用，字节",
+                        "mem_limit" : "uint64_t，内存限制，字节",
+                    },
+                    "network": {
+                        "tx": "uint64_t，发送字节，字节",
+                        "rx": "uint64_t，接收字节，字节"
+                    }
+                }
+            }
+        ]
+    }
+}

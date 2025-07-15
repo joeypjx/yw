@@ -58,9 +58,44 @@ The tests/CMakeLists.txt:
 
 ### Current Implementation
 
-The project currently contains:
-- Basic "Hello, World!" application in `src/main.cpp`
-- Sample test in `tests/test_main.cpp`
-- No custom headers or library code yet
+The project contains:
+- **TDengine Resource Storage Module** (`src/resource_storage.cpp`, `include/resource_storage.h`)
+  - Connects to TDengine database (127.0.0.1, user: test, password: HZ715Net)
+  - Creates `resource` database and time-series tables for CPU, Memory, Network, Disk, GPU metrics
+  - Provides interface to store JSON resource data matching `@docs/data.json` format
+  - Automatic table creation with proper naming (IP addresses with dots converted to underscores)
+  
+- **Main Application** (`src/main.cpp`)
+  - Demonstrates ResourceStorage usage with sample data
+  - Connects to TDengine, creates database/tables, inserts resource data
+  
+- **Comprehensive Test Suite** (`tests/test_resource_storage.cpp`)
+  - Tests database connection, table creation, data insertion
+  - Covers all resource types (CPU, Memory, Network, Disk, GPU)
+  - Includes error handling and edge cases
 
-This is a foundation ready for expansion with proper separation of source, headers, and tests following modern C++ project conventions.
+### TDengine Integration
+
+The ResourceStorage class provides the following interface:
+- `connect()` - Connect to TDengine database
+- `createDatabase(dbName)` - Create database (typically "resource")
+- `createResourceTable()` - Create super tables for all resource types
+- `insertResourceData(hostIp, jsonData)` - Insert JSON resource data
+
+The module automatically handles:
+- Time-series table creation with proper tags
+- JSON parsing and data validation
+- SQL generation and execution
+- Error handling and logging
+- Special character cleaning for table names (/, -, ., :, spaces converted to _)
+
+### Dependencies
+
+- TDengine client library (libtaos)
+- nlohmann/json for JSON handling
+- Google Test for testing
+
+### Known Issues
+
+- TDengine library on macOS has incorrect install_name, fixed with post-build install_name_tool
+- Library path automatically corrected during build process

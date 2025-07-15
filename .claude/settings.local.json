@@ -4,7 +4,15 @@
       "Bash(mkdir:*)",
       "Bash(ls:*)",
       "Bash(./build/MyProject)",
-      "Bash(make test:*)"
+      "Bash(make test:*)",
+      "Bash(find:*)",
+      "Bash(otool:*)",
+      "Bash(make:*)",
+      "Bash(cmake:*)",
+      "Bash(rm:*)",
+      "Bash(install_name_tool:*)",
+      "Bash(./MyProject)",
+      "Bash(./tests/tests:*)"
     ],
     "deny": []
   }

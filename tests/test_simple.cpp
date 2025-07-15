@@ -1,7 +1,8 @@
 #include <gtest/gtest.h>
 
-TEST(BasicTest, SampleTest) {
+TEST(SimpleTest, BasicAssertions) {
     EXPECT_EQ(1, 1);
+    EXPECT_TRUE(true);
 }
 
 int main(int argc, char **argv) {
