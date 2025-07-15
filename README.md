@@ -1,6 +1,6 @@
 # MyProject
 
-A C++ project with standard directory structure.
+A C++ 14 project with standard directory structure.
 
 ## Build Instructions
 
