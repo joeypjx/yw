@@ -520,9 +520,7 @@ std::vector<QueryResult> ResourceStorage::executeQuerySQL(const std::string& sql
                     int64_t timestamp = *(int64_t*)row[i];
                     result.timestamp = std::chrono::system_clock::from_time_t(timestamp / 1000);
                 }
-            } else if (field_name == "value" || field_name == "usage_percent" || 
-                       field_name == "compute_usage" || field_name == "mem_usage" ||
-                       field_name == "load_avg_1m" || field_name == "free") {
+            } else if (field_name != "host_ip" && field_name != "mount_point" && field_name != "device" && field_name != "interface" && field_name != "gpu_name" && field_name != "gpu_index" && field_name != "value" && field_name != "ts") {
                 // 数值字段
                 result.metric = field_name;  // 设置指标名称
                 if (fields[i].type == TSDB_DATA_TYPE_FLOAT) {
