@@ -31,3 +31,5 @@ Thumbs.db
 # Debug files
 *.dSYM/
 *.pdb
+
+*.log

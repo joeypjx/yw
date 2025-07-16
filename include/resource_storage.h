@@ -13,6 +13,7 @@ struct QueryResult {
     std::map<std::string, std::string> labels;  // 标签
     double value;                                // 值
     std::chrono::system_clock::time_point timestamp;
+    std::string metric;                          // 指标名称，如 'usage_percent'
 };
 
 class ResourceStorage {

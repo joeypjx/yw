@@ -169,7 +169,7 @@ void nodeDataGeneratorThread(const std::string& node_ip, ResourceStorage& storag
 
 // 创建测试告警规则
 void createTestAlarmRules(AlarmRuleStorage& alarm_storage) {
-    LogManager::getLogger()->info("{}");
+    
     
     // 检查告警规则表是否为空
     auto existing_rules = alarm_storage.getAllAlarmRules();
@@ -182,11 +182,11 @@ void createTestAlarmRules(AlarmRuleStorage& alarm_storage) {
         }
     }
     
-    LogManager::getLogger()->info("{}");
+    
     
     // 规则1: 高CPU使用率告警 (阈值降低，便于触发)
     nlohmann::json cpu_rule = {
-        {"stable", "cpu_metrics"},
+        {"stable", "cpu"},
         {"metric", "usage_percent"},
         {"operator", ">"},
         {"threshold", 85.0}  // 降低阈值
@@ -195,7 +195,7 @@ void createTestAlarmRules(AlarmRuleStorage& alarm_storage) {
     std::string cpu_rule_id = alarm_storage.insertAlarmRule(
         "HighCpuUsage",
         cpu_rule,
-        "6s",  // 非常短的持续时间
+        "15s",  // 非常短的持续时间
         "warning",
         "CPU使用率过高",
         "节点 {{host_ip}} CPU使用率达到 {{usage_percent}}%"
@@ -203,7 +203,7 @@ void createTestAlarmRules(AlarmRuleStorage& alarm_storage) {
     
     // 规则2: 高内存使用率告警
     nlohmann::json memory_rule = {
-        {"stable", "memory_metrics"},
+        {"stable", "memory"},
         {"metric", "usage_percent"},
         {"operator", ">"},
         {"threshold", 85.0}  // 降低阈值
@@ -212,7 +212,7 @@ void createTestAlarmRules(AlarmRuleStorage& alarm_storage) {
     std::string memory_rule_id = alarm_storage.insertAlarmRule(
         "HighMemoryUsage",
         memory_rule,
-        "6s",
+        "15s",
         "critical",
         "内存使用率过高",
         "节点 {{host_ip}} 内存使用率达到 {{usage_percent}}%"
@@ -220,7 +220,7 @@ void createTestAlarmRules(AlarmRuleStorage& alarm_storage) {
     
     // 规则3: 高磁盘使用率告警
     nlohmann::json disk_rule = {
-        {"stable", "disk_metrics"},
+        {"stable", "disk"},
         {"metric", "usage_percent"},
         {"operator", ">"},
         {"threshold", 75.0}  // 降低阈值
@@ -229,7 +229,7 @@ void createTestAlarmRules(AlarmRuleStorage& alarm_storage) {
     std::string disk_rule_id = alarm_storage.insertAlarmRule(
         "HighDiskUsage",
         disk_rule,
-        "6s",
+        "15s",
         "warning",
         "磁盘使用率过高",
         "节点 {{host_ip}} 磁盘 {{device}} 使用率达到 {{usage_percent}}%"
@@ -239,7 +239,7 @@ void createTestAlarmRules(AlarmRuleStorage& alarm_storage) {
     std::vector<std::string> rule_ids = {cpu_rule_id, memory_rule_id, disk_rule_id};
     std::vector<std::string> rule_names = {"HighCpuUsage", "HighMemoryUsage", "HighDiskUsage"};
     
-    LogManager::getLogger()->info("{}");
+    
     for (size_t i = 0; i < rule_ids.size(); i++) {
         if (!rule_ids[i].empty()) {
             LogManager::getLogger()->info("  - {}: {}", rule_names[i], rule_ids[i]);
@@ -255,7 +255,7 @@ void createTestAlarmRules(AlarmRuleStorage& alarm_storage) {
 
 // 手动触发告警的测试函数
 void triggerTestAlarms(std::shared_ptr<AlarmManager> alarm_manager) {
-    LogManager::getLogger()->info("{}");
+    
     
     // 创建测试告警事件
     AlarmEvent test_event;
@@ -270,9 +270,9 @@ void triggerTestAlarms(std::shared_ptr<AlarmManager> alarm_manager) {
     test_event.generator_url = "http://test.example.com";
     
     if (alarm_manager->processAlarmEvent(test_event)) {
-        LogManager::getLogger()->info("{}");
+        
     } else {
-        LogManager::getLogger()->info("{}");
+        
     }
     
     // 等待几秒后解决告警
@@ -282,9 +282,9 @@ void triggerTestAlarms(std::shared_ptr<AlarmManager> alarm_manager) {
     test_event.ends_at = std::chrono::system_clock::now();
     
     if (alarm_manager->processAlarmEvent(test_event)) {
-        LogManager::getLogger()->info("{}");
+        
     } else {
-        LogManager::getLogger()->info("{}");
+        
     }
 }
 
@@ -322,10 +322,10 @@ public:
     
     void printStatistics() {
         std::lock_guard<std::mutex> lock(events_mutex);
-        LogManager::getLogger()->info("{}");
+        
         LogManager::getLogger()->info("  - 触发次数: {}", firing_count.load());
         LogManager::getLogger()->info("  - 恢复次数: {}", resolved_count.load());
-        LogManager::getLogger()->info("{}");
+        
         for (const auto& event : recent_events) {
             LogManager::getLogger()->info("    {}", event);
         }
@@ -407,7 +407,7 @@ int main(int argc, char* argv[]) {
         createTestAlarmRules(alarm_storage);
         
         // 4. 初始化告警管理器
-        LogManager::getLogger()->info("{}");
+        
         auto alarm_manager_ptr = std::make_shared<AlarmManager>("127.0.0.1", 3306, "test", "HZ715Net", "alarm");
         
         if (!alarm_manager_ptr->connect()) {
@@ -426,13 +426,13 @@ int main(int argc, char* argv[]) {
             return 1;
         }
         
-        LogManager::getLogger()->info("{}");
+        
         
         // 5. 手动触发测试告警
         // triggerTestAlarms(alarm_manager_ptr);
         
         // 6. 初始化告警规则引擎
-        LogManager::getLogger()->info("{}");
+        
         auto rule_storage_ptr = std::make_shared<AlarmRuleStorage>(alarm_storage);
         
         AlarmRuleEngine engine(rule_storage_ptr, storage_ptr, alarm_manager_ptr);
@@ -447,30 +447,30 @@ int main(int argc, char* argv[]) {
         engine.setEvaluationInterval(std::chrono::seconds(3));
         
         // 8. 启动告警引擎
-        LogManager::getLogger()->info("{}");
+        
         if (!engine.start()) {
             LogManager::getLogger()->error("{}");
             return 1;
         }
         
-        LogManager::getLogger()->info("{}");
+        
         
         // 9. 启动模拟数据生成线程
         std::vector<std::thread> data_threads;
         if (start_simulation) {
-            LogManager::getLogger()->info("{}");
+            
             // 启动两个节点的数据生成线程
             data_threads.emplace_back(nodeDataGeneratorThread, "192.168.1.100", std::ref(*storage_ptr), 1);
             data_threads.emplace_back(nodeDataGeneratorThread, "192.168.1.101", std::ref(*storage_ptr), 2);
-            LogManager::getLogger()->info("{}");
+            
         } else {
-            LogManager::getLogger()->info("{}");
+            
         }
         
         // 10. 监控和报告
-        LogManager::getLogger()->info("{}");
-        LogManager::getLogger()->info("{}");
-        LogManager::getLogger()->info("{}");
+        
+        
+        
         
         // 运行60秒，每20秒输出一次统计
         for (int i = 0; i < 3; i++) {
@@ -480,7 +480,7 @@ int main(int argc, char* argv[]) {
             monitor.printStatistics();
             
             // 查询告警管理器统计
-            LogManager::getLogger()->info("{}");
+            
             LogManager::getLogger()->info("  - 活跃告警: {}", alarm_manager_ptr->getActiveAlarmCount());
             LogManager::getLogger()->info("  - 总告警数: {}", alarm_manager_ptr->getTotalAlarmCount());
             
@@ -494,7 +494,7 @@ int main(int argc, char* argv[]) {
         }
         
         // 11. 停止系统
-        LogManager::getLogger()->info("{}");
+        
         g_running = false;
 
         // 停止组播发送器
@@ -512,28 +512,28 @@ int main(int argc, char* argv[]) {
         engine.stop();
         
         // 12. 最终统计报告
-        LogManager::getLogger()->info("{}");
+        
         monitor.printStatistics();
         
-        LogManager::getLogger()->info("{}");
+        
         LogManager::getLogger()->info("  - 活跃告警: {}", alarm_manager_ptr->getActiveAlarmCount());
         LogManager::getLogger()->info("  - 总告警数: {}", alarm_manager_ptr->getTotalAlarmCount());
         
         // 显示最近的告警事件
         auto recent_events = alarm_manager_ptr->getRecentAlarmEvents(10);
-        LogManager::getLogger()->info("{}");
+        
         for (const auto& event : recent_events) {
             LogManager::getLogger()->info("    * {} [{}] {}", event.fingerprint, event.status, event.created_at);
         }
         
         // 如果没有自动生成告警，提示用户
         if (monitor.getFiringCount() == 0) {
-            LogManager::getLogger()->info("{}");
-            LogManager::getLogger()->info("{}");
-            LogManager::getLogger()->info("{}");
+            
+            
+            
         }
         
-        LogManager::getLogger()->info("{}");
+        
         
     } catch (const std::exception& e) {
         LogManager::getLogger()->critical("❌ 系统异常: {}", e.what());

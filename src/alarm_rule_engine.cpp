@@ -233,12 +233,12 @@ std::string AlarmRuleEngine::convertRuleToSQL(const nlohmann::json& expression, 
     
     // 添加标签字段
     std::vector<std::string> tag_fields = {"host_ip"};
-    if (stable == "disk_metrics") {
+    if (stable == "disk") {
         tag_fields.push_back("device");
         tag_fields.push_back("mount_point");
-    } else if (stable == "network_metrics") {
+    } else if (stable == "network") {
         tag_fields.push_back("interface");
-    } else if (stable == "gpu_metrics") {
+    } else if (stable == "gpu") {
         tag_fields.push_back("gpu_index");
         tag_fields.push_back("gpu_name");
     }
@@ -473,11 +473,12 @@ void AlarmRuleEngine::updateAlarmInstance(const std::string& fingerprint, const 
         instance.labels = result.labels;
         instance.labels["alertname"] = rule.alert_name;
         instance.labels["severity"] = rule.severity;
+        instance.labels[result.metric] = std::to_string(result.value);
         instance.value = result.value;
         
         // 设置annotations
         instance.annotations["summary"] = rule.summary;
-        instance.annotations["description"] = replaceTemplate(rule.description, result.labels);
+        instance.annotations["description"] = replaceTemplate(rule.description, instance.labels);
         
         m_alarm_instances[fingerprint] = instance;
         it = m_alarm_instances.find(fingerprint);

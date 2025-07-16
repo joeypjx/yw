@@ -71,7 +71,7 @@ bool ResourceStorage::createResourceTable() {
     }
 
     // Create CPU super table
-    std::string sql = "CREATE STABLE IF NOT EXISTS cpu_metrics ("
+    std::string sql = "CREATE STABLE IF NOT EXISTS cpu ("
         "ts TIMESTAMP, "
         "usage_percent DOUBLE, "
         "load_avg_1m DOUBLE, "
@@ -87,7 +87,7 @@ bool ResourceStorage::createResourceTable() {
     if (!executeQuery(sql)) return false;
 
     // Create Memory super table
-    sql = "CREATE STABLE IF NOT EXISTS memory_metrics ("
+    sql = "CREATE STABLE IF NOT EXISTS memory ("
         "ts TIMESTAMP, "
         "total BIGINT, "
         "used BIGINT, "
@@ -97,7 +97,7 @@ bool ResourceStorage::createResourceTable() {
     if (!executeQuery(sql)) return false;
 
     // Create Network super table
-    sql = "CREATE STABLE IF NOT EXISTS network_metrics ("
+    sql = "CREATE STABLE IF NOT EXISTS network ("
         "ts TIMESTAMP, "
         "rx_bytes BIGINT, "
         "tx_bytes BIGINT, "
@@ -111,7 +111,7 @@ bool ResourceStorage::createResourceTable() {
     if (!executeQuery(sql)) return false;
 
     // Create Disk super table
-    sql = "CREATE STABLE IF NOT EXISTS disk_metrics ("
+    sql = "CREATE STABLE IF NOT EXISTS disk ("
         "ts TIMESTAMP, "
         "total BIGINT, "
         "used BIGINT, "
@@ -121,7 +121,7 @@ bool ResourceStorage::createResourceTable() {
     if (!executeQuery(sql)) return false;
 
     // Create GPU super table
-    sql = "CREATE STABLE IF NOT EXISTS gpu_metrics ("
+    sql = "CREATE STABLE IF NOT EXISTS gpu ("
         "ts TIMESTAMP, "
         "compute_usage DOUBLE, "
         "mem_usage DOUBLE, "
@@ -133,7 +133,7 @@ bool ResourceStorage::createResourceTable() {
     if (!executeQuery(sql)) return false;
 
     // Create Node super table
-    sql = "CREATE STABLE IF NOT EXISTS node_metrics ("
+    sql = "CREATE STABLE IF NOT EXISTS node ("
         "ts TIMESTAMP, "
         "gpu_allocated INT, "
         "gpu_num INT"
@@ -165,7 +165,7 @@ std::string ResourceStorage::generateCreateTableSQL() {
     std::ostringstream oss;
     
     // Create CPU super table
-    oss << "CREATE STABLE IF NOT EXISTS cpu_metrics ("
+    oss << "CREATE STABLE IF NOT EXISTS cpu ("
         << "ts TIMESTAMP, "
         << "usage_percent DOUBLE, "
         << "load_avg_1m DOUBLE, "
@@ -180,7 +180,7 @@ std::string ResourceStorage::generateCreateTableSQL() {
         << ") TAGS (host_ip NCHAR(16)); ";
 
     // Create Memory super table
-    oss << "CREATE STABLE IF NOT EXISTS memory_metrics ("
+    oss << "CREATE STABLE IF NOT EXISTS memory ("
         << "ts TIMESTAMP, "
         << "total BIGINT, "
         << "used BIGINT, "
@@ -189,7 +189,7 @@ std::string ResourceStorage::generateCreateTableSQL() {
         << ") TAGS (host_ip NCHAR(16)); ";
 
     // Create Network super table
-    oss << "CREATE STABLE IF NOT EXISTS network_metrics ("
+    oss << "CREATE STABLE IF NOT EXISTS network ("
         << "ts TIMESTAMP, "
         << "rx_bytes BIGINT, "
         << "tx_bytes BIGINT, "
@@ -202,7 +202,7 @@ std::string ResourceStorage::generateCreateTableSQL() {
         << ") TAGS (host_ip NCHAR(16), interface NCHAR(32)); ";
 
     // Create Disk super table
-    oss << "CREATE STABLE IF NOT EXISTS disk_metrics ("
+    oss << "CREATE STABLE IF NOT EXISTS disk ("
         << "ts TIMESTAMP, "
         << "total BIGINT, "
         << "used BIGINT, "
@@ -211,7 +211,7 @@ std::string ResourceStorage::generateCreateTableSQL() {
         << ") TAGS (host_ip NCHAR(16), device NCHAR(32), mount_point NCHAR(64)); ";
 
     // Create GPU super table
-    oss << "CREATE STABLE IF NOT EXISTS gpu_metrics ("
+    oss << "CREATE STABLE IF NOT EXISTS gpu ("
         << "ts TIMESTAMP, "
         << "compute_usage DOUBLE, "
         << "mem_usage DOUBLE, "
@@ -222,7 +222,7 @@ std::string ResourceStorage::generateCreateTableSQL() {
         << ") TAGS (host_ip NCHAR(16), gpu_index INT, gpu_name NCHAR(64)); ";
 
     // Create Node super table
-    oss << "CREATE STABLE IF NOT EXISTS node_metrics ("
+    oss << "CREATE STABLE IF NOT EXISTS node ("
         << "ts TIMESTAMP, "
         << "gpu_allocated INT, "
         << "gpu_num INT"
@@ -273,7 +273,7 @@ bool ResourceStorage::insertResourceData(const std::string& hostIp, const nlohma
 bool ResourceStorage::insertCpuData(const std::string& hostIp, const nlohmann::json& cpuData) {
     // Create table if not exists (clean host IP for valid table names)
     std::string tableName = cleanForTableName(hostIp);
-    std::string createTableSQL = "CREATE TABLE IF NOT EXISTS cpu_" + tableName + " USING cpu_metrics TAGS ('" + hostIp + "')";
+    std::string createTableSQL = "CREATE TABLE IF NOT EXISTS cpu_" + tableName + " USING cpu TAGS ('" + hostIp + "')";
     if (!executeQuery(createTableSQL)) {
         return false;
     }
@@ -302,7 +302,7 @@ bool ResourceStorage::insertCpuData(const std::string& hostIp, const nlohmann::j
 bool ResourceStorage::insertMemoryData(const std::string& hostIp, const nlohmann::json& memoryData) {
     // Create table if not exists (clean host IP for valid table names)
     std::string tableName = cleanForTableName(hostIp);
-    std::string createTableSQL = "CREATE TABLE IF NOT EXISTS memory_" + tableName + " USING memory_metrics TAGS ('" + hostIp + "')";
+    std::string createTableSQL = "CREATE TABLE IF NOT EXISTS memory_" + tableName + " USING memory TAGS ('" + hostIp + "')";
     if (!executeQuery(createTableSQL)) {
         return false;
     }
@@ -336,7 +336,7 @@ bool ResourceStorage::insertNetworkData(const std::string& hostIp, const nlohman
         std::string tableName = "network_" + hostTableName + "_" + interfaceTableName;
         
         // Create table if not exists
-        std::string createTableSQL = "CREATE TABLE IF NOT EXISTS " + tableName + " USING network_metrics TAGS ('" + hostIp + "', '" + interfaceName + "')";
+        std::string createTableSQL = "CREATE TABLE IF NOT EXISTS " + tableName + " USING network TAGS ('" + hostIp + "', '" + interfaceName + "')";
         if (!executeQuery(createTableSQL)) {
             success = false;
             continue;
@@ -381,7 +381,7 @@ bool ResourceStorage::insertDiskData(const std::string& hostIp, const nlohmann::
         std::string tableName = "disk_" + hostTableName + "_" + deviceTableName;
         
         // Create table if not exists
-        std::string createTableSQL = "CREATE TABLE IF NOT EXISTS " + tableName + " USING disk_metrics TAGS ('" + hostIp + "', '" + device + "', '" + mountPoint + "')";
+        std::string createTableSQL = "CREATE TABLE IF NOT EXISTS " + tableName + " USING disk TAGS ('" + hostIp + "', '" + device + "', '" + mountPoint + "')";
         if (!executeQuery(createTableSQL)) {
             success = false;
             continue;
@@ -421,7 +421,7 @@ bool ResourceStorage::insertGpuData(const std::string& hostIp, const nlohmann::j
         std::string tableName = "gpu_" + hostTableName + "_" + std::to_string(gpuIndex);
         
         // Create table if not exists
-        std::string createTableSQL = "CREATE TABLE IF NOT EXISTS " + tableName + " USING gpu_metrics TAGS ('" + hostIp + "', " + std::to_string(gpuIndex) + ", '" + gpuName + "')";
+        std::string createTableSQL = "CREATE TABLE IF NOT EXISTS " + tableName + " USING gpu TAGS ('" + hostIp + "', " + std::to_string(gpuIndex) + ", '" + gpuName + "')";
         if (!executeQuery(createTableSQL)) {
             success = false;
             continue;
@@ -452,7 +452,7 @@ bool ResourceStorage::insertGpuData(const std::string& hostIp, const nlohmann::j
 bool ResourceStorage::insertNodeData(const std::string& hostIp, const nlohmann::json& resourceData) {
     // Create table if not exists (clean host IP for valid table names)
     std::string tableName = cleanForTableName(hostIp);
-    std::string createTableSQL = "CREATE TABLE IF NOT EXISTS node_" + tableName + " USING node_metrics TAGS ('" + hostIp + "')";
+    std::string createTableSQL = "CREATE TABLE IF NOT EXISTS node_" + tableName + " USING node TAGS ('" + hostIp + "')";
     if (!executeQuery(createTableSQL)) {
         return false;
     }
@@ -506,6 +506,7 @@ std::vector<QueryResult> ResourceStorage::executeQuerySQL(const std::string& sql
         // 默认设置时间戳为当前时间
         result.timestamp = std::chrono::system_clock::now();
         result.value = 0.0;
+        result.metric = "";
         
         for (int i = 0; i < field_count; i++) {
             if (row[i] == nullptr) continue;
@@ -523,6 +524,7 @@ std::vector<QueryResult> ResourceStorage::executeQuerySQL(const std::string& sql
                        field_name == "compute_usage" || field_name == "mem_usage" ||
                        field_name == "load_avg_1m" || field_name == "free") {
                 // 数值字段
+                result.metric = field_name;  // 设置指标名称
                 if (fields[i].type == TSDB_DATA_TYPE_FLOAT) {
                     result.value = *(float*)row[i];
                 } else if (fields[i].type == TSDB_DATA_TYPE_DOUBLE) {
