@@ -324,7 +324,14 @@ void HttpServer::handle_alarm_rules(const httplib::Request& req, httplib::Respon
         json actions = body["actions"];
         
         // 可选字段
-        std::string alarm_type = body.value("alarmType", "system");
+        std::string alarm_type = body.value("alarmType", "硬件状态");
+        
+        // 验证alarmType字段
+        if (alarm_type != "硬件状态" && alarm_type != "业务链路" && alarm_type != "系统故障") {
+            res.set_content("{\"error\":\"Invalid alarmType. Must be one of: 硬件状态, 业务链路, 系统故障\"}", "application/json");
+            res.status = 400;
+            return;
+        }
         
         // 映射alarmLevel到severity
         std::string severity;
@@ -363,6 +370,7 @@ void HttpServer::handle_alarm_rules(const httplib::Request& req, httplib::Respon
             severity,              // severity
             template_id,           // summary
             converted_description, // description
+            alarm_type,            // alarm_type
             true                   // enabled
         );
         

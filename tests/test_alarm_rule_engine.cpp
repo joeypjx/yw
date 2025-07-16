@@ -89,7 +89,8 @@ TEST_F(AlarmRuleEngineTest, AlarmEventCallbackTest) {
         "1s",  // 很短的持续时间用于测试
         "warning",
         "测试CPU使用率过高",
-        "节点 {{host_ip}} CPU使用率达到 {{usage_percent}}%"
+        "节点 {{host_ip}} CPU使用率达到 {{usage_percent}}%",
+        "硬件状态"
     );
     
     ASSERT_FALSE(rule_id.empty());

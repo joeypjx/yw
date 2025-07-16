@@ -348,7 +348,8 @@ TEST_F(SQLGenerationTest, EngineCanProcessNewFormatTest) {
         "1m",
         "warning",
         "Test engine processing",
-        "Test description"
+        "Test description",
+        "硬件状态"
     );
     
     ASSERT_FALSE(rule_id.empty());

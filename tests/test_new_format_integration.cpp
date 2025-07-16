@@ -61,7 +61,8 @@ TEST_F(NewFormatIntegrationTest, SimpleRuleCreationAndProcessing) {
         "1m",
         "warning",
         "Test simple CPU alert",
-        "节点 {{host_ip}} CPU使用率达到 {{usage_percent}}%"
+        "节点 {{host_ip}} CPU使用率达到 {{usage_percent}}%",
+        "硬件状态"
     );
     
     ASSERT_FALSE(rule_id.empty());
@@ -113,7 +114,8 @@ TEST_F(NewFormatIntegrationTest, ANDLogicRuleCreationAndProcessing) {
         "2m",
         "critical",
         "Test AND logic alert",
-        "特定主机 {{host_ip}} CPU使用率达到 {{usage_percent}}%"
+        "特定主机 {{host_ip}} CPU使用率达到 {{usage_percent}}%",
+        "硬件状态"
     );
     
     ASSERT_FALSE(rule_id.empty());
@@ -160,7 +162,8 @@ TEST_F(NewFormatIntegrationTest, ORLogicRuleCreationAndProcessing) {
         "5m",
         "warning",
         "Test OR logic alert",
-        "磁盘空间不足: 使用率 {{usage_percent}}%, 可用空间 {{free}} 字节"
+        "磁盘空间不足: 使用率 {{usage_percent}}%, 可用空间 {{free}} 字节",
+        "硬件状态"
     );
     
     ASSERT_FALSE(rule_id.empty());
@@ -217,7 +220,8 @@ TEST_F(NewFormatIntegrationTest, NestedLogicRuleCreationAndProcessing) {
         "3m",
         "critical",
         "Test nested logic alert",
-        "主机 {{host_ip}} 资源异常"
+        "主机 {{host_ip}} 资源异常",
+        "硬件状态"
     );
     
     ASSERT_FALSE(rule_id.empty());
@@ -260,7 +264,8 @@ TEST_F(NewFormatIntegrationTest, GPURuleCreationAndProcessing) {
         "3m",
         "warning",
         "Test GPU usage alert",
-        "GPU {{gpu_name}} 计算使用率达到 {{compute_usage}}%"
+        "GPU {{gpu_name}} 计算使用率达到 {{compute_usage}}%",
+        "硬件状态"
     );
     
     ASSERT_FALSE(rule_id.empty());
@@ -333,7 +338,8 @@ TEST_F(NewFormatIntegrationTest, EngineProcessingWithNewFormatTest) {
             "1m",
             "warning",
             "Test " + rule_pair.first + " rule",
-            "Test description for " + rule_pair.first
+            "Test description for " + rule_pair.first,
+            "硬件状态"
         );
         
         ASSERT_FALSE(rule_id.empty());
@@ -407,7 +413,8 @@ TEST_F(NewFormatIntegrationTest, MultipleStableTypesTest) {
             "2m",
             "warning",
             "Test " + rule_pair.first + " rule",
-            "Test description for " + rule_pair.first
+            "Test description for " + rule_pair.first,
+            "硬件状态"
         );
         
         ASSERT_FALSE(rule_id.empty());
@@ -445,7 +452,8 @@ TEST_F(NewFormatIntegrationTest, UpdateRuleWithNewFormatTest) {
         "2m",
         "warning",
         "Test update rule",
-        "Initial description"
+        "Initial description",
+        "硬件状态"
     );
     
     ASSERT_FALSE(rule_id.empty());
@@ -477,6 +485,7 @@ TEST_F(NewFormatIntegrationTest, UpdateRuleWithNewFormatTest) {
         "critical",
         "Test update rule modified",
         "Updated description",
+        "硬件状态",
         true
     ));
     

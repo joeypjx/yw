@@ -169,7 +169,8 @@ TEST_F(AlarmInstanceStateTest, AlarmEventCallbackTest) {
         "1s",  // Very short duration for testing
         "warning",
         "Test alarm instance state",
-        "节点 {{host_ip}} CPU使用率达到 {{usage_percent}}%"
+        "节点 {{host_ip}} CPU使用率达到 {{usage_percent}}%",
+        "硬件状态"
     );
     
     ASSERT_FALSE(rule_id.empty());
@@ -214,7 +215,8 @@ TEST_F(AlarmInstanceStateTest, AlarmInstanceStateTransitionLogicTest) {
         "1s",
         "warning",
         "Test state transition",
-        "State transition test"
+        "State transition test",
+        "硬件状态"
     );
     
     ASSERT_FALSE(rule_id.empty());

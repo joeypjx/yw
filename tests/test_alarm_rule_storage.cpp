@@ -96,7 +96,8 @@ TEST_F(AlarmRuleStorageTest, GetAlarmRuleTest) {
         "2m",
         "warning",
         "CPU使用率过高",
-        "节点 {{host_ip}} CPU使用率达到 {{usage_percent}}%"
+        "节点 {{host_ip}} CPU使用率达到 {{usage_percent}}%",
+        "硬件状态"
     );
 
     ASSERT_FALSE(id.empty());
@@ -107,6 +108,7 @@ TEST_F(AlarmRuleStorageTest, GetAlarmRuleTest) {
     EXPECT_EQ(rule.for_duration, "2m");
     EXPECT_EQ(rule.severity, "warning");
     EXPECT_EQ(rule.summary, "CPU使用率过高");
+    EXPECT_EQ(rule.alarm_type, "硬件状态");
     EXPECT_TRUE(rule.enabled);
 }
 
@@ -129,7 +131,8 @@ TEST_F(AlarmRuleStorageTest, UpdateAlarmRuleTest) {
         "2m",
         "warning",
         "CPU使用率过高",
-        "节点 {{host_ip}} CPU使用率达到 {{usage_percent}}%"
+        "节点 {{host_ip}} CPU使用率达到 {{usage_percent}}%",
+        "硬件状态"
     );
 
     ASSERT_FALSE(id.empty());
@@ -150,6 +153,7 @@ TEST_F(AlarmRuleStorageTest, UpdateAlarmRuleTest) {
         "critical",
         "CPU使用率过高(更新)",
         "节点 {{host_ip}} CPU使用率达到 {{usage_percent}}% (更新后的规则)",
+        "业务链路",
         false
     ));
 
@@ -158,6 +162,7 @@ TEST_F(AlarmRuleStorageTest, UpdateAlarmRuleTest) {
     EXPECT_EQ(updated_rule.alert_name, "HighCpuUsageUpdated");
     EXPECT_EQ(updated_rule.for_duration, "5m");
     EXPECT_EQ(updated_rule.severity, "critical");
+    EXPECT_EQ(updated_rule.alarm_type, "业务链路");
     EXPECT_FALSE(updated_rule.enabled);
 }
 
@@ -180,7 +185,8 @@ TEST_F(AlarmRuleStorageTest, DeleteAlarmRuleTest) {
         "2m",
         "warning",
         "CPU使用率过高",
-        "节点 {{host_ip}} CPU使用率达到 {{usage_percent}}%"
+        "节点 {{host_ip}} CPU使用率达到 {{usage_percent}}%",
+        "硬件状态"
     );
 
     ASSERT_FALSE(id.empty());
@@ -268,6 +274,7 @@ TEST_F(AlarmRuleStorageTest, GetEnabledAlarmRulesTest) {
         "warning",
         "启用的规则",
         "这是一个启用的规则",
+        "硬件状态",
         true
     );
 
@@ -279,6 +286,7 @@ TEST_F(AlarmRuleStorageTest, GetEnabledAlarmRulesTest) {
         "warning",
         "禁用的规则",
         "这是一个禁用的规则",
+        "系统故障",
         false
     );
 

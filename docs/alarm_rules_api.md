@@ -12,7 +12,7 @@
 | --------------------- | ---------------- | ---- | ------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
 | `templateId`          | string           | 是   | 告警规则标识，可使用中文或者英文标识。                                                                        | `"CPU使用过高"`                                                      |
 | `metricName`          | string           | 是   | 关联的监控指标名称。                                                                              | `"resource.cpu.usage_percent"`                                                   |
-| `alarmType`           | string           | 是   | 告警类型，包括 "硬件状态" 或 "业务链路"。                                                          | `"system"`                                                              |
+| `alarmType`           | string           | 是   | 告警类型，包括 "硬件状态"、"业务链路"、"系统故障"。                                                          | `"硬件状态"`                                                              |
 | `alarmLevel`          | string           | 是   | 告警级别，包括 "严重", "一般", "提示"。                                                   | `"critical"`                                                            |
 | `triggerCountThreshold` | integer        | 是   | 连续多少次满足条件才触发告警, 每次间隔5秒。                                            | `3`                                                                     |
 | `contentTemplate`     | string           | 是   | 告警内容的模板，可以使用占位符，占位符包括{nodeId}、{alarmType}、{alarmLevel}、{metricName}、{value}。                                                                  | `" 节点 {nodeId} 发生 {alarmLevel} 告警，..."`                     |
