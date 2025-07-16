@@ -8,7 +8,7 @@
 class NewFormatIntegrationTest : public ::testing::Test {
 protected:
     void SetUp() override {
-        rule_storage = std::make_shared<AlarmRuleStorage>("127.0.0.1", 3306, "test", "HZ715Net", "alarm");
+        rule_storage = std::make_shared<AlarmRuleStorage>("127.0.0.1", 3306, "test", "HZ715Net", "alarm_test");
         resource_storage = std::make_shared<ResourceStorage>("127.0.0.1", "test", "HZ715Net");
         
         // Connect to databases

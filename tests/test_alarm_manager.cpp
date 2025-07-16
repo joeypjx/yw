@@ -7,7 +7,7 @@
 class AlarmManagerTest : public ::testing::Test {
 protected:
     void SetUp() override {
-        alarm_manager = std::make_unique<AlarmManager>("127.0.0.1", 3306, "test", "HZ715Net", "alarm_manager");
+        alarm_manager = std::make_unique<AlarmManager>("127.0.0.1", 3306, "test", "HZ715Net", "alarm_test");
     }
 
     void TearDown() override {
@@ -243,6 +243,6 @@ TEST_F(AlarmManagerTest, AlarmEventRecordStructTest) {
 }
 
 TEST_F(AlarmManagerTest, InvalidConnectionTest) {
-    auto invalid_manager = std::make_unique<AlarmManager>("invalid_host", 3306, "test", "HZ715Net", "alarm_manager");
+    auto invalid_manager = std::make_unique<AlarmManager>("invalid_host", 3306, "test", "HZ715Net", "alarm_test");
     EXPECT_FALSE(invalid_manager->connect());
 }

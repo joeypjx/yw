@@ -88,3 +88,24 @@
     ]
 }
 ```
+
+contentTemplate转换成description时，
+占位符{nodeId}、{alarmLevel}、{value} 
+变为 {{host_ip}} {{severity}} {{value}}
+
+  "metricName": resource.disk[mount_point=/].usage_percent
+  "condition": {
+        "type": "GreaterThan",
+        "threshold": 90.0
+  }
+  转换为
+  expression:
+    and:
+    - stable: disk
+      tag: mount_point
+      operator: '=='
+      threshold: '/'
+    - stable: disk
+      tag: usage_percent
+      operator: '>'
+      value: 90.0

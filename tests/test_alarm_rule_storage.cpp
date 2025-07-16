@@ -5,7 +5,7 @@
 class AlarmRuleStorageTest : public ::testing::Test {
 protected:
     void SetUp() override {
-        storage = std::make_unique<AlarmRuleStorage>("127.0.0.1", 3306, "test", "HZ715Net", "alarm");
+        storage = std::make_unique<AlarmRuleStorage>("127.0.0.1", 3306, "test", "HZ715Net", "alarm_test");
     }
 
     void TearDown() override {
@@ -41,7 +41,7 @@ TEST_F(AlarmRuleStorageTest, InsertAlarmRuleTest) {
     nlohmann::json expression = {
         {"and", {
             {
-                {"stable", "cpu_metrics"},
+                {"stable", "cpu"},
                 {"tag", "host_ip"},
                 {"operator", "=="},
                 {"value", "192.168.1.100"}
@@ -49,13 +49,13 @@ TEST_F(AlarmRuleStorageTest, InsertAlarmRuleTest) {
             {
                 {"or", {
                     {
-                        {"stable", "cpu_metrics"},
+                        {"stable", "cpu"},
                         {"metric", "usage_percent"},
                         {"operator", ">"},
                         {"threshold", 90.0}
                     },
                     {
-                        {"stable", "cpu_metrics"},
+                        {"stable", "cpu"},
                         {"metric", "load_avg_1m"},
                         {"operator", ">"},
                         {"threshold", 2.0}
@@ -84,7 +84,7 @@ TEST_F(AlarmRuleStorageTest, GetAlarmRuleTest) {
 
     // Create a simple alarm rule with new format
     nlohmann::json expression = {
-        {"stable", "cpu_metrics"},
+        {"stable", "cpu"},
         {"metric", "usage_percent"},
         {"operator", ">"},
         {"threshold", 80.0}
@@ -117,7 +117,7 @@ TEST_F(AlarmRuleStorageTest, UpdateAlarmRuleTest) {
 
     // Create initial alarm rule
     nlohmann::json expression = {
-        {"stable", "cpu_metrics"},
+        {"stable", "cpu"},
         {"metric", "usage_percent"},
         {"operator", ">"},
         {"threshold", 80.0}
@@ -136,7 +136,7 @@ TEST_F(AlarmRuleStorageTest, UpdateAlarmRuleTest) {
 
     // Update the rule
     nlohmann::json new_expression = {
-        {"stable", "cpu_metrics"},
+        {"stable", "cpu"},
         {"metric", "usage_percent"},
         {"operator", ">"},
         {"threshold", 90.0}
@@ -168,7 +168,7 @@ TEST_F(AlarmRuleStorageTest, DeleteAlarmRuleTest) {
 
     // Create alarm rule
     nlohmann::json expression = {
-        {"stable", "cpu_metrics"},
+        {"stable", "cpu"},
         {"metric", "usage_percent"},
         {"operator", ">"},
         {"threshold", 80.0}
@@ -200,14 +200,14 @@ TEST_F(AlarmRuleStorageTest, GetAllAlarmRulesTest) {
 
     // Create multiple alarm rules
     nlohmann::json expression1 = {
-        {"stable", "cpu_metrics"},
+        {"stable", "cpu"},
         {"metric", "usage_percent"},
         {"operator", ">"},
         {"threshold", 80.0}
     };
 
     nlohmann::json expression2 = {
-        {"stable", "memory_metrics"},
+        {"stable", "memory"},
         {"metric", "usage_percent"},
         {"operator", ">"},
         {"threshold", 90.0}
@@ -254,7 +254,7 @@ TEST_F(AlarmRuleStorageTest, GetEnabledAlarmRulesTest) {
     ASSERT_TRUE(storage->createTable());
 
     nlohmann::json expression = {
-        {"stable", "cpu_metrics"},
+        {"stable", "cpu"},
         {"metric", "usage_percent"},
         {"operator", ">"},
         {"threshold", 80.0}
@@ -308,7 +308,7 @@ TEST_F(AlarmRuleStorageTest, ComplexAlarmRuleTest) {
     nlohmann::json complex_expression = {
         {"and", {
             {
-                {"stable", "cpu_metrics"},
+                {"stable", "cpu"},
                 {"tag", "host_ip"},
                 {"operator", "=="},
                 {"value", "192.168.1.100"}
@@ -316,13 +316,13 @@ TEST_F(AlarmRuleStorageTest, ComplexAlarmRuleTest) {
             {
                 {"or", {
                     {
-                        {"stable", "cpu_metrics"},
+                        {"stable", "cpu"},
                         {"metric", "usage_percent"},
                         {"operator", ">"},
                         {"threshold", 90.0}
                     },
                     {
-                        {"stable", "cpu_metrics"},
+                        {"stable", "cpu"},
                         {"metric", "load_avg_1m"},
                         {"operator", ">"},
                         {"threshold", 2.0}
@@ -357,6 +357,6 @@ TEST_F(AlarmRuleStorageTest, ComplexAlarmRuleTest) {
 }
 
 TEST_F(AlarmRuleStorageTest, InvalidConnectionTest) {
-    auto invalid_storage = std::make_unique<AlarmRuleStorage>("invalid_host", 3306, "test", "HZ715Net", "alarm");
+    auto invalid_storage = std::make_unique<AlarmRuleStorage>("invalid_host", 3306, "test", "HZ715Net", "alarm_test");
     EXPECT_FALSE(invalid_storage->connect());
 }

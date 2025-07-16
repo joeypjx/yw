@@ -473,7 +473,10 @@ void AlarmRuleEngine::updateAlarmInstance(const std::string& fingerprint, const 
         instance.labels = result.labels;
         instance.labels["alertname"] = rule.alert_name;
         instance.labels["severity"] = rule.severity;
-        instance.labels[result.metric] = std::to_string(result.value);
+        instance.labels["value"] = std::to_string(result.value);
+        if (!result.metric.empty()) {
+            instance.labels[result.metric] = std::to_string(result.value);
+        }
         instance.value = result.value;
         
         // 设置annotations

@@ -375,38 +375,40 @@ int main(int argc, char* argv[]) {
         
         LogManager::getLogger()->info("✅ Resource storage initialized successfully.");
 
-        // 启动HTTP服务器
-        HttpServer http_server(storage_ptr);
-        if (!http_server.start()) {
-            LogManager::getLogger()->critical("❌ Failed to start HTTP server");
-            return 1;
-        }
-        
         // 2. 初始化告警规则存储
         LogManager::getLogger()->info("📋 Initializing alarm rule storage...");
-        AlarmRuleStorage alarm_storage("127.0.0.1", 3306, "test", "HZ715Net", "alarm");
+        auto alarm_storage_ptr = std::make_shared<AlarmRuleStorage>("127.0.0.1", 3306, "test", "HZ715Net", "alarm");
         
-        if (!alarm_storage.connect()) {
+        if (!alarm_storage_ptr->connect()) {
             LogManager::getLogger()->critical("❌ Failed to connect to MySQL for alarm rules");
             return 1;
         }
         
-        if (!alarm_storage.createDatabase()) {
+        if (!alarm_storage_ptr->createDatabase()) {
             LogManager::getLogger()->critical("❌ Failed to create alarm database");
             return 1;
         }
         
-        if (!alarm_storage.createTable()) {
+        if (!alarm_storage_ptr->createTable()) {
             LogManager::getLogger()->critical("❌ Failed to create alarm rule table");
             return 1;
         }
         
         LogManager::getLogger()->info("✅ Alarm rule storage initialized successfully.");
         
-        // 3. 创建测试告警规则
-        createTestAlarmRules(alarm_storage);
+        // 3. 启动HTTP服务器
+        LogManager::getLogger()->info("🌐 Starting HTTP server...");
+        HttpServer http_server(storage_ptr, alarm_storage_ptr);
+        if (!http_server.start()) {
+            LogManager::getLogger()->critical("❌ Failed to start HTTP server");
+            return 1;
+        }
+        LogManager::getLogger()->info("✅ HTTP server started successfully on port 8080");
         
-        // 4. 初始化告警管理器
+        // 4. 创建测试告警规则
+        createTestAlarmRules(*alarm_storage_ptr);
+        
+        // 5. 初始化告警管理器
         
         auto alarm_manager_ptr = std::make_shared<AlarmManager>("127.0.0.1", 3306, "test", "HZ715Net", "alarm");
         
@@ -433,9 +435,7 @@ int main(int argc, char* argv[]) {
         
         // 6. 初始化告警规则引擎
         
-        auto rule_storage_ptr = std::make_shared<AlarmRuleStorage>(alarm_storage);
-        
-        AlarmRuleEngine engine(rule_storage_ptr, storage_ptr, alarm_manager_ptr);
+        AlarmRuleEngine engine(alarm_storage_ptr, storage_ptr, alarm_manager_ptr);
         
         // 7. 设置告警事件监控
         AlarmEventMonitor monitor;

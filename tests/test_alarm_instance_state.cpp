@@ -8,7 +8,7 @@
 class AlarmInstanceStateTest : public ::testing::Test {
 protected:
     void SetUp() override {
-        rule_storage = std::make_shared<AlarmRuleStorage>("127.0.0.1", 3306, "test", "HZ715Net", "alarm");
+        rule_storage = std::make_shared<AlarmRuleStorage>("127.0.0.1", 3306, "test", "HZ715Net", "alarm_test");
         resource_storage = std::make_shared<ResourceStorage>("127.0.0.1", "test", "HZ715Net");
         
         // Connect to databases
@@ -157,7 +157,7 @@ TEST_F(AlarmInstanceStateTest, AlarmEventCallbackTest) {
     
     // Create a simple rule for testing
     nlohmann::json expression = {
-        {"stable", "cpu_metrics"},
+        {"stable", "cpu"},
         {"metric", "usage_percent"},
         {"operator", ">"},
         {"threshold", 80.0}
@@ -202,7 +202,7 @@ TEST_F(AlarmInstanceStateTest, AlarmInstanceStateTransitionLogicTest) {
     
     // Create a rule with very short duration
     nlohmann::json expression = {
-        {"stable", "cpu_metrics"},
+        {"stable", "cpu"},
         {"metric", "usage_percent"},
         {"operator", ">"},
         {"threshold", 0.0}  // Very low threshold to trigger easily

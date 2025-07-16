@@ -24,7 +24,7 @@ public:
 class SQLGenerationTest : public ::testing::Test {
 protected:
     void SetUp() override {
-        rule_storage = std::make_shared<AlarmRuleStorage>("127.0.0.1", 3306, "test", "HZ715Net", "alarm");
+        rule_storage = std::make_shared<AlarmRuleStorage>("127.0.0.1", 3306, "test", "HZ715Net", "alarm_test");
         resource_storage = std::make_shared<ResourceStorage>("127.0.0.1", "test", "HZ715Net");
         engine = std::make_unique<AlarmRuleEngine>(rule_storage, resource_storage);
     }
@@ -43,7 +43,7 @@ protected:
 TEST_F(SQLGenerationTest, SimpleMetricConditionTest) {
     // Test simple metric condition (new format without agg_func)
     nlohmann::json expression = {
-        {"stable", "cpu_metrics"},
+        {"stable", "cpu"},
         {"metric", "usage_percent"},
         {"operator", ">"},
         {"threshold", 90.0}
@@ -51,7 +51,7 @@ TEST_F(SQLGenerationTest, SimpleMetricConditionTest) {
     
     // Expected SQL format:
     // SELECT usage_percent , ts, host_ip 
-    // FROM cpu_metrics 
+    // FROM cpu 
     // WHERE usage_percent > 90.0  
     // ORDER BY ts DESC
     
@@ -74,13 +74,13 @@ TEST_F(SQLGenerationTest, ANDLogicConditionTest) {
     nlohmann::json expression = {
         {"and", {
             {
-                {"stable", "cpu_metrics"},
+                {"stable", "cpu"},
                 {"metric", "usage_percent"},
                 {"operator", ">"},
                 {"threshold", 80.0}
             },
             {
-                {"stable", "cpu_metrics"},
+                {"stable", "cpu"},
                 {"tag", "host_ip"},
                 {"operator", "=="},
                 {"value", "192.168.1.100"}
@@ -90,7 +90,7 @@ TEST_F(SQLGenerationTest, ANDLogicConditionTest) {
     
     // Expected SQL format:
     // SELECT usage_percent , ts, host_ip 
-    // FROM cpu_metrics 
+    // FROM cpu 
     // WHERE (host_ip = '192.168.1.100') AND (usage_percent > 80.0)  
     // ORDER BY ts DESC
     
@@ -112,13 +112,13 @@ TEST_F(SQLGenerationTest, ORLogicConditionTest) {
     nlohmann::json expression = {
         {"or", {
             {
-                {"stable", "disk_metrics"},
+                {"stable", "disk"},
                 {"metric", "usage_percent"},
                 {"operator", ">"},
                 {"threshold", 85.0}
             },
             {
-                {"stable", "disk_metrics"},
+                {"stable", "disk"},
                 {"metric", "free"},
                 {"operator", "<"},
                 {"threshold", 1000000000}
@@ -128,7 +128,7 @@ TEST_F(SQLGenerationTest, ORLogicConditionTest) {
     
     // Expected SQL format:
     // SELECT usage_percent , ts, host_ip, device, mount_point 
-    // FROM disk_metrics 
+    // FROM disk 
     // WHERE (usage_percent > 85.0 OR free < 1000000000)  
     // ORDER BY ts DESC
     
@@ -150,7 +150,7 @@ TEST_F(SQLGenerationTest, NestedLogicConditionTest) {
     nlohmann::json expression = {
         {"and", {
             {
-                {"stable", "cpu_metrics"},
+                {"stable", "cpu"},
                 {"tag", "host_ip"},
                 {"operator", "=="},
                 {"value", "192.168.1.100"}
@@ -158,13 +158,13 @@ TEST_F(SQLGenerationTest, NestedLogicConditionTest) {
             {
                 {"or", {
                     {
-                        {"stable", "cpu_metrics"},
+                        {"stable", "cpu"},
                         {"metric", "usage_percent"},
                         {"operator", ">"},
                         {"threshold", 90.0}
                     },
                     {
-                        {"stable", "cpu_metrics"},
+                        {"stable", "cpu"},
                         {"metric", "load_avg_1m"},
                         {"operator", ">"},
                         {"threshold", 2.0}
@@ -176,7 +176,7 @@ TEST_F(SQLGenerationTest, NestedLogicConditionTest) {
     
     // Expected SQL format:
     // SELECT usage_percent , ts, host_ip 
-    // FROM cpu_metrics 
+    // FROM cpu 
     // WHERE (host_ip = '192.168.1.100') AND (usage_percent > 90.0 OR load_avg_1m > 2.0)  
     // ORDER BY ts DESC
     
@@ -196,7 +196,7 @@ TEST_F(SQLGenerationTest, NestedLogicConditionTest) {
 TEST_F(SQLGenerationTest, GPUMetricConditionTest) {
     // Test GPU metric condition
     nlohmann::json expression = {
-        {"stable", "gpu_metrics"},
+        {"stable", "gpu"},
         {"metric", "compute_usage"},
         {"operator", ">="},
         {"threshold", 85.0}
@@ -204,7 +204,7 @@ TEST_F(SQLGenerationTest, GPUMetricConditionTest) {
     
     // Expected SQL format:
     // SELECT compute_usage , ts, host_ip, gpu_index, gpu_name 
-    // FROM gpu_metrics 
+    // FROM gpu 
     // WHERE compute_usage >= 85.0  
     // ORDER BY ts DESC
     
@@ -226,13 +226,13 @@ TEST_F(SQLGenerationTest, NetworkMetricConditionTest) {
     nlohmann::json expression = {
         {"and", {
             {
-                {"stable", "network_metrics"},
+                {"stable", "network"},
                 {"metric", "rx_errors"},
                 {"operator", ">"},
                 {"threshold", 0}
             },
             {
-                {"stable", "network_metrics"},
+                {"stable", "network"},
                 {"tag", "interface"},
                 {"operator", "=="},
                 {"value", "eth0"}
@@ -242,7 +242,7 @@ TEST_F(SQLGenerationTest, NetworkMetricConditionTest) {
     
     // Expected SQL format:
     // SELECT rx_errors , ts, host_ip, interface 
-    // FROM network_metrics 
+    // FROM network 
     // WHERE (interface = 'eth0') AND (rx_errors > 0)  
     // ORDER BY ts DESC
     
@@ -262,7 +262,7 @@ TEST_F(SQLGenerationTest, NetworkMetricConditionTest) {
 TEST_F(SQLGenerationTest, MemoryMetricConditionTest) {
     // Test memory metric condition
     nlohmann::json expression = {
-        {"stable", "memory_metrics"},
+        {"stable", "memory"},
         {"metric", "usage_percent"},
         {"operator", ">="},
         {"threshold", 95.0}
@@ -270,7 +270,7 @@ TEST_F(SQLGenerationTest, MemoryMetricConditionTest) {
     
     // Expected SQL format:
     // SELECT usage_percent , ts, host_ip 
-    // FROM memory_metrics 
+    // FROM memory 
     // WHERE usage_percent >= 95.0  
     // ORDER BY ts DESC
     
@@ -292,13 +292,13 @@ TEST_F(SQLGenerationTest, DiskMetricWithTagConditionTest) {
     nlohmann::json expression = {
         {"and", {
             {
-                {"stable", "disk_metrics"},
+                {"stable", "disk"},
                 {"metric", "usage_percent"},
                 {"operator", ">"},
                 {"threshold", 80.0}
             },
             {
-                {"stable", "disk_metrics"},
+                {"stable", "disk"},
                 {"tag", "mount_point"},
                 {"operator", "=="},
                 {"value", "/"}
@@ -308,7 +308,7 @@ TEST_F(SQLGenerationTest, DiskMetricWithTagConditionTest) {
     
     // Expected SQL format:
     // SELECT usage_percent , ts, host_ip, device, mount_point 
-    // FROM disk_metrics 
+    // FROM disk 
     // WHERE (mount_point = '/') AND (usage_percent > 80.0)  
     // ORDER BY ts DESC
     
@@ -336,7 +336,7 @@ TEST_F(SQLGenerationTest, EngineCanProcessNewFormatTest) {
     
     // Create and insert a rule with new format
     nlohmann::json expression = {
-        {"stable", "cpu_metrics"},
+        {"stable", "cpu"},
         {"metric", "usage_percent"},
         {"operator", ">"},
         {"threshold", 90.0}
@@ -371,7 +371,7 @@ TEST_F(SQLGenerationTest, ComparisonOperatorsTest) {
     
     for (const auto& op : operators) {
         nlohmann::json expression = {
-            {"stable", "cpu_metrics"},
+            {"stable", "cpu"},
             {"metric", "usage_percent"},
             {"operator", op},
             {"threshold", 80.0}
@@ -395,7 +395,7 @@ TEST_F(SQLGenerationTest, ComparisonOperatorsTest) {
 TEST_F(SQLGenerationTest, NewFormatCharacteristicsTest) {
     // Test that new format characteristics are maintained
     nlohmann::json expression = {
-        {"stable", "cpu_metrics"},
+        {"stable", "cpu"},
         {"metric", "usage_percent"},
         {"operator", ">"},
         {"threshold", 90.0}
@@ -416,7 +416,7 @@ TEST_F(SQLGenerationTest, NewFormatCharacteristicsTest) {
     
     // Test that it can be parsed back
     nlohmann::json parsed = nlohmann::json::parse(json_str);
-    EXPECT_EQ(parsed["stable"], "cpu_metrics");
+    EXPECT_EQ(parsed["stable"], "cpu");
     EXPECT_EQ(parsed["metric"], "usage_percent");
     EXPECT_EQ(parsed["operator"], ">");
     EXPECT_EQ(parsed["threshold"], 90.0);

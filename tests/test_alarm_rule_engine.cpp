@@ -8,7 +8,7 @@
 class AlarmRuleEngineTest : public ::testing::Test {
 protected:
     void SetUp() override {
-        rule_storage = std::make_shared<AlarmRuleStorage>("127.0.0.1", 3306, "test", "HZ715Net", "alarm");
+        rule_storage = std::make_shared<AlarmRuleStorage>("127.0.0.1", 3306, "test", "HZ715Net", "alarm_test");
         resource_storage = std::make_shared<ResourceStorage>("127.0.0.1", "test", "HZ715Net");
         
         // 连接数据库
@@ -77,7 +77,7 @@ TEST_F(AlarmRuleEngineTest, AlarmEventCallbackTest) {
     
     // 创建一个简单的告警规则 (新格式，无聚合函数)
     nlohmann::json expression = {
-        {"stable", "cpu_metrics"},
+        {"stable", "cpu"},
         {"metric", "usage_percent"},
         {"operator", ">"},
         {"threshold", 80.0}

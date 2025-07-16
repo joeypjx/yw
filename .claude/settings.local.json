@@ -12,7 +12,8 @@
       "Bash(install_name_tool:*)",
       "Bash(./MyProject)",
       "Bash(./tests/tests:*)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Bash(./tests:*)"
     ],
     "deny": []
   }
