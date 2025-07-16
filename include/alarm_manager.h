@@ -2,6 +2,7 @@
 
 #include <string>
 #include <memory>
+#include <chrono>
 #include <mysql.h>
 #include "json.hpp"
 
