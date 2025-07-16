@@ -1,3 +1,5 @@
+#include "multicast_sender.h"
+#include "http_server.h"
 #include <iostream>
 #include <thread>
 #include <chrono>
@@ -336,28 +338,39 @@ public:
 int main() {
     std::cout << "🎯 告警系统完整工作流程演示" << std::endl;
     std::cout << "===============================================" << std::endl;
+
+    // 初始化组播发送器
+    MulticastSender multicast_sender("239.192.168.80", 3980);
+    multicast_sender.start();
     
     try {
         // 1. 初始化资源存储
         std::cout << "\n📦 初始化资源存储..." << std::endl;
-        ResourceStorage storage("127.0.0.1", "test", "HZ715Net");
+        auto storage_ptr = std::make_shared<ResourceStorage>("127.0.0.1", "test", "HZ715Net");
         
-        if (!storage.connect()) {
+        if (!storage_ptr->connect()) {
             std::cerr << "❌ 无法连接到TDengine" << std::endl;
             return 1;
         }
         
-        if (!storage.createDatabase("resource")) {
+        if (!storage_ptr->createDatabase("resource")) {
             std::cerr << "❌ 无法创建资源数据库" << std::endl;
             return 1;
         }
         
-        if (!storage.createResourceTable()) {
+        if (!storage_ptr->createResourceTable()) {
             std::cerr << "❌ 无法创建资源表" << std::endl;
             return 1;
         }
         
         std::cout << "✅ 资源存储初始化完成" << std::endl;
+
+        // 启动HTTP服务器
+        HttpServer http_server(storage_ptr);
+        if (!http_server.start()) {
+            std::cerr << "❌ 无法启动HTTP服务器" << std::endl;
+            return 1;
+        }
         
         // 2. 初始化告警规则存储
         std::cout << "\n📋 初始化告警规则存储..." << std::endl;
@@ -411,9 +424,8 @@ int main() {
         // 6. 初始化告警规则引擎
         std::cout << "\n⚙️  初始化告警规则引擎..." << std::endl;
         auto rule_storage_ptr = std::make_shared<AlarmRuleStorage>(alarm_storage);
-        auto resource_storage_ptr = std::make_shared<ResourceStorage>(storage);
         
-        AlarmRuleEngine engine(rule_storage_ptr, resource_storage_ptr, alarm_manager_ptr);
+        AlarmRuleEngine engine(rule_storage_ptr, storage_ptr, alarm_manager_ptr);
         
         // 7. 设置告警事件监控
         AlarmEventMonitor monitor;
@@ -438,8 +450,8 @@ int main() {
         std::vector<std::thread> data_threads;
         
         // 启动两个节点的数据生成线程
-        data_threads.emplace_back(nodeDataGeneratorThread, "192.168.1.100", std::ref(storage), 1);
-        data_threads.emplace_back(nodeDataGeneratorThread, "192.168.1.101", std::ref(storage), 2);
+        data_threads.emplace_back(nodeDataGeneratorThread, "192.168.1.100", std::ref(*storage_ptr), 1);
+        data_threads.emplace_back(nodeDataGeneratorThread, "192.168.1.101", std::ref(*storage_ptr), 2);
         
         std::cout << "✅ 数据生成线程启动完成" << std::endl;
         
@@ -472,6 +484,10 @@ int main() {
         // 11. 停止系统
         std::cout << "\n🛑 停止告警系统..." << std::endl;
         g_running = false;
+
+        // 停止组播发送器
+        multicast_sender.stop();
+        http_server.stop();
         
         // 等待数据生成线程结束
         for (auto& thread : data_threads) {
