@@ -1,4 +1,5 @@
 #include "resource_storage.h"
+#include "log_manager.h"
 #include <iostream>
 #include <sstream>
 #include <chrono>
@@ -32,7 +33,7 @@ bool ResourceStorage::connect() {
 
     m_taos = taos_connect(m_host.c_str(), m_user.c_str(), m_password.c_str(), nullptr, 0);
     if (m_taos == nullptr) {
-        std::cerr << "Failed to connect to TDengine: " << taos_errstr(m_taos) << std::endl;
+        LogManager::getLogger()->error("Failed to connect to TDengine: {}", taos_errstr(m_taos));
         return false;
     }
 
@@ -50,7 +51,7 @@ void ResourceStorage::disconnect() {
 
 bool ResourceStorage::createDatabase(const std::string& dbName) {
     if (!m_connected) {
-        std::cerr << "Not connected to TDengine" << std::endl;
+        LogManager::getLogger()->error("Not connected to TDengine");
         return false;
     }
 
@@ -65,7 +66,7 @@ bool ResourceStorage::createDatabase(const std::string& dbName) {
 
 bool ResourceStorage::createResourceTable() {
     if (!m_connected) {
-        std::cerr << "Not connected to TDengine" << std::endl;
+        LogManager::getLogger()->error("Not connected to TDengine");
         return false;
     }
 
@@ -144,14 +145,14 @@ bool ResourceStorage::createResourceTable() {
 
 bool ResourceStorage::executeQuery(const std::string& sql) {
     if (!m_connected) {
-        std::cerr << "Not connected to TDengine" << std::endl;
+        LogManager::getLogger()->error("Not connected to TDengine");
         return false;
     }
 
     TAOS_RES* result = taos_query(m_taos, sql.c_str());
     if (taos_errno(result) != 0) {
-        std::cerr << "SQL execution failed: " << taos_errstr(result) << std::endl;
-        std::cerr << "SQL: " << sql << std::endl;
+        LogManager::getLogger()->error("SQL execution failed: {}", taos_errstr(result));
+        LogManager::getLogger()->error("SQL: {}", sql);
         taos_free_result(result);
         return false;
     }
@@ -232,7 +233,7 @@ std::string ResourceStorage::generateCreateTableSQL() {
 
 bool ResourceStorage::insertResourceData(const std::string& hostIp, const nlohmann::json& resourceData) {
     if (!m_connected) {
-        std::cerr << "Not connected to TDengine" << std::endl;
+        LogManager::getLogger()->error("Not connected to TDengine");
         return false;
     }
 
@@ -323,7 +324,7 @@ bool ResourceStorage::insertMemoryData(const std::string& hostIp, const nlohmann
 
 bool ResourceStorage::insertNetworkData(const std::string& hostIp, const nlohmann::json& networkData) {
     if (!networkData.is_array()) {
-        std::cerr << "Network data should be an array" << std::endl;
+        LogManager::getLogger()->error("Network data should be an array");
         return false;
     }
 
@@ -367,7 +368,7 @@ bool ResourceStorage::insertNetworkData(const std::string& hostIp, const nlohman
 
 bool ResourceStorage::insertDiskData(const std::string& hostIp, const nlohmann::json& diskData) {
     if (!diskData.is_array()) {
-        std::cerr << "Disk data should be an array" << std::endl;
+        LogManager::getLogger()->error("Disk data should be an array");
         return false;
     }
 
@@ -408,7 +409,7 @@ bool ResourceStorage::insertDiskData(const std::string& hostIp, const nlohmann::
 
 bool ResourceStorage::insertGpuData(const std::string& hostIp, const nlohmann::json& gpuData) {
     if (!gpuData.is_array()) {
-        std::cerr << "GPU data should be an array" << std::endl;
+        LogManager::getLogger()->error("GPU data should be an array");
         return false;
     }
 
@@ -473,16 +474,16 @@ std::vector<QueryResult> ResourceStorage::executeQuerySQL(const std::string& sql
     std::vector<QueryResult> results;
     
     if (!m_connected || !m_taos) {
-        std::cerr << "ResourceStorage: Not connected to TDengine" << std::endl;
+        LogManager::getLogger()->error("ResourceStorage: Not connected to TDengine");
         return results;
     }
     
-    std::cout << "[DEBUG] ResourceStorage: Executing query: " << sql << std::endl;
+    LogManager::getLogger()->debug("ResourceStorage: Executing query: {}", sql);
     
     TAOS_RES* res = taos_query(m_taos, sql.c_str());
     if (taos_errno(res) != 0) {
-        std::cerr << "ResourceStorage: Query failed: " << taos_errstr(res) << std::endl;
-        std::cerr << "ResourceStorage: SQL: " << sql << std::endl;
+        LogManager::getLogger()->error("ResourceStorage: Query failed: {}", taos_errstr(res));
+        LogManager::getLogger()->error("ResourceStorage: SQL: {}", sql);
         taos_free_result(res);
         return results;
     }
@@ -560,6 +561,6 @@ std::vector<QueryResult> ResourceStorage::executeQuerySQL(const std::string& sql
     
     taos_free_result(res);
     
-    std::cout << "[DEBUG] ResourceStorage: Query returned " << results.size() << " rows" << std::endl;
+    LogManager::getLogger()->debug("ResourceStorage: Query returned {} rows", results.size());
     return results;
 }

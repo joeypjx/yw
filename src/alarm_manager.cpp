@@ -1,5 +1,6 @@
 #include "alarm_manager.h"
 #include "alarm_rule_engine.h"
+#include "log_manager.h"
 #include <iostream>
 #include <sstream>
 #include <iomanip>
@@ -447,13 +448,13 @@ std::string AlarmManager::formatTimestamp(const std::chrono::system_clock::time_
 }
 
 void AlarmManager::logInfo(const std::string& message) {
-    std::cout << "[INFO] AlarmManager: " << message << std::endl;
+    LogManager::getLogger()->info("AlarmManager: {}", message);
 }
 
 void AlarmManager::logError(const std::string& message) {
-    std::cerr << "[ERROR] AlarmManager: " << message << std::endl;
+    LogManager::getLogger()->error("AlarmManager: {}", message);
 }
 
 void AlarmManager::logDebug(const std::string& message) {
-    std::cout << "[DEBUG] AlarmManager: " << message << std::endl;
+    LogManager::getLogger()->debug("AlarmManager: {}", message);
 }

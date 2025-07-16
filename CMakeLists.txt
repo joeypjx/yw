@@ -77,6 +77,7 @@ file(GLOB_RECURSE HEADERS "include/*.h")
 
 add_executable(${PROJECT_NAME} ${SOURCES} ${HEADERS})
 
+# spdlog will automatically define SPDLOG_HEADER_ONLY when not using compiled lib
 
 # Link libraries
 target_link_libraries(${PROJECT_NAME} ${TAOS_LIBRARY} ${MYSQL_LIBRARY} ${UUID_LIBRARY} Threads::Threads)

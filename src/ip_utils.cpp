@@ -1,4 +1,5 @@
 #include "ip_utils.h"
+#include "log_manager.h"
 #include "json.hpp"
 #include <fstream>
 #include <iostream>
@@ -43,18 +44,18 @@ std::string IPAddressUtil::getIPAddress(const std::string& configPath) {
     if (!configPath.empty()) {
         std::string ip = getIPFromConfig(configPath);
         if (!ip.empty()) {
-            std::cout << "IP address loaded from config: " << ip << std::endl;
+            LogManager::getLogger()->info("IP address loaded from config: {}", ip);
             return ip;
         }
     }
 
     std::string ip = getSmartDefaultIP();
     if (!ip.empty()) {
-        std::cout << "Smart default IP address selected: " << ip << std::endl;
+        LogManager::getLogger()->info("Smart default IP address selected: {}", ip);
         return ip;
     }
 
-    std::cout << "Falling back to loopback IP address." << std::endl;
+    LogManager::getLogger()->info("Falling back to loopback IP address.");
     return "127.0.0.1";
 }
 
@@ -79,7 +80,7 @@ std::string IPAddressUtil::getIPFromConfig(const std::string& configPath) {
         }
 
     } catch (const json::exception& e) {
-        std::cerr << "Error parsing IP config file " << configPath << ": " << e.what() << std::endl;
+        LogManager::getLogger()->error("Error parsing IP config file {}: {}", configPath, e.what());
     }
 
     return "";

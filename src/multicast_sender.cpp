@@ -1,5 +1,6 @@
 #include "multicast_sender.h"
 #include "ip_utils.h"
+#include "log_manager.h"
 #include "json.hpp"
 #include <iostream>
 #include <chrono>
@@ -34,7 +35,7 @@ void MulticastSender::start() {
     m_running = true;
     m_threads.emplace_back(&MulticastSender::heartbeatLoop, this);
     m_threads.emplace_back(&MulticastSender::resourceLoop, this);
-    std::cout << "MulticastSender started." << std::endl;
+    LogManager::getLogger()->info("MulticastSender started.");
 }
 
 void MulticastSender::stop() {
@@ -44,7 +45,7 @@ void MulticastSender::stop() {
             thread.join();
         }
     }
-    std::cout << "MulticastSender stopped." << std::endl;
+    LogManager::getLogger()->info("MulticastSender stopped.");
 }
 
 void MulticastSender::heartbeatLoop() {
@@ -60,9 +61,9 @@ void MulticastSender::heartbeatLoop() {
 
     while (m_running) {
         if (!sendMulticastMessage(msg_str)) {
-            std::cerr << "Failed to send heartbeat multicast message." << std::endl;
+            LogManager::getLogger()->error("Failed to send heartbeat multicast message.");
         } else {
-            std::cout << "Sent heartbeat message." << std::endl;
+            LogManager::getLogger()->info("Sent heartbeat message.");
         }
         std::this_thread::sleep_for(std::chrono::seconds(2));
     }
@@ -81,9 +82,9 @@ void MulticastSender::resourceLoop() {
 
     while (m_running) {
         if (!sendMulticastMessage(msg_str)) {
-            std::cerr << "Failed to send resource multicast message." << std::endl;
+            LogManager::getLogger()->error("Failed to send resource multicast message.");
         } else {
-            std::cout << "Sent resource message." << std::endl;
+            LogManager::getLogger()->info("Sent resource message.");
         }
         std::this_thread::sleep_for(std::chrono::seconds(5));
     }

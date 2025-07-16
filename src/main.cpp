@@ -1,5 +1,6 @@
 #include "multicast_sender.h"
 #include "http_server.h"
+#include "log_manager.h"
 #include <iostream>
 #include <thread>
 #include <chrono>
@@ -122,7 +123,7 @@ public:
 
 // 模拟节点数据生成线程
 void nodeDataGeneratorThread(const std::string& node_ip, ResourceStorage& storage, int node_id) {
-    std::cout << "🚀 启动节点 " << node_ip << " 数据生成线程" << std::endl;
+    LogManager::getLogger()->info("🚀 启动节点 {} 数据生成线程", node_ip);
     
     ResourceDataGenerator generator;
     int cycle_count = 0;
@@ -146,35 +147,34 @@ void nodeDataGeneratorThread(const std::string& node_ip, ResourceStorage& storag
                     double cpu_usage = data["cpu"]["usage_percent"];
                     double memory_usage = data["memory"]["usage_percent"];
                     double disk_usage = data["disk"][0]["usage_percent"];
-                    std::cout << "🔥 [" << node_ip << "] 高使用率数据 - CPU:" << cpu_usage 
-                              << "%, MEM:" << memory_usage << "%, DISK:" << disk_usage 
-                              << "% (周期: " << cycle_count << ")" << std::endl;
+                    LogManager::getLogger()->info("🔥 [{}] 高使用率数据 - CPU:{}%, MEM:{}%, DISK:{}% (周期: {})", 
+                                 node_ip, cpu_usage, memory_usage, disk_usage, cycle_count);
                 } else if (cycle_count % 5 == 0) {
-                    std::cout << "📊 [" << node_ip << "] 正常数据 (周期: " << cycle_count << ")" << std::endl;
+                    LogManager::getLogger()->info("📊 [{}] 正常数据 (周期: {})", node_ip, cycle_count);
                 }
             } else {
-                std::cerr << "❌ [" << node_ip << "] 数据插入失败" << std::endl;
+                LogManager::getLogger()->error("❌ [{}] 数据插入失败", node_ip);
             }
             
             cycle_count++;
             std::this_thread::sleep_for(std::chrono::seconds(2)); // 每2秒生成一次数据
             
         } catch (const std::exception& e) {
-            std::cerr << "❌ [" << node_ip << "] 数据生成异常: " << e.what() << std::endl;
+            LogManager::getLogger()->error("❌ [{}] 数据生成异常: {}", node_ip, e.what());
         }
     }
     
-    std::cout << "🛑 节点 " << node_ip << " 数据生成线程已停止" << std::endl;
+    LogManager::getLogger()->info("🛑 节点 {} 数据生成线程已停止", node_ip);
 }
 
 // 创建测试告警规则
 void createTestAlarmRules(AlarmRuleStorage& alarm_storage) {
-    std::cout << "\n=== 创建测试告警规则 ===" << std::endl;
+    LogManager::getLogger()->info("{}");
     
     // 检查告警规则表是否为空
     auto existing_rules = alarm_storage.getAllAlarmRules();
     if (!existing_rules.empty()) {
-        std::cout << "📋 发现已有 " << existing_rules.size() << " 个告警规则，清空并重新创建" << std::endl;
+        LogManager::getLogger()->info("📋 发现已有 {} 个告警规则，清空并重新创建", existing_rules.size());
         
         // 清空现有规则
         for (const auto& rule : existing_rules) {
@@ -182,7 +182,7 @@ void createTestAlarmRules(AlarmRuleStorage& alarm_storage) {
         }
     }
     
-    std::cout << "🔧 创建新的测试告警规则..." << std::endl;
+    LogManager::getLogger()->info("{}");
     
     // 规则1: 高CPU使用率告警 (阈值降低，便于触发)
     nlohmann::json cpu_rule = {
@@ -239,23 +239,23 @@ void createTestAlarmRules(AlarmRuleStorage& alarm_storage) {
     std::vector<std::string> rule_ids = {cpu_rule_id, memory_rule_id, disk_rule_id};
     std::vector<std::string> rule_names = {"HighCpuUsage", "HighMemoryUsage", "HighDiskUsage"};
     
-    std::cout << "✅ 创建告警规则结果:" << std::endl;
+    LogManager::getLogger()->info("{}");
     for (size_t i = 0; i < rule_ids.size(); i++) {
         if (!rule_ids[i].empty()) {
-            std::cout << "  - " << rule_names[i] << ": " << rule_ids[i] << std::endl;
+            LogManager::getLogger()->info("  - {}: {}", rule_names[i], rule_ids[i]);
         } else {
-            std::cout << "  - " << rule_names[i] << ": 创建失败" << std::endl;
+            LogManager::getLogger()->error("  - {}: 创建失败", rule_names[i]);
         }
     }
     
     // 显示最终规则统计
     auto final_rules = alarm_storage.getAllAlarmRules();
-    std::cout << "📊 当前告警规则总数: " << final_rules.size() << std::endl;
+    LogManager::getLogger()->info("📊 当前告警规则总数: {}", final_rules.size());
 }
 
 // 手动触发告警的测试函数
 void triggerTestAlarms(std::shared_ptr<AlarmManager> alarm_manager) {
-    std::cout << "\n=== 手动触发测试告警 ===" << std::endl;
+    LogManager::getLogger()->info("{}");
     
     // 创建测试告警事件
     AlarmEvent test_event;
@@ -270,9 +270,9 @@ void triggerTestAlarms(std::shared_ptr<AlarmManager> alarm_manager) {
     test_event.generator_url = "http://test.example.com";
     
     if (alarm_manager->processAlarmEvent(test_event)) {
-        std::cout << "✅ 手动触发告警事件成功" << std::endl;
+        LogManager::getLogger()->info("{}");
     } else {
-        std::cout << "❌ 手动触发告警事件失败" << std::endl;
+        LogManager::getLogger()->info("{}");
     }
     
     // 等待几秒后解决告警
@@ -282,9 +282,9 @@ void triggerTestAlarms(std::shared_ptr<AlarmManager> alarm_manager) {
     test_event.ends_at = std::chrono::system_clock::now();
     
     if (alarm_manager->processAlarmEvent(test_event)) {
-        std::cout << "✅ 手动解决告警事件成功" << std::endl;
+        LogManager::getLogger()->info("{}");
     } else {
-        std::cout << "❌ 手动解决告警事件失败" << std::endl;
+        LogManager::getLogger()->info("{}");
     }
 }
 
@@ -302,16 +302,16 @@ public:
         
         if (event.status == "firing") {
             firing_count++;
-            std::cout << "🔥 [告警触发] " << event.fingerprint << std::endl;
+            LogManager::getLogger()->warn("🔥 [告警触发] {}", event.fingerprint);
             if (event.annotations.find("summary") != event.annotations.end()) {
-                std::cout << "   摘要: " << event.annotations.at("summary") << std::endl;
+                LogManager::getLogger()->warn("   摘要: {}", event.annotations.at("summary"));
             }
             if (event.annotations.find("description") != event.annotations.end()) {
-                std::cout << "   描述: " << event.annotations.at("description") << std::endl;
+                LogManager::getLogger()->info("   描述: {}", event.annotations.at("description"));
             }
         } else if (event.status == "resolved") {
             resolved_count++;
-            std::cout << "✅ [告警恢复] " << event.fingerprint << std::endl;
+            LogManager::getLogger()->info("✅ [告警恢复] {}", event.fingerprint);
         }
         
         recent_events.push_back(event.fingerprint + " - " + event.status);
@@ -322,12 +322,12 @@ public:
     
     void printStatistics() {
         std::lock_guard<std::mutex> lock(events_mutex);
-        std::cout << "\n📈 告警事件统计:" << std::endl;
-        std::cout << "  - 触发次数: " << firing_count.load() << std::endl;
-        std::cout << "  - 恢复次数: " << resolved_count.load() << std::endl;
-        std::cout << "  - 最近事件:" << std::endl;
+        LogManager::getLogger()->info("{}");
+        LogManager::getLogger()->info("  - 触发次数: {}", firing_count.load());
+        LogManager::getLogger()->info("  - 恢复次数: {}", resolved_count.load());
+        LogManager::getLogger()->info("{}");
         for (const auto& event : recent_events) {
-            std::cout << "    " << event << std::endl;
+            LogManager::getLogger()->info("    {}", event);
         }
     }
     
@@ -335,9 +335,19 @@ public:
     int getResolvedCount() const { return resolved_count.load(); }
 };
 
-int main() {
-    std::cout << "🎯 告警系统完整工作流程演示" << std::endl;
-    std::cout << "===============================================" << std::endl;
+int main(int argc, char* argv[]) {
+    // Initialize the logger as the first step
+    LogManager::init("log_config.json");
+
+    bool start_simulation = true;
+    for (int i = 1; i < argc; ++i) {
+        if (std::string(argv[i]) == "--no-simulation") {
+            start_simulation = false;
+            break;
+        }
+    }
+
+    LogManager::getLogger()->info("🎯 Alarm system starting up...");
 
     // 初始化组播发送器
     MulticastSender multicast_sender("239.192.168.80", 3980);
@@ -345,84 +355,84 @@ int main() {
     
     try {
         // 1. 初始化资源存储
-        std::cout << "\n📦 初始化资源存储..." << std::endl;
+        LogManager::getLogger()->info("📦 Initializing resource storage...");
         auto storage_ptr = std::make_shared<ResourceStorage>("127.0.0.1", "test", "HZ715Net");
         
         if (!storage_ptr->connect()) {
-            std::cerr << "❌ 无法连接到TDengine" << std::endl;
+            LogManager::getLogger()->critical("❌ Failed to connect to TDengine");
             return 1;
         }
         
         if (!storage_ptr->createDatabase("resource")) {
-            std::cerr << "❌ 无法创建资源数据库" << std::endl;
+            LogManager::getLogger()->critical("❌ Failed to create resource database");
             return 1;
         }
         
         if (!storage_ptr->createResourceTable()) {
-            std::cerr << "❌ 无法创建资源表" << std::endl;
+            LogManager::getLogger()->critical("❌ Failed to create resource tables");
             return 1;
         }
         
-        std::cout << "✅ 资源存储初始化完成" << std::endl;
+        LogManager::getLogger()->info("✅ Resource storage initialized successfully.");
 
         // 启动HTTP服务器
         HttpServer http_server(storage_ptr);
         if (!http_server.start()) {
-            std::cerr << "❌ 无法启动HTTP服务器" << std::endl;
+            LogManager::getLogger()->critical("❌ Failed to start HTTP server");
             return 1;
         }
         
         // 2. 初始化告警规则存储
-        std::cout << "\n📋 初始化告警规则存储..." << std::endl;
+        LogManager::getLogger()->info("📋 Initializing alarm rule storage...");
         AlarmRuleStorage alarm_storage("127.0.0.1", 3306, "test", "HZ715Net", "alarm");
         
         if (!alarm_storage.connect()) {
-            std::cerr << "❌ 无法连接到MySQL" << std::endl;
+            LogManager::getLogger()->critical("❌ Failed to connect to MySQL for alarm rules");
             return 1;
         }
         
         if (!alarm_storage.createDatabase()) {
-            std::cerr << "❌ 无法创建告警数据库" << std::endl;
+            LogManager::getLogger()->critical("❌ Failed to create alarm database");
             return 1;
         }
         
         if (!alarm_storage.createTable()) {
-            std::cerr << "❌ 无法创建告警规则表" << std::endl;
+            LogManager::getLogger()->critical("❌ Failed to create alarm rule table");
             return 1;
         }
         
-        std::cout << "✅ 告警规则存储初始化完成" << std::endl;
+        LogManager::getLogger()->info("✅ Alarm rule storage initialized successfully.");
         
         // 3. 创建测试告警规则
         createTestAlarmRules(alarm_storage);
         
         // 4. 初始化告警管理器
-        std::cout << "\n🚨 初始化告警管理器..." << std::endl;
+        LogManager::getLogger()->info("{}");
         auto alarm_manager_ptr = std::make_shared<AlarmManager>("127.0.0.1", 3306, "test", "HZ715Net", "alarm");
         
         if (!alarm_manager_ptr->connect()) {
-            std::cerr << "❌ 无法连接到MySQL (告警管理器)" << std::endl;
+            LogManager::getLogger()->error("{}");
             return 1;
         }
         
         // 选择数据库
         if (mysql_select_db(alarm_manager_ptr->getConnection(), "alarm") != 0) {
-            std::cerr << "❌ 无法选择告警数据库" << std::endl;
+            LogManager::getLogger()->error("{}");
             return 1;
         }
         
         if (!alarm_manager_ptr->createEventTable()) {
-            std::cerr << "❌ 无法创建告警事件表" << std::endl;
+            LogManager::getLogger()->error("{}");
             return 1;
         }
         
-        std::cout << "✅ 告警管理器初始化完成" << std::endl;
+        LogManager::getLogger()->info("{}");
         
         // 5. 手动触发测试告警
         // triggerTestAlarms(alarm_manager_ptr);
         
         // 6. 初始化告警规则引擎
-        std::cout << "\n⚙️  初始化告警规则引擎..." << std::endl;
+        LogManager::getLogger()->info("{}");
         auto rule_storage_ptr = std::make_shared<AlarmRuleStorage>(alarm_storage);
         
         AlarmRuleEngine engine(rule_storage_ptr, storage_ptr, alarm_manager_ptr);
@@ -437,52 +447,54 @@ int main() {
         engine.setEvaluationInterval(std::chrono::seconds(3));
         
         // 8. 启动告警引擎
-        std::cout << "\n🔄 启动告警规则引擎..." << std::endl;
+        LogManager::getLogger()->info("{}");
         if (!engine.start()) {
-            std::cerr << "❌ 无法启动告警规则引擎" << std::endl;
+            LogManager::getLogger()->error("{}");
             return 1;
         }
         
-        std::cout << "✅ 告警规则引擎启动完成" << std::endl;
+        LogManager::getLogger()->info("{}");
         
         // 9. 启动模拟数据生成线程
-        std::cout << "\n🔄 启动模拟数据生成线程..." << std::endl;
         std::vector<std::thread> data_threads;
-        
-        // 启动两个节点的数据生成线程
-        data_threads.emplace_back(nodeDataGeneratorThread, "192.168.1.100", std::ref(*storage_ptr), 1);
-        data_threads.emplace_back(nodeDataGeneratorThread, "192.168.1.101", std::ref(*storage_ptr), 2);
-        
-        std::cout << "✅ 数据生成线程启动完成" << std::endl;
+        if (start_simulation) {
+            LogManager::getLogger()->info("{}");
+            // 启动两个节点的数据生成线程
+            data_threads.emplace_back(nodeDataGeneratorThread, "192.168.1.100", std::ref(*storage_ptr), 1);
+            data_threads.emplace_back(nodeDataGeneratorThread, "192.168.1.101", std::ref(*storage_ptr), 2);
+            LogManager::getLogger()->info("{}");
+        } else {
+            LogManager::getLogger()->info("{}");
+        }
         
         // 10. 监控和报告
-        std::cout << "\n🔍 开始监控告警系统..." << std::endl;
-        std::cout << "系统将运行 60 秒，期间会模拟高使用率场景以触发告警" << std::endl;
-        std::cout << "注意：由于告警规则引擎使用模拟查询，可能不会触发实际告警" << std::endl;
+        LogManager::getLogger()->info("{}");
+        LogManager::getLogger()->info("{}");
+        LogManager::getLogger()->info("{}");
         
         // 运行60秒，每20秒输出一次统计
         for (int i = 0; i < 3; i++) {
             std::this_thread::sleep_for(std::chrono::seconds(20));
             
-            std::cout << "\n⏱️  运行时间: " << (i + 1) * 20 << " 秒" << std::endl;
+            LogManager::getLogger()->info("\n⏱️  运行时间: {} 秒", (i + 1) * 20);
             monitor.printStatistics();
             
             // 查询告警管理器统计
-            std::cout << "\n📊 告警管理器统计:" << std::endl;
-            std::cout << "  - 活跃告警: " << alarm_manager_ptr->getActiveAlarmCount() << std::endl;
-            std::cout << "  - 总告警数: " << alarm_manager_ptr->getTotalAlarmCount() << std::endl;
+            LogManager::getLogger()->info("{}");
+            LogManager::getLogger()->info("  - 活跃告警: {}", alarm_manager_ptr->getActiveAlarmCount());
+            LogManager::getLogger()->info("  - 总告警数: {}", alarm_manager_ptr->getTotalAlarmCount());
             
             // 显示当前告警实例
             auto instances = engine.getCurrentAlarmInstances();
-            std::cout << "  - 当前告警实例数: " << instances.size() << std::endl;
+            LogManager::getLogger()->info("  - 当前告警实例数: {}", instances.size());
             for (const auto& instance : instances) {
-                std::cout << "    * " << instance.fingerprint << " (状态: " << 
-                           static_cast<int>(instance.state) << ", 值: " << instance.value << ")" << std::endl;
+                LogManager::getLogger()->info("    * {} (状态: {}, 值: {})", 
+                           instance.fingerprint, static_cast<int>(instance.state), instance.value);
             }
         }
         
         // 11. 停止系统
-        std::cout << "\n🛑 停止告警系统..." << std::endl;
+        LogManager::getLogger()->info("{}");
         g_running = false;
 
         // 停止组播发送器
@@ -500,34 +512,36 @@ int main() {
         engine.stop();
         
         // 12. 最终统计报告
-        std::cout << "\n📈 最终统计报告:" << std::endl;
+        LogManager::getLogger()->info("{}");
         monitor.printStatistics();
         
-        std::cout << "\n📊 告警数据库统计:" << std::endl;
-        std::cout << "  - 活跃告警: " << alarm_manager_ptr->getActiveAlarmCount() << std::endl;
-        std::cout << "  - 总告警数: " << alarm_manager_ptr->getTotalAlarmCount() << std::endl;
+        LogManager::getLogger()->info("{}");
+        LogManager::getLogger()->info("  - 活跃告警: {}", alarm_manager_ptr->getActiveAlarmCount());
+        LogManager::getLogger()->info("  - 总告警数: {}", alarm_manager_ptr->getTotalAlarmCount());
         
         // 显示最近的告警事件
         auto recent_events = alarm_manager_ptr->getRecentAlarmEvents(10);
-        std::cout << "  - 最近告警事件:" << std::endl;
+        LogManager::getLogger()->info("{}");
         for (const auto& event : recent_events) {
-            std::cout << "    * " << event.fingerprint << " [" << event.status << "] " << event.created_at << std::endl;
+            LogManager::getLogger()->info("    * {} [{}] {}", event.fingerprint, event.status, event.created_at);
         }
         
         // 如果没有自动生成告警，提示用户
         if (monitor.getFiringCount() == 0) {
-            std::cout << "\n⚠️  注意：没有检测到自动生成的告警事件" << std::endl;
-            std::cout << "   这可能是因为告警规则引擎的查询模块使用了模拟数据" << std::endl;
-            std::cout << "   但手动触发的告警事件应该已经正确存储到数据库中" << std::endl;
+            LogManager::getLogger()->info("{}");
+            LogManager::getLogger()->info("{}");
+            LogManager::getLogger()->info("{}");
         }
         
-        std::cout << "\n✅ 告警系统演示完成！" << std::endl;
+        LogManager::getLogger()->info("{}");
         
     } catch (const std::exception& e) {
-        std::cerr << "❌ 系统异常: " << e.what() << std::endl;
+        LogManager::getLogger()->critical("❌ 系统异常: {}", e.what());
         g_running = false;
+        spdlog::shutdown(); // Ensure logs are flushed in case of exception
         return 1;
     }
     
+    spdlog::shutdown(); // Ensure logs are flushed before exiting
     return 0;
 }

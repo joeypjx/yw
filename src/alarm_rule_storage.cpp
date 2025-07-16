@@ -1,4 +1,5 @@
 #include "alarm_rule_storage.h"
+#include "log_manager.h"
 #include <iostream>
 #include <sstream>
 #include <iomanip>
@@ -22,13 +23,13 @@ bool AlarmRuleStorage::connect() {
 
     m_mysql = mysql_init(nullptr);
     if (m_mysql == nullptr) {
-        std::cerr << "Failed to initialize MySQL" << std::endl;
+        LogManager::getLogger()->error("Failed to initialize MySQL");
         return false;
     }
 
     if (mysql_real_connect(m_mysql, m_host.c_str(), m_user.c_str(), m_password.c_str(), 
                           nullptr, m_port, nullptr, 0) == nullptr) {
-        std::cerr << "Failed to connect to MySQL: " << mysql_error(m_mysql) << std::endl;
+        LogManager::getLogger()->error("Failed to connect to MySQL: {}", mysql_error(m_mysql));
         mysql_close(m_mysql);
         m_mysql = nullptr;
         return false;
@@ -48,7 +49,7 @@ void AlarmRuleStorage::disconnect() {
 
 bool AlarmRuleStorage::createDatabase() {
     if (!m_connected) {
-        std::cerr << "Not connected to MySQL" << std::endl;
+        LogManager::getLogger()->error("Not connected to MySQL");
         return false;
     }
 
@@ -64,7 +65,7 @@ bool AlarmRuleStorage::createDatabase() {
 
 bool AlarmRuleStorage::createTable() {
     if (!m_connected) {
-        std::cerr << "Not connected to MySQL" << std::endl;
+        LogManager::getLogger()->error("Not connected to MySQL");
         return false;
     }
 
@@ -97,7 +98,7 @@ std::string AlarmRuleStorage::insertAlarmRule(const std::string& alert_name,
                                             const std::string& description,
                                             bool enabled) {
     if (!m_connected) {
-        std::cerr << "Not connected to MySQL" << std::endl;
+        LogManager::getLogger()->error("Not connected to MySQL");
         return "";
     }
 
@@ -130,7 +131,7 @@ bool AlarmRuleStorage::updateAlarmRule(const std::string& id,
                                      const std::string& description,
                                      bool enabled) {
     if (!m_connected) {
-        std::cerr << "Not connected to MySQL" << std::endl;
+        LogManager::getLogger()->error("Not connected to MySQL");
         return false;
     }
 
@@ -152,7 +153,7 @@ bool AlarmRuleStorage::updateAlarmRule(const std::string& id,
 
 bool AlarmRuleStorage::deleteAlarmRule(const std::string& id) {
     if (!m_connected) {
-        std::cerr << "Not connected to MySQL" << std::endl;
+        LogManager::getLogger()->error("Not connected to MySQL");
         return false;
     }
 
@@ -164,20 +165,20 @@ AlarmRule AlarmRuleStorage::getAlarmRule(const std::string& id) {
     AlarmRule rule;
     
     if (!m_connected) {
-        std::cerr << "Not connected to MySQL" << std::endl;
+        LogManager::getLogger()->error("Not connected to MySQL");
         return rule;
     }
 
     std::string sql = "SELECT id, alert_name, expression_json, for_duration, severity, summary, description, enabled, created_at, updated_at FROM alarm_rules WHERE id = '" + escapeString(id) + "'";
     
     if (mysql_query(m_mysql, sql.c_str()) != 0) {
-        std::cerr << "Query failed: " << mysql_error(m_mysql) << std::endl;
+        LogManager::getLogger()->error("Query failed: {}", mysql_error(m_mysql));
         return rule;
     }
 
     MYSQL_RES* result = mysql_store_result(m_mysql);
     if (result == nullptr) {
-        std::cerr << "Failed to get result: " << mysql_error(m_mysql) << std::endl;
+        LogManager::getLogger()->error("Failed to get result: {}", mysql_error(m_mysql));
         return rule;
     }
 
@@ -203,20 +204,20 @@ std::vector<AlarmRule> AlarmRuleStorage::getAllAlarmRules() {
     std::vector<AlarmRule> rules;
     
     if (!m_connected) {
-        std::cerr << "Not connected to MySQL" << std::endl;
+        LogManager::getLogger()->error("Not connected to MySQL");
         return rules;
     }
 
     std::string sql = "SELECT id, alert_name, expression_json, for_duration, severity, summary, description, enabled, created_at, updated_at FROM alarm_rules ORDER BY created_at DESC";
     
     if (mysql_query(m_mysql, sql.c_str()) != 0) {
-        std::cerr << "Query failed: " << mysql_error(m_mysql) << std::endl;
+        LogManager::getLogger()->error("Query failed: {}", mysql_error(m_mysql));
         return rules;
     }
 
     MYSQL_RES* result = mysql_store_result(m_mysql);
     if (result == nullptr) {
-        std::cerr << "Failed to get result: " << mysql_error(m_mysql) << std::endl;
+        LogManager::getLogger()->error("Failed to get result: {}", mysql_error(m_mysql));
         return rules;
     }
 
@@ -244,20 +245,20 @@ std::vector<AlarmRule> AlarmRuleStorage::getEnabledAlarmRules() {
     std::vector<AlarmRule> rules;
     
     if (!m_connected) {
-        std::cerr << "Not connected to MySQL" << std::endl;
+        LogManager::getLogger()->error("Not connected to MySQL");
         return rules;
     }
 
     std::string sql = "SELECT id, alert_name, expression_json, for_duration, severity, summary, description, enabled, created_at, updated_at FROM alarm_rules WHERE enabled = TRUE ORDER BY created_at DESC";
     
     if (mysql_query(m_mysql, sql.c_str()) != 0) {
-        std::cerr << "Query failed: " << mysql_error(m_mysql) << std::endl;
+        LogManager::getLogger()->error("Query failed: {}", mysql_error(m_mysql));
         return rules;
     }
 
     MYSQL_RES* result = mysql_store_result(m_mysql);
     if (result == nullptr) {
-        std::cerr << "Failed to get result: " << mysql_error(m_mysql) << std::endl;
+        LogManager::getLogger()->error("Failed to get result: {}", mysql_error(m_mysql));
         return rules;
     }
 
@@ -283,13 +284,13 @@ std::vector<AlarmRule> AlarmRuleStorage::getEnabledAlarmRules() {
 
 bool AlarmRuleStorage::executeQuery(const std::string& sql) {
     if (!m_connected) {
-        std::cerr << "Not connected to MySQL" << std::endl;
+        LogManager::getLogger()->error("Not connected to MySQL");
         return false;
     }
 
     if (mysql_query(m_mysql, sql.c_str()) != 0) {
-        std::cerr << "Query failed: " << mysql_error(m_mysql) << std::endl;
-        std::cerr << "SQL: " << sql << std::endl;
+        LogManager::getLogger()->error("Query failed: {}", mysql_error(m_mysql));
+        LogManager::getLogger()->error("SQL: {}", sql);
         return false;
     }
 

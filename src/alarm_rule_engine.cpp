@@ -1,5 +1,6 @@
 #include "alarm_rule_engine.h"
 #include "alarm_manager.h"
+#include "log_manager.h"
 #include <iostream>
 #include <sstream>
 #include <regex>
@@ -264,6 +265,7 @@ std::string AlarmRuleEngine::convertRuleToSQL(const nlohmann::json& expression, 
         conditions.push_back(where_clause);
     }
     
+    conditions.push_back("ts > now() - 10s");
     if (conditions.size() > 0) {
         sql << " WHERE ";
     }
@@ -606,13 +608,13 @@ std::string AlarmEvent::toJson() const {
 }
 
 void AlarmRuleEngine::logDebug(const std::string& message) {
-    std::cout << "[DEBUG] " << message << std::endl;
+    LogManager::getLogger()->debug(message);
 }
 
 void AlarmRuleEngine::logInfo(const std::string& message) {
-    std::cout << "[INFO] " << message << std::endl;
+    LogManager::getLogger()->info(message);
 }
 
 void AlarmRuleEngine::logError(const std::string& message) {
-    std::cerr << "[ERROR] " << message << std::endl;
+    LogManager::getLogger()->error(message);
 }

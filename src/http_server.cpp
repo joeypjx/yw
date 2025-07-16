@@ -1,4 +1,5 @@
 #include "http_server.h"
+#include "log_manager.h"
 #include "json.hpp"
 #include <iostream>
 
@@ -47,11 +48,11 @@ void HttpServer::handle_resource(const httplib::Request& req, httplib::Response&
         if (m_resource_storage->insertResourceData(host_ip, resource)) {
             res.set_content("{\"status\":\"success\"}", "application/json");
             res.status = 200;
-            std::cout << "Successfully processed resource data for host: " << host_ip << std::endl;
+            LogManager::getLogger()->info("Successfully processed resource data for host: {}", host_ip);
         } else {
             res.set_content("{\"error\":\"Failed to store resource data\"}", "application/json");
             res.status = 500;
-            std::cerr << "Failed to store resource data for host: " << host_ip << std::endl;
+            LogManager::getLogger()->error("Failed to store resource data for host: {}", host_ip);
         }
 
     } catch (const json::parse_error& e) {
@@ -60,7 +61,7 @@ void HttpServer::handle_resource(const httplib::Request& req, httplib::Response&
     } catch (const std::exception& e) {
         res.set_content("{\"error\":\"An unexpected error occurred\"}", "application/json");
         res.status = 500;
-        std::cerr << "Exception in handle_resource: " << e.what() << std::endl;
+        LogManager::getLogger()->error("Exception in handle_resource: {}", e.what());
     }
 }
 
@@ -70,9 +71,9 @@ bool HttpServer::start() {
     }
     
     m_server_thread = std::thread([this]() {
-        std::cout << "HTTP server starting on " << m_host << ":" << m_port << std::endl;
+        LogManager::getLogger()->info("HTTP server starting on {}:{}", m_host, m_port);
         if (!m_server.listen(m_host.c_str(), m_port)) {
-            std::cerr << "HTTP server failed to start." << std::endl;
+            LogManager::getLogger()->error("HTTP server failed to start.");
         }
     });
 
@@ -87,6 +88,6 @@ void HttpServer::stop() {
         if (m_server_thread.joinable()) {
             m_server_thread.join();
         }
-        std::cout << "HTTP server stopped." << std::endl;
+        LogManager::getLogger()->info("HTTP server stopped.");
     }
 }
