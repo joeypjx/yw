@@ -1,0 +1,116 @@
+{
+    "api_version": 1,
+    "data": {
+        "component": [],
+        "host_ip": "192.168.10.58",
+        "resource": {
+            "cpu": {
+                "core_allocated": 0,
+                "core_count": 8,
+                "current": 0,
+                "load_avg_15m": 1.46,
+                "load_avg_1m": 2.18,
+                "load_avg_5m": 1.75,
+                "power": 0,
+                "temperature": 0,
+                "usage_percent": 26.138828633405637,
+                "voltage": 0
+            },
+            "disk": [
+                {
+                    "device": "/dev/mapper/klas-root",
+                    "free": 4005830656,
+                    "mount_point": "/",
+                    "total": 107321753600,
+                    "usage_percent": 96.26745694919394,
+                    "used": 103315922944
+                },
+                {
+                    "device": "/dev/mapper/klas-data",
+                    "free": 24298708992,
+                    "mount_point": "/data",
+                    "total": 255149084672,
+                    "usage_percent": 90.47666229207267,
+                    "used": 230850375680
+                }
+            ],
+            "gpu": [
+                {
+                    "compute_usage": 0,
+                    "index": 0,
+                    "mem_total": 17179869184,
+                    "mem_usage": 0.01,
+                    "mem_used": 119537664,
+                    "name": " Iluvatar MR-V50A",
+                    "power": 19,
+                    "temperature": 46
+                }
+            ],
+            "gpu_allocated": 0,
+            "gpu_num": 1,
+            "memory": {
+                "free": 11225726976,
+                "total": 15647768576,
+                "usage_percent": 28.259886248460838,
+                "used": 4422041600
+            },
+            "network": [
+                {
+                    "interface": "bond0",
+                    "rx_bytes": 0,
+                    "rx_errors": 0,
+                    "rx_packets": 0,
+                    "rx_rate": 0,
+                    "tx_bytes": 0,
+                    "tx_errors": 0,
+                    "tx_packets": 0,
+                    "tx_rate": 0
+                },
+                {
+                    "interface": "docker0",
+                    "rx_bytes": 1225656,
+                    "rx_errors": 0,
+                    "rx_packets": 5204,
+                    "rx_rate": 932,
+                    "tx_bytes": 1143594,
+                    "tx_errors": 0,
+                    "tx_packets": 4407,
+                    "tx_rate": 384
+                },
+                {
+                    "interface": "virbr0",
+                    "rx_bytes": 0,
+                    "rx_errors": 0,
+                    "rx_packets": 0,
+                    "rx_rate": 0,
+                    "tx_bytes": 0,
+                    "tx_errors": 0,
+                    "tx_packets": 0,
+                    "tx_rate": 0
+                },
+                {
+                    "interface": "docker_gwbridge",
+                    "rx_bytes": 0,
+                    "rx_errors": 0,
+                    "rx_packets": 0,
+                    "rx_rate": 0,
+                    "tx_bytes": 446,
+                    "tx_errors": 0,
+                    "tx_packets": 5,
+                    "tx_rate": 0
+                },
+                {
+                    "interface": "enaphyt4i0",
+                    "rx_bytes": 16512729,
+                    "rx_errors": 0,
+                    "rx_packets": 211355,
+                    "rx_rate": 7070,
+                    "tx_bytes": 20684354,
+                    "tx_errors": 0,
+                    "tx_packets": 70785,
+                    "tx_rate": 5502
+                }
+            ]
+        }
+    }
+}

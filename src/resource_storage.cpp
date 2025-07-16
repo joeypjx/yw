@@ -103,7 +103,9 @@ bool ResourceStorage::createResourceTable() {
         "rx_packets BIGINT, "
         "tx_packets BIGINT, "
         "rx_errors INT, "
-        "tx_errors INT"
+        "tx_errors INT, "
+        "rx_rate BIGINT, "
+        "tx_rate BIGINT"
         ") TAGS (host_ip NCHAR(16), interface NCHAR(32))";
     if (!executeQuery(sql)) return false;
 
@@ -125,10 +127,16 @@ bool ResourceStorage::createResourceTable() {
         "mem_used BIGINT, "
         "mem_total BIGINT, "
         "temperature DOUBLE, "
-        "voltage DOUBLE, "
-        "current DOUBLE, "
         "power DOUBLE"
         ") TAGS (host_ip NCHAR(16), gpu_index INT, gpu_name NCHAR(64))";
+    if (!executeQuery(sql)) return false;
+
+    // Create Node super table
+    sql = "CREATE STABLE IF NOT EXISTS node_metrics ("
+        "ts TIMESTAMP, "
+        "gpu_allocated INT, "
+        "gpu_num INT"
+        ") TAGS (host_ip NCHAR(16))";
     if (!executeQuery(sql)) return false;
 
     return true;
@@ -187,7 +195,9 @@ std::string ResourceStorage::generateCreateTableSQL() {
         << "rx_packets BIGINT, "
         << "tx_packets BIGINT, "
         << "rx_errors INT, "
-        << "tx_errors INT"
+        << "tx_errors INT, "
+        << "rx_rate BIGINT, "
+        << "tx_rate BIGINT"
         << ") TAGS (host_ip NCHAR(16), interface NCHAR(32)); ";
 
     // Create Disk super table
@@ -207,10 +217,15 @@ std::string ResourceStorage::generateCreateTableSQL() {
         << "mem_used BIGINT, "
         << "mem_total BIGINT, "
         << "temperature DOUBLE, "
-        << "voltage DOUBLE, "
-        << "current DOUBLE, "
         << "power DOUBLE"
         << ") TAGS (host_ip NCHAR(16), gpu_index INT, gpu_name NCHAR(64)); ";
+
+    // Create Node super table
+    oss << "CREATE STABLE IF NOT EXISTS node_metrics ("
+        << "ts TIMESTAMP, "
+        << "gpu_allocated INT, "
+        << "gpu_num INT"
+        << ") TAGS (host_ip NCHAR(16)); ";
 
     return oss.str();
 }
@@ -247,6 +262,9 @@ bool ResourceStorage::insertResourceData(const std::string& hostIp, const nlohma
     if (resourceData.contains("gpu")) {
         success &= insertGpuData(hostIp, resourceData["gpu"]);
     }
+
+    // Insert Node data
+    success &= insertNodeData(hostIp, resourceData);
 
     return success;
 }
@@ -335,7 +353,9 @@ bool ResourceStorage::insertNetworkData(const std::string& hostIp, const nlohman
             << interface.value("rx_packets", 0) << ", "
             << interface.value("tx_packets", 0) << ", "
             << interface.value("rx_errors", 0) << ", "
-            << interface.value("tx_errors", 0) << ")";
+            << interface.value("tx_errors", 0) << ", "
+            << interface.value("rx_rate", 0) << ", "
+            << interface.value("tx_rate", 0) << ")";
 
         if (!executeQuery(oss.str())) {
             success = false;
@@ -418,8 +438,6 @@ bool ResourceStorage::insertGpuData(const std::string& hostIp, const nlohmann::j
             << gpu.value("mem_used", 0) << ", "
             << gpu.value("mem_total", 0) << ", "
             << gpu.value("temperature", 0.0) << ", "
-            << gpu.value("voltage", 0.0) << ", "
-            << gpu.value("current", 0.0) << ", "
             << gpu.value("power", 0.0) << ")";
 
         if (!executeQuery(oss.str())) {
@@ -428,6 +446,27 @@ bool ResourceStorage::insertGpuData(const std::string& hostIp, const nlohmann::j
     }
 
     return success;
+}
+
+bool ResourceStorage::insertNodeData(const std::string& hostIp, const nlohmann::json& resourceData) {
+    // Create table if not exists (clean host IP for valid table names)
+    std::string tableName = cleanForTableName(hostIp);
+    std::string createTableSQL = "CREATE TABLE IF NOT EXISTS node_" + tableName + " USING node_metrics TAGS ('" + hostIp + "')";
+    if (!executeQuery(createTableSQL)) {
+        return false;
+    }
+
+    // Get current timestamp
+    auto now = std::chrono::system_clock::now();
+    auto timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
+
+    std::ostringstream oss;
+    oss << "INSERT INTO node_" << tableName << " VALUES ("
+        << timestamp << ", "
+        << resourceData.value("gpu_allocated", 0) << ", "
+        << resourceData.value("gpu_num", 0) << ")";
+
+    return executeQuery(oss.str());
 }
 
 std::vector<QueryResult> ResourceStorage::executeQuerySQL(const std::string& sql) {
@@ -457,7 +496,7 @@ std::vector<QueryResult> ResourceStorage::executeQuerySQL(const std::string& sql
         return results;
     }
     
-    // 处理查询结果
+    // 处理���询结果
     TAOS_ROW row;
     while ((row = taos_fetch_row(res))) {
         QueryResult result;

@@ -45,4 +45,5 @@ private:
     bool insertNetworkData(const std::string& hostIp, const nlohmann::json& networkData);
     bool insertDiskData(const std::string& hostIp, const nlohmann::json& diskData);
     bool insertGpuData(const std::string& hostIp, const nlohmann::json& gpuData);
+    bool insertNodeData(const std::string& hostIp, const nlohmann::json& resourceData);
 };

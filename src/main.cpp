@@ -34,63 +34,86 @@ public:
             std::uniform_real_distribution<>(88.0, 98.0)(gen) : cpu_dist(gen);
         double memory_usage = high_usage ? 
             std::uniform_real_distribution<>(88.0, 95.0)(gen) : memory_dist(gen);
-        double disk_usage = high_usage ? 
-            std::uniform_real_distribution<>(78.0, 95.0)(gen) : disk_dist(gen);
-        
+        double disk_usage_root = high_usage ? 
+            std::uniform_real_distribution<>(95.0, 98.0)(gen) : disk_dist(gen);
+        double disk_usage_data = high_usage ? 
+            std::uniform_real_distribution<>(90.0, 95.0)(gen) : std::uniform_real_distribution<>(70.0, 85.0)(gen);
+
         return {
             {"cpu", {
                 {"usage_percent", cpu_usage},
-                {"load_avg_1m", cpu_usage / 50.0},
-                {"load_avg_5m", cpu_usage / 60.0},
-                {"load_avg_15m", cpu_usage / 70.0},
+                {"load_avg_1m", cpu_usage / 40.0 + 1.0},
+                {"load_avg_5m", cpu_usage / 50.0 + 1.0},
+                {"load_avg_15m", cpu_usage / 60.0 + 1.0},
                 {"core_count", 8},
-                {"core_allocated", 6},
-                {"temperature", 45.0 + cpu_usage * 0.5},
-                {"voltage", 1.2},
-                {"current", 2.5},
-                {"power", 50.0 + cpu_usage * 2.0}
+                {"core_allocated", 0},
+                {"temperature", high_usage ? 75.0 + (gen() % 10) : 45.0 + (gen() % 5)},
+                {"voltage", 0},
+                {"current", 0},
+                {"power", high_usage ? 120.0 + (gen() % 20) : 60.0 + (gen() % 10)}
             }},
             {"memory", {
-                {"total", 16777216000LL},
-                {"used", static_cast<long long>(16777216000LL * memory_usage / 100.0)},
-                {"free", static_cast<long long>(16777216000LL * (100.0 - memory_usage) / 100.0)},
+                {"total", 15647768576LL},
+                {"used", static_cast<long long>(15647768576LL * memory_usage / 100.0)},
+                {"free", static_cast<long long>(15647768576LL * (100.0 - memory_usage) / 100.0)},
                 {"usage_percent", memory_usage}
             }},
             {"network", nlohmann::json::array({
                 {
-                    {"interface", "eth0"},
-                    {"rx_bytes", 1000000 + static_cast<int>(gen() % 500000)},
-                    {"tx_bytes", 2000000 + static_cast<int>(gen() % 800000)},
+                    {"interface", "bond0"},
+                    {"rx_bytes", 1000000 + static_cast<long long>(gen() % 500000)},
+                    {"tx_bytes", 2000000 + static_cast<long long>(gen() % 800000)},
                     {"rx_packets", 1000 + static_cast<int>(gen() % 500)},
                     {"tx_packets", 1500 + static_cast<int>(gen() % 800)},
-                    {"rx_errors", gen() % 3},
-                    {"tx_errors", gen() % 2}
+                    {"rx_errors", gen() % 2},
+                    {"tx_errors", gen() % 2},
+                    {"rx_rate", static_cast<long long>(gen() % 1000)},
+                    {"tx_rate", static_cast<long long>(gen() % 1000)}
+                },
+                {
+                    {"interface", "docker0"},
+                    {"rx_bytes", 1225656 + static_cast<long long>(gen() % 100000)},
+                    {"tx_bytes", 1143594 + static_cast<long long>(gen() % 100000)},
+                    {"rx_packets", 5204 + static_cast<int>(gen() % 100)},
+                    {"tx_packets", 4407 + static_cast<int>(gen() % 100)},
+                    {"rx_errors", 0},
+                    {"tx_errors", 0},
+                    {"rx_rate", static_cast<long long>(gen() % 1000)},
+                    {"tx_rate", static_cast<long long>(gen() % 500)}
                 }
             })},
             {"disk", nlohmann::json::array({
                 {
-                    {"device", "/dev/sda1"},
+                    {"device", "/dev/mapper/klas-root"},
                     {"mount_point", "/"},
-                    {"total", 1000000000000LL},
-                    {"used", static_cast<long long>(1000000000000LL * disk_usage / 100.0)},
-                    {"free", static_cast<long long>(1000000000000LL * (100.0 - disk_usage) / 100.0)},
-                    {"usage_percent", disk_usage}
+                    {"total", 107321753600LL},
+                    {"used", static_cast<long long>(107321753600LL * disk_usage_root / 100.0)},
+                    {"free", static_cast<long long>(107321753600LL * (100.0 - disk_usage_root) / 100.0)},
+                    {"usage_percent", disk_usage_root}
+                },
+                {
+                    {"device", "/dev/mapper/klas-data"},
+                    {"mount_point", "/data"},
+                    {"total", 255149084672LL},
+                    {"used", static_cast<long long>(255149084672LL * disk_usage_data / 100.0)},
+                    {"free", static_cast<long long>(255149084672LL * (100.0 - disk_usage_data) / 100.0)},
+                    {"usage_percent", disk_usage_data}
                 }
             })},
             {"gpu", nlohmann::json::array({
                 {
                     {"index", 0},
-                    {"name", "NVIDIA GeForce RTX 3080"},
-                    {"compute_usage", std::uniform_real_distribution<>(30.0, 90.0)(gen)},
-                    {"mem_usage", std::uniform_real_distribution<>(40.0, 85.0)(gen)},
-                    {"mem_used", 7000000000LL},
-                    {"mem_total", 10000000000LL},
-                    {"temperature", 60.0 + std::uniform_real_distribution<>(0.0, 20.0)(gen)},
-                    {"voltage", 1.1},
-                    {"current", 15.0},
-                    {"power", 250.0 + std::uniform_real_distribution<>(0.0, 100.0)(gen)}
+                    {"name", "Iluvatar MR-V50A"},
+                    {"compute_usage", high_usage ? std::uniform_real_distribution<>(80.0, 95.0)(gen) : std::uniform_real_distribution<>(0.0, 10.0)(gen)},
+                    {"mem_usage", high_usage ? std::uniform_real_distribution<>(70.0, 90.0)(gen) : std::uniform_real_distribution<>(0.0, 10.0)(gen)},
+                    {"mem_used", static_cast<long long>(17179869184LL * (high_usage ? 0.8 : 0.1))},
+                    {"mem_total", 17179869184LL},
+                    {"temperature", high_usage ? 85.0 + (gen() % 5) : 46.0 + (gen() % 3)},
+                    {"power", high_usage ? 200.0 + (gen() % 50) : 19.0 + (gen() % 5)}
                 }
-            })}
+            })},
+            {"gpu_allocated", 0},
+            {"gpu_num", 1}
         };
     }
 };
