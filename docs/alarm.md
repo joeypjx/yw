@@ -260,6 +260,57 @@ WHERE {tag_conditions} AND {metric_conditions}
 ORDER BY ts DESC
 ```
 
+**SQL生成模板**：
+```sql
+SELECT LAST({metric}) AS value, {tag_fields...}, ts
+FROM {stable}
+WHERE {tag_conditions} AND {metric_conditions} AND (ts > NOW() - 10s)
+GROUP BY host_ip, {tag_fields...};
+```
+
+operator < <= > >= = !=
+
+expression:
+  stable: cpu
+  metric: usage_percent
+  operator: '>'
+  threshold: 90.0
+
+expression:
+  stable: disk
+  metric: usage_percent
+  tags:
+  - mount_point: '/data'
+  operator: '>'
+  threshold: 90.0
+
+expression:
+  stable: disk
+  metric: usage_percent
+  tags:
+  - mount_point: '/data'
+  and:
+  - operator: '>'
+    threshold: 90.0
+  - operator: '<'
+    threshold: 95.0
+
+expression:
+  stable: disk
+  metric: usage_percent
+  tags:
+  - mount_point: '/data'
+  or:
+  - operator: '>'
+    threshold: 95.0
+  - operator: '<'
+    threshold: 90.0
+
+SELECT LAST(usage_percent) AS data, ts, host_ip, mount_point
+FROM disk
+WHERE usage_percent > 90.0 AND usage_percent < 95.0 AND mount_point = '/data' AND (ts > now() - 10s)
+GROUP BY host_ip, mount_point;
+
 ## 转换示例
 
 ### 示例1：简单指标告警
