@@ -273,3 +273,46 @@ fi
 
 print_header "API测试完成"
 print_info "所有告警规则API接口测试完成！"
+
+# 8. 测试告警事件API
+print_header "9. 测试告警事件API (GET /alarm/events)"
+
+send_request "GET" "/alarm/events" "" "获取所有告警事件"
+if [ $? -eq 200 ]; then
+    print_success "成功获取告警事件"
+    event_count=$(echo "$body" | jq length 2>/dev/null)
+    if [ "$event_count" != "null" ] && [ -n "$event_count" ]; then
+        print_info "当前共有 $event_count 个告警事件"
+    fi
+else
+    print_error "获取告警事件失败"
+fi
+
+# 测试活跃告警事件
+print_info "测试获取活跃告警事件..."
+send_request "GET" "/alarm/events?status=active" "" "获取活跃告警事件"
+if [ $? -eq 200 ]; then
+    print_success "成功获取活跃告警事件"
+    active_count=$(echo "$body" | jq length 2>/dev/null)
+    if [ "$active_count" != "null" ] && [ -n "$active_count" ]; then
+        print_info "当前共有 $active_count 个活跃告警事件"
+    fi
+else
+    print_error "获取活跃告警事件失败"
+fi
+
+# 测试限制数量的告警事件
+print_info "测试获取最近10条告警事件..."
+send_request "GET" "/alarm/events?limit=10" "" "获取最近10条告警事件"
+if [ $? -eq 200 ]; then
+    print_success "成功获取最近10条告警事件"
+    limited_count=$(echo "$body" | jq length 2>/dev/null)
+    if [ "$limited_count" != "null" ] && [ -n "$limited_count" ]; then
+        print_info "返回了 $limited_count 个告警事件"
+    fi
+else
+    print_error "获取最近10条告警事件失败"
+fi
+
+print_header "完整API测试完成"
+print_info "所有告警规则和告警事件API接口测试完成！"

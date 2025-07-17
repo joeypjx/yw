@@ -9,8 +9,10 @@ using json = nlohmann::json;
 
 HttpServer::HttpServer(std::shared_ptr<ResourceStorage> resource_storage,
                        std::shared_ptr<AlarmRuleStorage> alarm_rule_storage,
+                       std::shared_ptr<AlarmManager> alarm_manager,
                        const std::string& host, int port)
-    : m_resource_storage(resource_storage), m_alarm_rule_storage(alarm_rule_storage), m_host(host), m_port(port) {
+    : m_resource_storage(resource_storage), m_alarm_rule_storage(alarm_rule_storage), 
+      m_alarm_manager(alarm_manager), m_host(host), m_port(port) {
     setup_routes();
 }
 
@@ -42,6 +44,11 @@ void HttpServer::setup_routes() {
     
     m_server.Post(R"(/alarm/rules/([^/]+)/delete)", [this](const httplib::Request& req, httplib::Response& res) {
         this->handle_alarm_rules_delete(req, res);
+    });
+    
+    // 告警事件相关路由
+    m_server.Get("/alarm/events", [this](const httplib::Request& req, httplib::Response& res) {
+        this->handle_alarm_events_list(req, res);
     });
 }
 
@@ -299,5 +306,60 @@ void HttpServer::stop() {
             m_server_thread.join();
         }
         LogManager::getLogger()->info("HTTP server stopped.");
+    }
+}
+
+void HttpServer::handle_alarm_events_list(const httplib::Request& req, httplib::Response& res) {
+    try {
+        if (!m_alarm_manager) {
+            res.set_content("{\"error\":\"Alarm manager not available\"}", "application/json");
+            res.status = 500;
+            LogManager::getLogger()->error("Alarm manager not available");
+            return;
+        }
+        
+        // 支持查询参数
+        std::string status = req.get_param_value("status");
+        std::string limit_str = req.get_param_value("limit");
+        
+        std::vector<AlarmEventRecord> events;
+        
+        if (status == "active" || status == "firing") {
+            // 获取活跃的告警事件
+            events = m_alarm_manager->getActiveAlarmEvents();
+        } else if (!limit_str.empty()) {
+            // 获取最近的告警事件（带限制）
+            int limit = std::stoi(limit_str);
+            events = m_alarm_manager->getRecentAlarmEvents(limit);
+        } else {
+            // 获取最近的告警事件（默认限制100条）
+            events = m_alarm_manager->getRecentAlarmEvents(100);
+        }
+        
+        json response = json::array();
+        for (const auto& event : events) {
+            json event_json = {
+                {"id", event.id},
+                {"fingerprint", event.fingerprint},
+                {"status", event.status},
+                {"labels", json::parse(event.labels_json)},
+                {"annotations", json::parse(event.annotations_json)},
+                {"starts_at", event.starts_at},
+                {"ends_at", event.ends_at},
+                {"generator_url", event.generator_url},
+                {"created_at", event.created_at},
+                {"updated_at", event.updated_at}
+            };
+            response.push_back(event_json);
+        }
+        
+        res.set_content(response.dump(2), "application/json");
+        res.status = 200;
+        LogManager::getLogger()->info("Successfully retrieved {} alarm events", events.size());
+        
+    } catch (const std::exception& e) {
+        res.set_content("{\"error\":\"Failed to retrieve alarm events\"}", "application/json");
+        res.status = 500;
+        LogManager::getLogger()->error("Exception in handle_alarm_events_list: {}", e.what());
     }
 }

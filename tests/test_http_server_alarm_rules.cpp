@@ -22,8 +22,8 @@ protected:
         m_alarm_rule_storage->createDatabase();
         m_alarm_rule_storage->createTable();
         
-        // 初始化HTTP服务器
-        m_server = std::make_shared<HttpServer>(m_resource_storage, m_alarm_rule_storage, "127.0.0.1", 8081);
+        // 初始化HTTP服务器 (alarm_manager传nullptr，因为这些测试不需要告警事件功能)
+        m_server = std::make_shared<HttpServer>(m_resource_storage, m_alarm_rule_storage, nullptr, "127.0.0.1", 8081);
         
         // 启动服务器
         ASSERT_TRUE(m_server->start());

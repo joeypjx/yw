@@ -4,6 +4,7 @@
 #include "httplib.h"
 #include "resource_storage.h"
 #include "alarm_rule_storage.h"
+#include "alarm_manager.h"
 #include "json.hpp"
 #include <string>
 #include <thread>
@@ -15,11 +16,13 @@ public:
      * @brief 构造函数.
      * @param resource_storage 用于存储资源数据的 ResourceStorage 实例的共享指针.
      * @param alarm_rule_storage 用于存储告警规则的 AlarmRuleStorage 实例的共享指针.
+     * @param alarm_manager 用于管理告警事件的 AlarmManager 实例的共享指针.
      * @param host 监听的主机地址.
      * @param port 监听的端口.
      */
     HttpServer(std::shared_ptr<ResourceStorage> resource_storage,
                std::shared_ptr<AlarmRuleStorage> alarm_rule_storage,
+               std::shared_ptr<AlarmManager> alarm_manager,
                const std::string& host = "0.0.0.0", int port = 8080);
 
     ~HttpServer();
@@ -83,8 +86,16 @@ private:
      */
     void handle_alarm_rules_delete(const httplib::Request& req, httplib::Response& res);
 
+    /**
+     * @brief 处理 /alarm/events 的GET请求 (获取所有告警事件).
+     * @param req HTTP请求.
+     * @param res HTTP响应.
+     */
+    void handle_alarm_events_list(const httplib::Request& req, httplib::Response& res);
+
     std::shared_ptr<ResourceStorage> m_resource_storage;
     std::shared_ptr<AlarmRuleStorage> m_alarm_rule_storage;
+    std::shared_ptr<AlarmManager> m_alarm_manager;
     httplib::Server m_server;
     std::string m_host;
     int m_port;
