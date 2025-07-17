@@ -32,7 +32,6 @@ bool AlarmRuleEngine::start() {
     
     logInfo("Starting alarm rule engine...");
     
-    // 加载规则
     loadRulesFromDatabase();
     
     m_running = true;
@@ -80,17 +79,12 @@ void AlarmRuleEngine::setAlarmEventCallback(std::function<void(const AlarmEvent&
 void AlarmRuleEngine::evaluationLoop() {
     while (m_running) {
         try {
-            // 重新加载规则
             loadRulesFromDatabase();
-            
-            // 评估规则
             evaluateRules();
-            
         } catch (const std::exception& e) {
             logError("Error in evaluation loop: " + std::string(e.what()));
         }
         
-        // 等待下一次评估
         std::this_thread::sleep_for(m_evaluation_interval);
     }
 }
@@ -120,7 +114,6 @@ void AlarmRuleEngine::evaluateRules() {
 void AlarmRuleEngine::evaluateRule(const AlarmRule& rule) {
     logDebug("Evaluating rule: " + rule.alert_name);
     
-    // 解析规则表达式
     nlohmann::json expression;
     try {
         expression = nlohmann::json::parse(rule.expression_json);
@@ -129,35 +122,15 @@ void AlarmRuleEngine::evaluateRule(const AlarmRule& rule) {
         return;
     }
     
-    // 确定stable名称
-    std::string stable;
-    if (expression.contains("stable")) {
-        stable = expression["stable"];
-    } else if (expression.contains("and") && expression["and"].is_array()) {
-        // 在and条件中查找stable
-        for (const auto& condition : expression["and"]) {
-            if (condition.contains("stable")) {
-                stable = condition["stable"];
-                break;
-            }
-        }
-    } else if (expression.contains("or") && expression["or"].is_array()) {
-        // 在or条件中查找stable
-        for (const auto& condition : expression["or"]) {
-            if (condition.contains("stable")) {
-                stable = condition["stable"];
-                break;
-            }
-        }
-    }
-    
-    if (stable.empty()) {
-        logError("No stable found in rule expression for " + rule.alert_name);
+    if (!expression.contains("stable") || !expression.contains("metric")) {
+        logError("Rule " + rule.alert_name + " missing required fields: stable or metric");
         return;
     }
     
-    // 转换为SQL
-    std::string sql = convertRuleToSQL(expression, stable);
+    std::string stable = expression["stable"];
+    std::string metric = expression["metric"];
+    
+    std::string sql = convertRuleToSQL(expression, stable, metric);
     if (sql.empty()) {
         logError("Failed to convert rule to SQL for " + rule.alert_name);
         return;
@@ -165,265 +138,213 @@ void AlarmRuleEngine::evaluateRule(const AlarmRule& rule) {
     
     logDebug("Generated SQL for rule " + rule.alert_name + ": " + sql);
     
-    // 执行查询
     std::vector<QueryResult> results = executeQuery(sql);
     
-    // 处理查询结果
+    std::set<std::string> active_from_db;
     for (const auto& result : results) {
         std::string fingerprint = generateFingerprint(rule.alert_name, result.labels);
-        
-        // 检查条件是否满足
-        bool condition_met = false;
-        if (expression.contains("threshold")) {
-            std::string op = expression.value("operator", ">");
-            double threshold = expression.value("threshold", 0.0);
-            condition_met = evaluateCondition(result.value, op, threshold);
-        } else {
-            // 对于复杂表达式，简单检查值是否大于0
-            condition_met = result.value > 0;
-        }
-        
-        updateAlarmInstance(fingerprint, rule, result, condition_met);
+        active_from_db.insert(fingerprint);
     }
+    
+    reconcileAlarmStates(rule, active_from_db, results);
 }
 
-std::string AlarmRuleEngine::convertRuleToSQL(const nlohmann::json& expression, const std::string& stable) {
+std::string AlarmRuleEngine::convertRuleToSQL(const nlohmann::json& expression, 
+                                            const std::string& stable, 
+                                            const std::string& metric) {
     std::ostringstream sql;
     
-    // 基础查询结构
-    sql << "SELECT ";
+    sql << "SELECT LAST(" << metric << ") AS " << metric << ", host_ip, ";
     
-    // 确定指标字段
-    std::string metric = "";
+    std::vector<std::string> used_tag_fields;
+    std::vector<std::string> where_conditions;
     
-    if (expression.contains("metric")) {
-        metric = expression["metric"];
-    }
-    
-    // 在复杂表达式中查找metric
-    if (metric.empty()) {
-        std::function<void(const nlohmann::json&)> findMetric = [&](const nlohmann::json& expr) {
-            if (expr.contains("metric")) {
-                metric = expr["metric"];
-                return;
+    if (expression.contains("tags") && expression["tags"].is_array()) {
+        for (const auto& tag_condition : expression["tags"]) {
+            for (auto it = tag_condition.begin(); it != tag_condition.end(); ++it) {
+                std::string tag_key = it.key();
+                std::string tag_value = it.value().get<std::string>();
+                
+                used_tag_fields.push_back(tag_key);
+                where_conditions.push_back(tag_key + " = '" + tag_value + "'");
             }
-            if (expr.contains("and") && expr["and"].is_array()) {
-                for (const auto& item : expr["and"]) {
-                    findMetric(item);
-                    if (!metric.empty()) break;
-                }
-            }
-            if (expr.contains("or") && expr["or"].is_array()) {
-                for (const auto& item : expr["or"]) {
-                    findMetric(item);
-                    if (!metric.empty()) break;
-                }
-            }
-        };
-        findMetric(expression);
+        }
     }
     
-    if (metric.empty()) {
-        logError("No metric found in expression");
-        return "";
-    }
-    
-    // 构建SELECT子句 - 不使用聚合函数
-    sql << metric << " , ts, ";
-    
-    // 添加标签字段
-    std::vector<std::string> tag_fields = {"host_ip"};
-    if (stable == "disk") {
-        tag_fields.push_back("device");
-        tag_fields.push_back("mount_point");
-    } else if (stable == "network") {
-        tag_fields.push_back("interface");
-    } else if (stable == "gpu") {
-        tag_fields.push_back("gpu_index");
-        tag_fields.push_back("gpu_name");
-    }
-    
-    for (const auto& tag : tag_fields) {
+    for (const auto& tag : used_tag_fields) {
         sql << tag << ", ";
     }
     
-    // 移除最后的逗号和空格
-    std::string sql_str = sql.str();
-    sql_str = sql_str.substr(0, sql_str.length() - 2);
+    sql << "ts FROM " << stable;
     
-    sql.str("");
-    sql << sql_str;
-    
-    // FROM子句
-    sql << " FROM " << stable;
-    
-    // WHERE子句 - 只包含标签条件和时间条件，不包含度量条件
-    std::string where_clause = buildWhereClause(expression);
-    
-    std::vector<std::string> conditions;
-    if (!where_clause.empty()) {
-        conditions.push_back(where_clause);
+    if (expression.contains("conditions") && expression["conditions"].is_array()) {
+        for (const auto& condition : expression["conditions"]) {
+            if (condition.contains("operator") && condition.contains("threshold")) {
+                std::string op = condition["operator"];
+                double threshold = condition["threshold"];
+                where_conditions.push_back(metric + " " + op + " " + std::to_string(threshold));
+            }
+        }
     }
     
-    conditions.push_back("ts > now() - 10s");
-    if (conditions.size() > 0) {
+    where_conditions.push_back("ts > NOW() - 10s");
+    
+    if (!where_conditions.empty()) {
         sql << " WHERE ";
+        for (size_t i = 0; i < where_conditions.size(); ++i) {
+            if (i > 0) sql << " AND ";
+            sql << "(" << where_conditions[i] << ")";
+        }
     }
     
-    for (size_t i = 0; i < conditions.size(); ++i) {
-        if (i > 0) sql << " AND ";
-        sql << conditions[i];
+    sql << " GROUP BY host_ip";
+    for (const auto& tag : used_tag_fields) {
+        sql << ", " << tag;
     }
-    
-    // 按时间戳降序排序，获取最新的记录
-    sql << " ORDER BY ts DESC LIMIT 1";
     
     return sql.str();
 }
 
-std::string AlarmRuleEngine::buildWhereClause(const nlohmann::json& expression) {
-    std::ostringstream where;
+
+void AlarmRuleEngine::reconcileAlarmStates(const AlarmRule& rule, 
+                                         const std::set<std::string>& active_from_db,
+                                         const std::vector<QueryResult>& results) {
+    std::lock_guard<std::mutex> lock(m_instances_mutex);
     
-    std::function<bool(const nlohmann::json&)> processExpression = [&](const nlohmann::json& expr) -> bool {
-        if (expr.contains("tag")) {
-            std::string tag = expr["tag"];
-            std::string op = expr.value("operator", "==");
-            std::string value = expr.value("value", "");
-            
-            if (!value.empty()) {
-                where << tag << " " << convertOperator(op) << " '" << value << "'";
-                return true;
-            }
-        } else if (expr.contains("and") && expr["and"].is_array()) {
-            std::ostringstream temp;
-            std::vector<std::string> conditions;
-            
-            for (const auto& item : expr["and"]) {
-                std::ostringstream itemStream;
-                where.str("");
-                where.clear();
-                if (processExpression(item)) {
-                    conditions.push_back(where.str());
+    auto now = std::chrono::system_clock::now();
+    std::map<std::string, QueryResult> result_map;
+    
+    for (const auto& result : results) {
+        std::string fingerprint = generateFingerprint(rule.alert_name, result.labels);
+        result_map[fingerprint] = result;
+    }
+    
+    for (const auto& fingerprint : active_from_db) {
+        auto it = m_alarm_instances.find(fingerprint);
+        if (it == m_alarm_instances.end()) {
+            createNewAlarmInstance(fingerprint, rule, result_map[fingerprint], now);
+        } else {
+            updateExistingAlarmInstance(it->second, rule, result_map[fingerprint], now);
+        }
+    }
+    
+    // 处理已恢复的告警（在previous_state_map中但不在active_from_db中）
+    std::string alert_prefix = "alertname=" + rule.alert_name + ",";
+    std::vector<std::string> to_remove;
+    
+    for (auto& pair : m_alarm_instances) {
+        const std::string& fingerprint = pair.first;
+        
+        // 只处理属于当前规则的实例
+        if (fingerprint.find(alert_prefix) == 0) {
+            // 如果不在active_from_db中，说明已恢复
+            if (active_from_db.find(fingerprint) == active_from_db.end()) {
+                QueryResult empty_result;
+                empty_result.value = 0.0;
+                handleResolvedAlarm(pair.second, rule, empty_result, now);
+                if (pair.second.state == AlarmInstanceState::INACTIVE) {
+                    to_remove.push_back(fingerprint);
                 }
-            }
-            
-            if (!conditions.empty()) {
-                where.str("");
-                where.clear();
-                where << "(";
-                for (size_t i = 0; i < conditions.size(); ++i) {
-                    if (i > 0) where << " AND ";
-                    where << conditions[i];
-                }
-                where << ")";
-                return true;
-            }
-        } else if (expr.contains("or") && expr["or"].is_array()) {
-            std::vector<std::string> conditions;
-            
-            for (const auto& item : expr["or"]) {
-                std::ostringstream itemStream;
-                where.str("");
-                where.clear();
-                if (processExpression(item)) {
-                    conditions.push_back(where.str());
-                }
-            }
-            
-            if (!conditions.empty()) {
-                where.str("");
-                where.clear();
-                where << "(";
-                for (size_t i = 0; i < conditions.size(); ++i) {
-                    if (i > 0) where << " OR ";
-                    where << conditions[i];
-                }
-                where << ")";
-                return true;
             }
         }
-        return false;
-    };
+    }
     
-    processExpression(expression);
-    return where.str();
+    for (const auto& fingerprint : to_remove) {
+        m_alarm_instances.erase(fingerprint);
+    }
 }
 
-std::string AlarmRuleEngine::buildMetricCondition(const nlohmann::json& expression) {
-    std::ostringstream condition;
+void AlarmRuleEngine::createNewAlarmInstance(const std::string& fingerprint, 
+                                           const AlarmRule& rule, 
+                                           const QueryResult& result, 
+                                           std::chrono::system_clock::time_point now) {
+    AlarmInstance instance;
+    instance.fingerprint = fingerprint;
+    instance.alert_name = rule.alert_name;
+    instance.state = AlarmInstanceState::PENDING;
+    instance.state_changed_at = now;
+    instance.pending_start_at = now;
+    instance.labels = result.labels;
+    instance.labels["alertname"] = rule.alert_name;
+    instance.labels["severity"] = rule.severity;
+    instance.labels["alert_type"] = rule.alert_type;
+    instance.labels["value"] = std::to_string(result.value);
+    instance.labels["metrics"] = result.metric;
+    instance.value = result.value;
     
-    std::function<bool(const nlohmann::json&)> processExpression = [&](const nlohmann::json& expr) -> bool {
-        if (expr.contains("metric")) {
-            std::string metric = expr["metric"];
-            std::string op = expr.value("operator", ">");
-            double threshold = expr.value("threshold", 0.0);
-            
-            condition << metric << " " << convertOperator(op) << " " << threshold;
-            return true;
-        } else if (expr.contains("and") && expr["and"].is_array()) {
-            std::vector<std::string> conditions;
-            
-            for (const auto& item : expr["and"]) {
-                std::ostringstream itemStream;
-                condition.str("");
-                condition.clear();
-                if (processExpression(item)) {
-                    conditions.push_back(condition.str());
-                }
-            }
-            
-            if (!conditions.empty()) {
-                condition.str("");
-                condition.clear();
-                condition << "(";
-                for (size_t i = 0; i < conditions.size(); ++i) {
-                    if (i > 0) condition << " AND ";
-                    condition << conditions[i];
-                }
-                condition << ")";
-                return true;
-            }
-        } else if (expr.contains("or") && expr["or"].is_array()) {
-            std::vector<std::string> conditions;
-            
-            for (const auto& item : expr["or"]) {
-                std::ostringstream itemStream;
-                condition.str("");
-                condition.clear();
-                if (processExpression(item)) {
-                    conditions.push_back(condition.str());
-                }
-            }
-            
-            if (!conditions.empty()) {
-                condition.str("");
-                condition.clear();
-                condition << "(";
-                for (size_t i = 0; i < conditions.size(); ++i) {
-                    if (i > 0) condition << " OR ";
-                    condition << conditions[i];
-                }
-                condition << ")";
-                return true;
-            }
+    instance.annotations["summary"] = rule.summary;
+    instance.annotations["description"] = replaceTemplate(rule.description, instance.labels);
+    
+    m_alarm_instances[fingerprint] = instance;
+    
+    logInfo("Created new alarm instance: " + fingerprint + " (PENDING)");
+}
+
+void AlarmRuleEngine::updateExistingAlarmInstance(AlarmInstance& instance, 
+                                                const AlarmRule& rule, 
+                                                const QueryResult& result, 
+                                                std::chrono::system_clock::time_point now) {
+    // 更新当前值
+    instance.value = result.value;
+    instance.labels["value"] = std::to_string(result.value);
+    
+    if (instance.state == AlarmInstanceState::PENDING) {
+        auto for_duration = parseDuration(rule.for_duration);
+        if (now - instance.pending_start_at >= for_duration) {
+            instance.state = AlarmInstanceState::FIRING;
+            instance.state_changed_at = now;
+            generateAlarmEvent(instance, rule, "firing");
+            logInfo("Alarm instance " + instance.fingerprint + " transitioned to FIRING");
         }
-        return false;
-    };
-    
-    processExpression(expression);
-    return condition.str();
+    }
 }
 
-std::string AlarmRuleEngine::convertOperator(const std::string& op) {
-    if (op == "==") return "=";
-    if (op == "!=") return "<>";
-    return op;  // >, <, >=, <=保持不变
+void AlarmRuleEngine::handleResolvedAlarm(AlarmInstance& instance, 
+                                        const AlarmRule& rule, 
+                                        const QueryResult& result,
+                                        std::chrono::system_clock::time_point now) {
+    if (instance.state == AlarmInstanceState::FIRING) {
+        instance.state = AlarmInstanceState::RESOLVED;
+        instance.state_changed_at = now;
+        generateAlarmEvent(instance, rule, "resolved");
+        logInfo("Alarm instance " + instance.fingerprint + " RESOLVED");
+        
+        instance.state = AlarmInstanceState::INACTIVE;
+    } else if (instance.state == AlarmInstanceState::PENDING) {
+        instance.state = AlarmInstanceState::INACTIVE;
+        instance.state_changed_at = now;
+        logInfo("Alarm instance " + instance.fingerprint + " transitioned from PENDING to INACTIVE");
+    }
+}
+
+void AlarmRuleEngine::generateAlarmEvent(const AlarmInstance& instance, 
+                                       const AlarmRule& rule, 
+                                       const std::string& status) {
+    AlarmEvent event;
+    event.fingerprint = instance.fingerprint;
+    event.status = status;
+    event.labels = instance.labels;
+    event.annotations = instance.annotations;
+    event.starts_at = instance.pending_start_at;
+    
+    if (status == "resolved") {
+        event.ends_at = instance.state_changed_at;
+    }
+    
+    logInfo("Generated alarm event: " + event.toJson());
+    
+    if (m_alarm_manager) {
+        m_alarm_manager->processAlarmEvent(event);
+    }
+    
+    if (m_alarm_event_callback) {
+        m_alarm_event_callback(event);
+    }
 }
 
 std::vector<QueryResult> AlarmRuleEngine::executeQuery(const std::string& sql) {
     logDebug("Executing query: " + sql);
     
-    // 使用ResourceStorage的executeQuery接口
     if (m_resource_storage) {
         return m_resource_storage->executeQuerySQL(sql);
     }
@@ -433,12 +354,12 @@ std::vector<QueryResult> AlarmRuleEngine::executeQuery(const std::string& sql) {
 }
 
 bool AlarmRuleEngine::evaluateCondition(double value, const std::string& op, double threshold) {
-    if (op == ">" || op == "gt") return value > threshold;
-    if (op == "<" || op == "lt") return value < threshold;
-    if (op == ">=" || op == "gte") return value >= threshold;
-    if (op == "<=" || op == "lte") return value <= threshold;
-    if (op == "==" || op == "eq") return value == threshold;
-    if (op == "!=" || op == "ne") return value != threshold;
+    if (op == ">") return value > threshold;
+    if (op == "<") return value < threshold;
+    if (op == ">=") return value >= threshold;
+    if (op == "<=") return value <= threshold;
+    if (op == "=") return value == threshold;
+    if (op == "!=") return value != threshold;
     return false;
 }
 
@@ -447,115 +368,14 @@ std::string AlarmRuleEngine::generateFingerprint(const std::string& alert_name,
     std::ostringstream fingerprint;
     fingerprint << "alertname=" << alert_name;
     
-    for (const auto& label : labels) {
+    std::vector<std::pair<std::string, std::string>> sorted_labels(labels.begin(), labels.end());
+    std::sort(sorted_labels.begin(), sorted_labels.end());
+    
+    for (const auto& label : sorted_labels) {
         fingerprint << "," << label.first << "=" << label.second;
     }
     
     return fingerprint.str();
-}
-
-void AlarmRuleEngine::updateAlarmInstance(const std::string& fingerprint, const AlarmRule& rule, 
-                                        const QueryResult& result, bool condition_met) {
-    std::lock_guard<std::mutex> lock(m_instances_mutex);
-    
-    auto now = std::chrono::system_clock::now();
-    
-    // 查找或创建告警实例
-    auto it = m_alarm_instances.find(fingerprint);
-    if (it == m_alarm_instances.end()) {
-        // 创建新实例
-        AlarmInstance instance;
-        instance.fingerprint = fingerprint;
-        instance.alert_name = rule.alert_name;
-        instance.state = condition_met ? AlarmInstanceState::PENDING : AlarmInstanceState::INACTIVE;
-        instance.state_changed_at = now;
-        instance.pending_start_at = condition_met ? now : std::chrono::system_clock::time_point{};
-        instance.labels = result.labels;
-        instance.labels["alertname"] = rule.alert_name;
-        instance.labels["severity"] = rule.severity;
-        instance.labels["value"] = std::to_string(result.value);
-        instance.labels["metric"] = result.metric;
-        instance.labels["alarm_type"] = rule.alarm_type;
-        if (!result.metric.empty()) {
-            instance.labels[result.metric] = std::to_string(result.value);
-        }
-        instance.value = result.value;
-        
-        // 设置annotations
-        instance.annotations["summary"] = rule.summary;
-        instance.annotations["description"] = replaceTemplate(rule.description, instance.labels);
-        
-        m_alarm_instances[fingerprint] = instance;
-        it = m_alarm_instances.find(fingerprint);
-    }
-    
-    AlarmInstance& instance = it->second;
-    instance.value = result.value;
-    
-    // 状态转换逻辑
-    AlarmInstanceState old_state = instance.state;
-    
-    if (condition_met) {
-        if (instance.state == AlarmInstanceState::INACTIVE) {
-            instance.state = AlarmInstanceState::PENDING;
-            instance.pending_start_at = now;
-            instance.state_changed_at = now;
-        } else if (instance.state == AlarmInstanceState::PENDING) {
-            auto for_duration = parseDuration(rule.for_duration);
-            if (now - instance.pending_start_at >= for_duration) {
-                instance.state = AlarmInstanceState::FIRING;
-                instance.state_changed_at = now;
-            }
-        }
-        // FIRING状态保持不变
-    } else {
-        if (instance.state == AlarmInstanceState::FIRING) {
-            instance.state = AlarmInstanceState::RESOLVED;
-            instance.state_changed_at = now;
-        } else if (instance.state == AlarmInstanceState::PENDING) {
-            instance.state = AlarmInstanceState::INACTIVE;
-            instance.state_changed_at = now;
-        }
-        // INACTIVE状态保持不变
-    }
-    
-    // 如果状态发生变化，生成事件
-    if (old_state != instance.state) {
-        processStateTransition(instance, rule);
-    }
-}
-
-void AlarmRuleEngine::processStateTransition(AlarmInstance& instance, const AlarmRule& rule) {
-    if (instance.state == AlarmInstanceState::FIRING || 
-        instance.state == AlarmInstanceState::RESOLVED) {
-        generateAlarmEvent(instance, rule);
-    }
-    
-    logInfo("Alarm instance " + instance.fingerprint + " state changed to " + 
-           std::to_string(static_cast<int>(instance.state)));
-}
-
-void AlarmRuleEngine::generateAlarmEvent(const AlarmInstance& instance, const AlarmRule& rule) {
-    AlarmEvent event;
-    event.fingerprint = instance.fingerprint;
-    event.status = (instance.state == AlarmInstanceState::FIRING) ? "firing" : "resolved";
-    event.labels = instance.labels;
-    event.annotations = instance.annotations;
-    event.starts_at = instance.pending_start_at;
-    event.ends_at = (instance.state == AlarmInstanceState::RESOLVED) ? 
-                   instance.state_changed_at : std::chrono::system_clock::time_point{};
-    
-    logInfo("Generated alarm event: " + event.toJson());
-    
-    // 发送事件到告警管理器
-    if (m_alarm_manager) {
-        m_alarm_manager->processAlarmEvent(event);
-    }
-    
-    // 调用回调函数
-    if (m_alarm_event_callback) {
-        m_alarm_event_callback(event);
-    }
 }
 
 std::chrono::seconds AlarmRuleEngine::parseDuration(const std::string& duration) {
@@ -572,10 +392,14 @@ std::chrono::seconds AlarmRuleEngine::parseDuration(const std::string& duration)
         if (unit == "d") return std::chrono::seconds(value * 86400);
     }
     
-    return std::chrono::seconds(300); // 默认5分钟
+    return std::chrono::seconds(0);
 }
 
 std::string AlarmRuleEngine::formatTimestamp(const std::chrono::system_clock::time_point& tp) {
+    if (tp == std::chrono::system_clock::time_point{}) {
+        return "";
+    }
+    
     auto time_t = std::chrono::system_clock::to_time_t(tp);
     std::ostringstream oss;
     oss << std::put_time(std::gmtime(&time_t), "%Y-%m-%dT%H:%M:%SZ");
@@ -605,9 +429,13 @@ std::string AlarmEvent::toJson() const {
     json["labels"] = labels;
     json["annotations"] = annotations;
     json["starts_at"] = AlarmRuleEngine::formatTimestamp(starts_at);
+    
     if (ends_at != std::chrono::system_clock::time_point{}) {
         json["ends_at"] = AlarmRuleEngine::formatTimestamp(ends_at);
+    } else {
+        json["ends_at"] = nullptr;
     }
+    
     json["generator_url"] = generator_url;
     
     return json.dump(2);

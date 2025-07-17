@@ -69,7 +69,7 @@ TEST_F(AlarmRuleStorageTest, InsertAlarmRuleTest) {
         "HighCpuOrLoadOnSpecificHost",
         expression,
         "5m",
-        "critical",
+        "严重",
         "特定主机CPU或负载过高",
         "节点 {{host_ip}} 资源使用率异常。CPU: {{usage_percent}}%, 负载: {{load_avg_1m}}。"
     );
@@ -86,15 +86,19 @@ TEST_F(AlarmRuleStorageTest, GetAlarmRuleTest) {
     nlohmann::json expression = {
         {"stable", "cpu"},
         {"metric", "usage_percent"},
-        {"operator", ">"},
-        {"threshold", 80.0}
+        {"conditions", nlohmann::json::array({
+            {
+                {"operator", ">"},
+                {"threshold", 80.0}
+            }
+        })}
     };
 
     std::string id = storage->insertAlarmRule(
         "HighCpuUsage",
         expression,
         "2m",
-        "warning",
+        "一般",
         "CPU使用率过高",
         "节点 {{host_ip}} CPU使用率达到 {{usage_percent}}%",
         "硬件状态"
@@ -106,9 +110,9 @@ TEST_F(AlarmRuleStorageTest, GetAlarmRuleTest) {
     EXPECT_EQ(rule.id, id);
     EXPECT_EQ(rule.alert_name, "HighCpuUsage");
     EXPECT_EQ(rule.for_duration, "2m");
-    EXPECT_EQ(rule.severity, "warning");
+    EXPECT_EQ(rule.severity, "一般");
     EXPECT_EQ(rule.summary, "CPU使用率过高");
-    EXPECT_EQ(rule.alarm_type, "硬件状态");
+    EXPECT_EQ(rule.alert_type, "硬件状态");
     EXPECT_TRUE(rule.enabled);
 }
 
@@ -121,15 +125,19 @@ TEST_F(AlarmRuleStorageTest, UpdateAlarmRuleTest) {
     nlohmann::json expression = {
         {"stable", "cpu"},
         {"metric", "usage_percent"},
-        {"operator", ">"},
-        {"threshold", 80.0}
+        {"conditions", nlohmann::json::array({
+            {
+                {"operator", ">"},
+                {"threshold", 80.0}
+            }
+        })}
     };
 
     std::string id = storage->insertAlarmRule(
         "HighCpuUsage",
         expression,
         "2m",
-        "warning",
+        "一般",
         "CPU使用率过高",
         "节点 {{host_ip}} CPU使用率达到 {{usage_percent}}%",
         "硬件状态"
@@ -141,8 +149,12 @@ TEST_F(AlarmRuleStorageTest, UpdateAlarmRuleTest) {
     nlohmann::json new_expression = {
         {"stable", "cpu"},
         {"metric", "usage_percent"},
-        {"operator", ">"},
-        {"threshold", 90.0}
+        {"conditions", nlohmann::json::array({
+            {
+                {"operator", ">"},
+                {"threshold", 90.0}
+            }
+        })}
     };
 
     EXPECT_TRUE(storage->updateAlarmRule(
@@ -150,7 +162,7 @@ TEST_F(AlarmRuleStorageTest, UpdateAlarmRuleTest) {
         "HighCpuUsageUpdated",
         new_expression,
         "5m",
-        "critical",
+        "严重",
         "CPU使用率过高(更新)",
         "节点 {{host_ip}} CPU使用率达到 {{usage_percent}}% (更新后的规则)",
         "业务链路",
@@ -161,8 +173,8 @@ TEST_F(AlarmRuleStorageTest, UpdateAlarmRuleTest) {
     AlarmRule updated_rule = storage->getAlarmRule(id);
     EXPECT_EQ(updated_rule.alert_name, "HighCpuUsageUpdated");
     EXPECT_EQ(updated_rule.for_duration, "5m");
-    EXPECT_EQ(updated_rule.severity, "critical");
-    EXPECT_EQ(updated_rule.alarm_type, "业务链路");
+    EXPECT_EQ(updated_rule.severity, "严重");
+    EXPECT_EQ(updated_rule.alert_type, "业务链路");
     EXPECT_FALSE(updated_rule.enabled);
 }
 
@@ -183,7 +195,7 @@ TEST_F(AlarmRuleStorageTest, DeleteAlarmRuleTest) {
         "HighCpuUsage",
         expression,
         "2m",
-        "warning",
+        "一般",
         "CPU使用率过高",
         "节点 {{host_ip}} CPU使用率达到 {{usage_percent}}%",
         "硬件状态"
@@ -223,7 +235,7 @@ TEST_F(AlarmRuleStorageTest, GetAllAlarmRulesTest) {
         "HighCpuUsage",
         expression1,
         "2m",
-        "warning",
+        "一般",
         "CPU使用率过高",
         "节点 {{host_ip}} CPU使用率达到 {{usage_percent}}%"
     );
@@ -232,7 +244,7 @@ TEST_F(AlarmRuleStorageTest, GetAllAlarmRulesTest) {
         "HighMemUsage",
         expression2,
         "3m",
-        "critical",
+        "严重",
         "内存使用率过高",
         "节点 {{host_ip}} 内存使用率达到 {{usage_percent}}%"
     );
@@ -271,7 +283,7 @@ TEST_F(AlarmRuleStorageTest, GetEnabledAlarmRulesTest) {
         "EnabledRule",
         expression,
         "2m",
-        "warning",
+        "一般",
         "启用的规则",
         "这是一个启用的规则",
         "硬件状态",
@@ -283,7 +295,7 @@ TEST_F(AlarmRuleStorageTest, GetEnabledAlarmRulesTest) {
         "DisabledRule",
         expression,
         "2m",
-        "warning",
+        "一般",
         "禁用的规则",
         "这是一个禁用的规则",
         "系统故障",
@@ -344,7 +356,7 @@ TEST_F(AlarmRuleStorageTest, ComplexAlarmRuleTest) {
         "HighCpuOrLoadOnSpecificHost",
         complex_expression,
         "5m",
-        "critical",
+        "严重",
         "特定主机CPU或负载过高",
         "节点 {{host_ip}} 资源使用率异常。CPU: {{usage_percent}}%, 负载: {{load_avg_1m}}。"
     );

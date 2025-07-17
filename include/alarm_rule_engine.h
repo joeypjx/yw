@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 #include <map>
+#include <set>
 #include <memory>
 #include <chrono>
 #include <thread>
@@ -30,8 +31,8 @@ struct AlarmInstance {
     AlarmInstanceState state;       // 当前状态
     std::chrono::system_clock::time_point state_changed_at;  // 状态变更时间
     std::chrono::system_clock::time_point pending_start_at;  // 开始pending的时间
-    std::map<std::string, std::string> labels;              // 标签
-    std::map<std::string, std::string> annotations;         // 注解
+    std::map<std::string, std::string> labels;              // 标签 (用于生成事件)
+    std::map<std::string, std::string> annotations;         // 注解 (用于生成事件)
     double value;                   // 触发告警的值
 };
 
@@ -99,24 +100,27 @@ private:
     void evaluateRules();
     void evaluateRule(const AlarmRule& rule);
     
-    // 规则到SQL转换 (单超级表)
-    std::string convertRuleToSQL(const nlohmann::json& expression, const std::string& stable);
-    std::string buildWhereClause(const nlohmann::json& expression);
-    std::string buildMetricCondition(const nlohmann::json& expression);
-    std::string convertOperator(const std::string& op);
+    // 规则到SQL转换 (新设计)
+    std::string convertRuleToSQL(const nlohmann::json& expression, const std::string& stable, const std::string& metric);
     bool evaluateCondition(double value, const std::string& op, double threshold);
     
     // 查询执行
     std::vector<QueryResult> executeQuery(const std::string& sql);
     
-    // 告警实例管理
+    // 告警实例管理 (新的状态协调算法)
     std::string generateFingerprint(const std::string& alert_name, const std::map<std::string, std::string>& labels);
-    void updateAlarmInstance(const std::string& fingerprint, const AlarmRule& rule, 
-                           const QueryResult& result, bool condition_met);
-    void processStateTransition(AlarmInstance& instance, const AlarmRule& rule);
+    void reconcileAlarmStates(const AlarmRule& rule, const std::set<std::string>& active_from_db, 
+                             const std::vector<QueryResult>& results);
+    void createNewAlarmInstance(const std::string& fingerprint, const AlarmRule& rule, 
+                               const QueryResult& result, std::chrono::system_clock::time_point now);
+    void updateExistingAlarmInstance(AlarmInstance& instance, const AlarmRule& rule, 
+                                   const QueryResult& result, std::chrono::system_clock::time_point now);
+    void handleResolvedAlarm(AlarmInstance& instance, const AlarmRule& rule, 
+                           const QueryResult& result, std::chrono::system_clock::time_point now);
     
     // 告警事件生成
-    void generateAlarmEvent(const AlarmInstance& instance, const AlarmRule& rule);
+    void generateAlarmEvent(const AlarmInstance& instance, const AlarmRule& rule, 
+                          const std::string& status);
     
     // 工具函数
     std::chrono::seconds parseDuration(const std::string& duration);

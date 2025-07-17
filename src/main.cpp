@@ -188,56 +188,118 @@ void createTestAlarmRules(AlarmRuleStorage& alarm_storage) {
     nlohmann::json cpu_rule = {
         {"stable", "cpu"},
         {"metric", "usage_percent"},
-        {"operator", ">"},
-        {"threshold", 85.0}  // 降低阈值
+        {"conditions", nlohmann::json::array({
+            {
+                {"operator", ">"},
+                {"threshold", 85.0}
+            }
+        })}
     };
     
     std::string cpu_rule_id = alarm_storage.insertAlarmRule(
         "HighCpuUsage",
         cpu_rule,
         "15s",  // 非常短的持续时间
-        "warning",
+        "严重",
         "CPU使用率过高",
-        "节点 {{host_ip}} CPU使用率达到 {{usage_percent}}%"
+        "节点 {{host_ip}} CPU使用率达到 {{usage_percent}}%。",
+        "硬件资源"
     );
     
     // 规则2: 高内存使用率告警
     nlohmann::json memory_rule = {
         {"stable", "memory"},
         {"metric", "usage_percent"},
-        {"operator", ">"},
-        {"threshold", 85.0}  // 降低阈值
+        {"conditions", nlohmann::json::array({
+            {
+                {"operator", ">"},
+                {"threshold", 85.0}
+            }
+        })}
     };
     
     std::string memory_rule_id = alarm_storage.insertAlarmRule(
         "HighMemoryUsage",
         memory_rule,
         "15s",
-        "critical",
+        "严重",
         "内存使用率过高",
-        "节点 {{host_ip}} 内存使用率达到 {{usage_percent}}%"
+        "节点 {{host_ip}} 内存使用率达到 {{usage_percent}}%。",
+        "硬件资源"
     );
     
     // 规则3: 高磁盘使用率告警
     nlohmann::json disk_rule = {
         {"stable", "disk"},
         {"metric", "usage_percent"},
-        {"operator", ">"},
-        {"threshold", 75.0}  // 降低阈值
+        {"conditions", nlohmann::json::array({
+            {
+                {"operator", ">"},
+                {"threshold", 75.0}
+            }
+        })}
     };
     
     std::string disk_rule_id = alarm_storage.insertAlarmRule(
         "HighDiskUsage",
         disk_rule,
         "15s",
-        "warning",
+        "一般",
         "磁盘使用率过高",
-        "节点 {{host_ip}} 磁盘 {{device}} 使用率达到 {{usage_percent}}%"
+        "节点 {{host_ip}} 磁盘 {{device}} 使用率达到 {{usage_percent}}%。",
+        "硬件资源"
+    );
+    
+    // 规则4: 指定磁盘(/data)空间使用率过高
+    nlohmann::json disk_data_rule = {
+        {"stable", "disk"},
+        {"tags", nlohmann::json::array({
+            {{"mount_point", "/data"}}
+        })},
+        {"metric", "usage_percent"},
+        {"conditions", nlohmann::json::array({
+            {
+                {"operator", ">"},
+                {"threshold", 70.0}
+            }
+        })}
+    };
+    
+    std::string disk_data_rule_id = alarm_storage.insertAlarmRule(
+        "DataDiskSpaceIssue",
+        disk_data_rule,
+        "0s",
+        "严重",
+        "数据磁盘空间问题",
+        "节点 {{host_ip}} 的磁盘 {{mount_point}} 空间不足：使用率 {{usage_percent}}%。",
+        "硬件资源"
+    );
+    
+    // 规则5: GPU使用率过高
+    nlohmann::json gpu_rule = {
+        {"stable", "gpu"},
+        {"metric", "compute_usage"},
+        {"conditions", nlohmann::json::array({
+            {
+                {"operator", ">"},
+                {"threshold", 80.0}
+            }
+        })}
+    };
+    
+    std::string gpu_rule_id = alarm_storage.insertAlarmRule(
+        "HighGpuUsage",
+        gpu_rule,
+        "30s",
+        "严重",
+        "GPU使用率过高",
+        "节点 {{host_ip}} 的GPU {{gpu_name}} 计算使用率达到 {{compute_usage}}%。",
+        "硬件资源"
     );
     
     // 验证规则创建结果
-    std::vector<std::string> rule_ids = {cpu_rule_id, memory_rule_id, disk_rule_id};
-    std::vector<std::string> rule_names = {"HighCpuUsage", "HighMemoryUsage", "HighDiskUsage"};
+    std::vector<std::string> rule_ids = {cpu_rule_id, memory_rule_id, disk_rule_id, disk_data_rule_id, gpu_rule_id};
+    std::vector<std::string> rule_names = {"HighCpuUsage", "HighMemoryUsage", "HighDiskUsage", "DataDiskSpaceIssue", "HighGpuUsage"};
     
     
     for (size_t i = 0; i < rule_ids.size(); i++) {

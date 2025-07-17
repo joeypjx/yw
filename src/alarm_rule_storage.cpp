@@ -75,21 +75,34 @@ bool AlarmRuleStorage::createTable() {
             alert_name VARCHAR(255) NOT NULL UNIQUE,
             expression_json TEXT NOT NULL,
             for_duration VARCHAR(32) NOT NULL,
-            severity ENUM('info', 'warning', 'critical') NOT NULL,
+            severity VARCHAR(32) NOT NULL,
             summary TEXT NOT NULL,
             description TEXT NOT NULL,
-            alarm_type VARCHAR(255) NOT NULL,
+            alert_type VARCHAR(255) NOT NULL,
             enabled BOOLEAN DEFAULT TRUE,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             INDEX idx_alert_name (alert_name),
             INDEX idx_enabled (enabled),
             INDEX idx_severity (severity),
-            INDEX idx_alarm_type (alarm_type)
+            INDEX idx_alert_type (alert_type)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     )";
 
-    return executeQuery(sql);
+    bool table_created = executeQuery(sql);
+    
+    // 尝试更新现有表的severity字段为VARCHAR（如果表已存在且是枚举类型）
+    if (table_created) {
+        std::string alter_sql = R"(
+            ALTER TABLE alarm_rules 
+            MODIFY COLUMN severity VARCHAR(32) NOT NULL
+        )";
+        
+        // 这个操作可能失败（如果表刚创建或已经是新格式），所以不检查返回值
+        executeQuery(alter_sql);
+    }
+    
+    return table_created;
 }
 
 std::string AlarmRuleStorage::insertAlarmRule(const std::string& alert_name, 
@@ -98,7 +111,7 @@ std::string AlarmRuleStorage::insertAlarmRule(const std::string& alert_name,
                                             const std::string& severity,
                                             const std::string& summary,
                                             const std::string& description,
-                                            const std::string& alarm_type,
+                                            const std::string& alert_type,
                                             bool enabled) {
     if (!m_connected) {
         LogManager::getLogger()->error("Not connected to MySQL");
@@ -109,7 +122,7 @@ std::string AlarmRuleStorage::insertAlarmRule(const std::string& alert_name,
     std::string expression_json = expression.dump();
     
     std::ostringstream oss;
-    oss << "INSERT INTO alarm_rules (id, alert_name, expression_json, for_duration, severity, summary, description, alarm_type, enabled) VALUES ('"
+    oss << "INSERT INTO alarm_rules (id, alert_name, expression_json, for_duration, severity, summary, description, alert_type, enabled) VALUES ('"
         << escapeString(id) << "', '"
         << escapeString(alert_name) << "', '"
         << escapeString(expression_json) << "', '"
@@ -117,7 +130,7 @@ std::string AlarmRuleStorage::insertAlarmRule(const std::string& alert_name,
         << escapeString(severity) << "', '"
         << escapeString(summary) << "', '"
         << escapeString(description) << "', '"
-        << escapeString(alarm_type) << "', "
+        << escapeString(alert_type) << "', "
         << (enabled ? "TRUE" : "FALSE") << ")";
 
     if (executeQuery(oss.str())) {
@@ -133,7 +146,7 @@ bool AlarmRuleStorage::updateAlarmRule(const std::string& id,
                                      const std::string& severity,
                                      const std::string& summary,
                                      const std::string& description,
-                                     const std::string& alarm_type,
+                                     const std::string& alert_type,
                                      bool enabled) {
     if (!m_connected) {
         LogManager::getLogger()->error("Not connected to MySQL");
@@ -150,7 +163,7 @@ bool AlarmRuleStorage::updateAlarmRule(const std::string& id,
         << "severity = '" << escapeString(severity) << "', "
         << "summary = '" << escapeString(summary) << "', "
         << "description = '" << escapeString(description) << "', "
-        << "alarm_type = '" << escapeString(alarm_type) << "', "
+        << "alert_type = '" << escapeString(alert_type) << "', "
         << "enabled = " << (enabled ? "TRUE" : "FALSE") << " "
         << "WHERE id = '" << escapeString(id) << "'";
 
@@ -175,7 +188,7 @@ AlarmRule AlarmRuleStorage::getAlarmRule(const std::string& id) {
         return rule;
     }
 
-    std::string sql = "SELECT id, alert_name, expression_json, for_duration, severity, summary, description, alarm_type, enabled, created_at, updated_at FROM alarm_rules WHERE id = '" + escapeString(id) + "'";
+    std::string sql = "SELECT id, alert_name, expression_json, for_duration, severity, summary, description, alert_type, enabled, created_at, updated_at FROM alarm_rules WHERE id = '" + escapeString(id) + "'";
     
     if (mysql_query(m_mysql, sql.c_str()) != 0) {
         LogManager::getLogger()->error("Query failed: {}", mysql_error(m_mysql));
@@ -197,7 +210,7 @@ AlarmRule AlarmRuleStorage::getAlarmRule(const std::string& id) {
         rule.severity = row[4] ? row[4] : "";
         rule.summary = row[5] ? row[5] : "";
         rule.description = row[6] ? row[6] : "";
-        rule.alarm_type = row[7] ? row[7] : "";
+        rule.alert_type = row[7] ? row[7] : "";
         rule.enabled = row[8] ? (std::string(row[8]) == "1") : false;
         rule.created_at = row[9] ? row[9] : "";
         rule.updated_at = row[10] ? row[10] : "";
@@ -215,7 +228,7 @@ std::vector<AlarmRule> AlarmRuleStorage::getAllAlarmRules() {
         return rules;
     }
 
-    std::string sql = "SELECT id, alert_name, expression_json, for_duration, severity, summary, description, alarm_type, enabled, created_at, updated_at FROM alarm_rules ORDER BY created_at DESC";
+    std::string sql = "SELECT id, alert_name, expression_json, for_duration, severity, summary, description, alert_type, enabled, created_at, updated_at FROM alarm_rules ORDER BY created_at DESC";
     
     if (mysql_query(m_mysql, sql.c_str()) != 0) {
         LogManager::getLogger()->error("Query failed: {}", mysql_error(m_mysql));
@@ -238,7 +251,7 @@ std::vector<AlarmRule> AlarmRuleStorage::getAllAlarmRules() {
         rule.severity = row[4] ? row[4] : "";
         rule.summary = row[5] ? row[5] : "";
         rule.description = row[6] ? row[6] : "";
-        rule.alarm_type = row[7] ? row[7] : "";
+        rule.alert_type = row[7] ? row[7] : "";
         rule.enabled = row[8] ? (std::string(row[8]) == "1") : false;
         rule.created_at = row[9] ? row[9] : "";
         rule.updated_at = row[10] ? row[10] : "";
@@ -257,7 +270,7 @@ std::vector<AlarmRule> AlarmRuleStorage::getEnabledAlarmRules() {
         return rules;
     }
 
-    std::string sql = "SELECT id, alert_name, expression_json, for_duration, severity, summary, description, alarm_type, enabled, created_at, updated_at FROM alarm_rules WHERE enabled = TRUE ORDER BY created_at DESC";
+    std::string sql = "SELECT id, alert_name, expression_json, for_duration, severity, summary, description, alert_type, enabled, created_at, updated_at FROM alarm_rules WHERE enabled = TRUE ORDER BY created_at DESC";
     
     if (mysql_query(m_mysql, sql.c_str()) != 0) {
         LogManager::getLogger()->error("Query failed: {}", mysql_error(m_mysql));
@@ -280,7 +293,7 @@ std::vector<AlarmRule> AlarmRuleStorage::getEnabledAlarmRules() {
         rule.severity = row[4] ? row[4] : "";
         rule.summary = row[5] ? row[5] : "";
         rule.description = row[6] ? row[6] : "";
-        rule.alarm_type = row[7] ? row[7] : "";
+        rule.alert_type = row[7] ? row[7] : "";
         rule.enabled = row[8] ? (std::string(row[8]) == "1") : false;
         rule.created_at = row[9] ? row[9] : "";
         rule.updated_at = row[10] ? row[10] : "";

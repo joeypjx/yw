@@ -39,7 +39,7 @@ void HttpServer::handle_alarm_rules(const httplib::Request& req, httplib::Respon
             body["severity"].get<std::string>(),
             body["summary"].get<std::string>(),
             body["description"].get<std::string>(),
-            body["alarm_type"].get<std::string>(),
+            body["alert_type"].get<std::string>(),
             true
         );
         if (id.empty()) {

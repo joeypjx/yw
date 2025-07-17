@@ -14,7 +14,7 @@ struct AlarmRule {
     std::string severity;
     std::string summary;
     std::string description;
-    std::string alarm_type;  // "硬件状态", "业务链路", "系统故障"
+    std::string alert_type;  // "硬件状态", "业务链路", "系统故障"
     bool enabled;
     std::string created_at;
     std::string updated_at;
@@ -37,7 +37,7 @@ public:
                                const std::string& severity,
                                const std::string& summary,
                                const std::string& description,
-                               const std::string& alarm_type = "硬件状态",
+                               const std::string& alert_type = "硬件状态",
                                bool enabled = true);
     
     bool updateAlarmRule(const std::string& id, 
@@ -47,7 +47,7 @@ public:
                         const std::string& severity,
                         const std::string& summary,
                         const std::string& description,
-                        const std::string& alarm_type = "硬件状态",
+                        const std::string& alert_type = "硬件状态",
                         bool enabled = true);
     
     bool deleteAlarmRule(const std::string& id);
