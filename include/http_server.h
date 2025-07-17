@@ -35,21 +35,6 @@ public:
      */
     void stop();
 
-    /**
-     * @brief 解析metricName并构建内部表达式格式.
-     * @param metric_name 指标名称.
-     * @param condition 条件对象.
-     * @return 内部表达式JSON格式.
-     */
-    nlohmann::json parseMetricNameAndBuildExpression(const std::string& metric_name, const nlohmann::json& condition);
-
-    /**
-     * @brief 转换description模板格式从{}到{{}}.
-     * @param template_str 模板字符串.
-     * @return 转换后的模板字符串.
-     */
-    std::string convertDescriptionTemplate(const std::string& template_str);
-
 private:
     /**
      * @brief 设置服务器路由.

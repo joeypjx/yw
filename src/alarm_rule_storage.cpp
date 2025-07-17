@@ -78,7 +78,7 @@ bool AlarmRuleStorage::createTable() {
             severity ENUM('info', 'warning', 'critical') NOT NULL,
             summary TEXT NOT NULL,
             description TEXT NOT NULL,
-            alarm_type ENUM('硬件状态', '业务链路', '系统故障') NOT NULL DEFAULT '硬件状态',
+            alarm_type VARCHAR(255) NOT NULL,
             enabled BOOLEAN DEFAULT TRUE,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
