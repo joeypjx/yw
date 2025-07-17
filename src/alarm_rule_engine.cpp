@@ -277,7 +277,7 @@ void AlarmRuleEngine::createNewAlarmInstance(const std::string& fingerprint,
     
     m_alarm_instances[fingerprint] = instance;
     
-    logInfo("Created new alarm instance: " + fingerprint + " (PENDING)");
+    logInfo("Created new alarm instance: " + fingerprint + " (PENDING)" + " " + result.metric + " " + std::to_string(result.value));
 }
 
 void AlarmRuleEngine::updateExistingAlarmInstance(AlarmInstance& instance, 

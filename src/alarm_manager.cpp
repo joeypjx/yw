@@ -33,7 +33,7 @@ bool AlarmManager::connect() {
     
     // 连接到数据库
     if (!mysql_real_connect(m_connection, m_host.c_str(), m_user.c_str(), 
-                           m_password.c_str(), nullptr, m_port, nullptr, 0)) {
+                           m_password.c_str(), m_database.c_str(), m_port, nullptr, 0)) {
         logError("Failed to connect to MySQL: " + std::string(mysql_error(m_connection)));
         mysql_close(m_connection);
         m_connection = nullptr;
