@@ -93,7 +93,7 @@ void AlarmRuleEngine::loadRulesFromDatabase() {
     try {
         std::lock_guard<std::mutex> lock(m_rules_mutex);
         m_rules = m_rule_storage->getEnabledAlarmRules();
-        logInfo("Loaded " + std::to_string(m_rules.size()) + " alarm rules from database");
+        logDebug("Loaded " + std::to_string(m_rules.size()) + " alarm rules from database");
     } catch (const std::exception& e) {
         logError("Failed to load rules from database: " + std::string(e.what()));
     }

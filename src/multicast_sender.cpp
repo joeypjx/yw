@@ -63,7 +63,7 @@ void MulticastSender::heartbeatLoop() {
         if (!sendMulticastMessage(msg_str)) {
             LogManager::getLogger()->error("Failed to send heartbeat multicast message.");
         } else {
-            LogManager::getLogger()->info("Sent heartbeat message.");
+            LogManager::getLogger()->debug("Sent heartbeat message.");
         }
         std::this_thread::sleep_for(std::chrono::seconds(2));
     }
@@ -84,7 +84,7 @@ void MulticastSender::resourceLoop() {
         if (!sendMulticastMessage(msg_str)) {
             LogManager::getLogger()->error("Failed to send resource multicast message.");
         } else {
-            LogManager::getLogger()->info("Sent resource message.");
+            LogManager::getLogger()->debug("Sent resource message.");
         }
         std::this_thread::sleep_for(std::chrono::seconds(5));
     }

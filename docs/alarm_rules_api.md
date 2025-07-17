@@ -1,111 +1,168 @@
-添加告警规则接口
+增加告警规则的HTTP请求格式
 
-这个接口用于创建一个新的告警规则。
+  请求信息
 
-*   **接口:** `POST /alarm/rules`
-*   **功能:** 添加一个新的告警规则。
-*   **请求报文格式:** `application/json`
+  - 方法: POST
+  - 路径: /alarm/rules
+  - Content-Type: application/json
 
-告警规则JSON对象包含以下字段：
+  请求体格式
 
-| 字段                  | 类型             | 必选 | 说明                                                                                              | 示例值                                                                  |
-| --------------------- | ---------------- | ---- | ------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| `templateId`          | string           | 是   | 告警规则标识，可使用中文或者英文标识。                                                                        | `"CPU使用过高"`                                                      |
-| `metricName`          | string           | 是   | 关联的监控指标名称。                                                                              | `"resource.cpu.usage_percent"`                                                   |
-| `alarmType`           | string           | 是   | 告警类型，包括 "硬件状态"、"业务链路"、"系统故障"。                                                          | `"硬件状态"`                                                              |
-| `alarmLevel`          | string           | 是   | 告警级别，包括 "严重", "一般", "提示"。                                                   | `"critical"`                                                            |
-| `triggerCountThreshold` | integer        | 是   | 连续多少次满足条件才触发告警, 每次间隔5秒。                                            | `3`                                                                     |
-| `contentTemplate`     | string           | 是   | 告警内容的模板，可以使用占位符，占位符包括{nodeId}、{alarmType}、{alarmLevel}、{metricName}、{value}。                                                                  | `" 节点 {nodeId} 发生 {alarmLevel} 告警，..."`                     |
-| `condition`           | object           | 是   | 触发条件的定义，包括简单条件和复合条件。                                                                                 | `{"type": "GreaterThan", "threshold": 5.0}`                             |
-| `actions`             | array of objects | 是   | 告警触发后需要执行的动作列表，包括事件推送`Notify`和事件记录`Database`。                                          | `[{"type": "Log"}, {"type": "Database"}]`                               |
-
-**`metricName` 对象详解:**
-*   **不带条件的对象:**
-    *  `resource.cpu.usage_percent` CPU 的 占用率
-*   **带条件的对象:**
-    *  `resource.disk[mount_point=/].usage_percent` 根目录的 磁盘 的使用率
-
-**`condition` 对象详解:**
-*   **简单条件:**
-    *   `type`: `GreaterThan`, `LessThan` 等。
-    *   `threshold`: 用于比较的阈值，比如大于90。
-*   **复合条件:**
-    *   `type`: `And` 或 `Or`。
-    *   `conditions`: 一个包含多个条件对象的数组，用于进行逻辑组合，比如大于80且小于90。
-
-**请求示例:**
-```json
-{
-    "templateId": "CPU使用过高",
-    "metricName": "resource.cpu.usage_percent",
-    "alarmType": "硬件状态",
-    "alarmLevel": "严重",
-    "triggerCountThreshold": 3,
-    "contentTemplate": "节点 {nodeId} 发生 {alarmLevel} 告警，CPU使用值为 {value}",
-    "condition": {
-        "type": "GreaterThan",
-        "threshold": 90.0
-    },
-    "actions": [
+  {
+    "alert_name": "告警规则名称",
+    "expression": {
+      "stable": "超级表名称",
+      "metric": "指标名称",
+      "conditions": [
         {
-            "type": "Notify"
-        },
-        {
-            "type": "Database"
+          "operator": "操作符",
+          "threshold": 阈值
         }
-    ]
-}
-```
-
-```json
-{
-    "templateId": "根目录的磁盘占用较高",
-    "metricName": "resource.disk[mount_point=/].usage_percent",
-    "alarmType": "硬件状态",
-    "alarmLevel": "提示",
-    "triggerCountThreshold": 3,
-    "contentTemplate": "节点 {nodeId} 发生 {alarmLevel} 告警，根目录的磁盘占用为 {value}",
-    "condition": {
-        "type": "And",
-        "conditions": [
-            {
-                "threshold": 60.0,
-                "type": "GreaterThan"
-            },
-            {
-                "threshold": 90.0,
-                "type": "LessThan"
-            }
-        ]
-    },
-    "actions": [
+      ],
+      "tags": [
         {
-            "type": "Notify"
-        },
-        {
-            "type": "Database"
+          "标签名": "标签值"
         }
-    ]
-}
-```
-
-contentTemplate转换成description时，
-占位符{nodeId}、{alarmLevel}、{value} 
-变为 {{host_ip}} {{severity}} {{value}}
-
-  "metricName": resource.disk[mount_point=/].usage_percent
-  "condition": {
-        "type": "GreaterThan",
-        "threshold": 90.0
+      ]
+    },
+    "for": "持续时间",
+    "severity": "严重等级",
+    "summary": "告警摘要",
+    "description": "告警详细描述",
+    "alert_type": "告警类型"
   }
-  转换为
-  expression:
-    and:
-    - stable: disk
-      tag: mount_point
-      operator: '=='
-      threshold: '/'
-    - stable: disk
-      tag: usage_percent
-      operator: '>'
-      value: 90.0
+
+  具体示例
+
+  1. 简单CPU使用率告警
+
+  {
+    "alert_name": "HighCpuUsage",
+    "expression": {
+      "stable": "cpu",
+      "metric": "usage_percent",
+      "conditions": [
+        {
+          "operator": ">",
+          "threshold": 85.0
+        }
+      ]
+    },
+    "for": "5m",
+    "severity": "严重",
+    "summary": "CPU使用率过高",
+    "description": "节点 {{host_ip}} CPU使用率达到 {{usage_percent}}%。",
+    "alert_type": "硬件资源"
+  }
+
+  2. 带标签条件的磁盘告警
+
+  {
+    "alert_name": "DataDiskSpaceIssue",
+    "expression": {
+      "stable": "disk",
+      "tags": [
+        {
+          "mount_point": "/data"
+        }
+      ],
+      "metric": "usage_percent",
+      "conditions": [
+        {
+          "operator": ">",
+          "threshold": 90.0
+        }
+      ]
+    },
+    "for": "0s",
+    "severity": "严重",
+    "summary": "数据磁盘空间问题",
+    "description": "节点 {{host_ip}} 的磁盘 {{mount_point}} 空间不足：使用率 {{usage_percent}}%。",
+    "alert_type": "硬件资源"
+  }
+
+  3. 多条件告警（区间判断）
+
+  {
+    "alert_name": "DiskSpaceWarning",
+    "expression": {
+      "stable": "disk",
+      "tags": [
+        {
+          "mount_point": "/data"
+        }
+      ],
+      "metric": "usage_percent",
+      "conditions": [
+        {
+          "operator": ">",
+          "threshold": 50.0
+        },
+        {
+          "operator": "<",
+          "threshold": 90.0
+        }
+      ]
+    },
+    "for": "2m",
+    "severity": "提示",
+    "summary": "磁盘空间风险提示",
+    "description": "节点 {{host_ip}} 的磁盘 {{mount_point}} 空间风险提示：使用率 {{usage_percent}}%。",
+    "alert_type": "硬件资源"
+  }
+
+  字段说明
+
+  | 字段                                | 类型     | 必需  | 说明                                      |
+  |-----------------------------------|--------|-----|-----------------------------------------|
+  | alert_name                        | String | ✅   | 告警规则的唯一名称                               |
+  | expression                        | Object | ✅   | 告警表达式对象                                 |
+  | expression.stable                 | String | ✅   | 超级表名称 (cpu, memory, disk, network, gpu) |
+  | expression.metric                 | String | ✅   | 指标名称 (usage_percent, compute_usage等)    |
+  | expression.conditions             | Array  | ✅   | 条件数组                                    |
+  | expression.conditions[].operator  | String | ✅   | 操作符 (>, <, >=, <=, =, !=)               |
+  | expression.conditions[].threshold | Number | ✅   | 阈值                                      |
+  | expression.tags                   | Array  | ❌   | 标签过滤条件                                  |
+  | for                               | String | ✅   | 持续时间 (如: "5m", "30s", "1h")             |
+  | severity                          | String | ✅   | 严重等级 (提示, 一般, 严重)                       |
+  | summary                           | String | ✅   | 告警摘要                                    |
+  | description                       | String | ✅   | 告警详细描述，支持模板变量                           |
+  | alert_type                        | String | ✅   | 告警类型 (硬件资源, 业务链路, 系统故障)                 |
+
+  响应格式
+
+  成功响应 (200)
+
+  {
+    "status": "success",
+    "id": "uuid-generated-id"
+  }
+
+  错误响应 (400/500)
+
+  {
+    "error": "错误描述信息"
+  }
+
+  完整的curl请求示例
+
+  curl -X POST http://localhost:8080/alarm/rules \
+    -H "Content-Type: application/json" \
+    -d '{
+      "alert_name": "HighCpuUsage",
+      "expression": {
+        "stable": "cpu",
+        "metric": "usage_percent",
+        "conditions": [
+          {
+            "operator": ">",
+            "threshold": 85.0
+          }
+        ]
+      },
+      "for": "5m",
+      "severity": "严重",
+      "summary": "CPU使用率过高",
+      "description": "节点 {{host_ip}} CPU使用率达到 {{usage_percent}}%。",
+      "alert_type": "硬件资源"
+    }'
