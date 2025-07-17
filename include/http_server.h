@@ -49,11 +49,39 @@ private:
     void handle_resource(const httplib::Request& req, httplib::Response& res);
 
     /**
-     * @brief 处理 /alarm/rules 的POST请求.
+     * @brief 处理 /alarm/rules 的POST请求 (创建告警规则).
      * @param req HTTP请求.
      * @param res HTTP响应.
      */
-    void handle_alarm_rules(const httplib::Request& req, httplib::Response& res);
+    void handle_alarm_rules_create(const httplib::Request& req, httplib::Response& res);
+
+    /**
+     * @brief 处理 /alarm/rules 的GET请求 (获取所有告警规则).
+     * @param req HTTP请求.
+     * @param res HTTP响应.
+     */
+    void handle_alarm_rules_list(const httplib::Request& req, httplib::Response& res);
+
+    /**
+     * @brief 处理 /alarm/rules/{id} 的GET请求 (获取单个告警规则).
+     * @param req HTTP请求.
+     * @param res HTTP响应.
+     */
+    void handle_alarm_rules_get(const httplib::Request& req, httplib::Response& res);
+
+    /**
+     * @brief 处理 /alarm/rules/{id}/update 的POST请求 (更新告警规则).
+     * @param req HTTP请求.
+     * @param res HTTP响应.
+     */
+    void handle_alarm_rules_update(const httplib::Request& req, httplib::Response& res);
+
+    /**
+     * @brief 处理 /alarm/rules/{id}/delete 的POST请求 (删除告警规则).
+     * @param req HTTP请求.
+     * @param res HTTP响应.
+     */
+    void handle_alarm_rules_delete(const httplib::Request& req, httplib::Response& res);
 
     std::shared_ptr<ResourceStorage> m_resource_storage;
     std::shared_ptr<AlarmRuleStorage> m_alarm_rule_storage;
