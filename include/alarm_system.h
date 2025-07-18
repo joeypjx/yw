@@ -7,6 +7,7 @@
 #include <atomic>
 #include <thread>
 #include <chrono>
+#include <mutex>
 
 // 前向声明
 class ResourceStorage;

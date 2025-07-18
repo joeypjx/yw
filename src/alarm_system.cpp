@@ -17,7 +17,6 @@
 #include <string>
 #include <map>
 #include <signal.h>
-#include <mutex>
 
 // 全局实例指针，用于信号处理
 AlarmSystem* AlarmSystem::s_instance = nullptr;
