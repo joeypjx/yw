@@ -47,7 +47,7 @@ bool NodeStorage::storeNodeData(const std::string& host_ip, const nlohmann::json
         
         m_nodes[host_ip] = node;
         
-        LogManager::getLogger()->info("Node data stored for host: {}", host_ip);
+        LogManager::getLogger()->debug("Node data stored for host: {}", host_ip);
         return true;
         
     } catch (const std::exception& e) {

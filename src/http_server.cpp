@@ -45,23 +45,23 @@ const char* get_web_page_html() {
     <div id="container">
         <h1>System Management</h1>
 
-        <!-- Nodes Section -->
+        <!-- Node Metrics Section -->
         <div class="section-header">
-            <h2>Node Information</h2>
-            <button id="refresh-nodes" class="refresh-btn">Refresh Nodes</button>
+            <h2>Node Metrics</h2>
+            <button id="refresh-metrics" class="refresh-btn">Refresh Metrics</button>
         </div>
-        <table id="nodes-table">
+        <table id="metrics-table">
             <thead>
                 <tr>
                     <th>Host IP</th>
-                    <th>Hostname</th>
-                    <th>Box Type</th>
-                    <th>CPU Type</th>
-                    <th>OS Type</th>
-                    <th>CPU Arch</th>
+                    <th>CPU Usage</th>
+                    <th>CPU Load</th>
+                    <th>Memory Usage</th>
+                    <th>Memory Used/Total</th>
+                    <th>Disk Usage</th>
+                    <th>Network (RX/TX)</th>
                     <th>GPU Count</th>
-                    <th>Last Heartbeat</th>
-                    <th>Status</th>
+                    <th>Last Update</th>
                 </tr>
             </thead>
             <tbody></tbody>
@@ -138,67 +138,78 @@ const char* get_web_page_html() {
 
     <script>
     document.addEventListener('DOMContentLoaded', () => {
-        const nodesTableBody = document.querySelector('#nodes-table tbody');
+        const metricsTableBody = document.querySelector('#metrics-table tbody');
         const rulesTableBody = document.querySelector('#rules-table tbody');
         const eventsTableBody = document.querySelector('#events-table tbody');
         const ruleForm = document.getElementById('rule-form');
         const ruleIdInput = document.getElementById('rule-id');
         const cancelEditButton = document.getElementById('cancel-edit');
         const refreshEventsButton = document.getElementById('refresh-events');
-        const refreshNodesButton = document.getElementById('refresh-nodes');
+        const refreshMetricsButton = document.getElementById('refresh-metrics');
 
         const API_BASE = '';
 
-        const fetchAndRenderNodes = async () => {
+        const fetchAndRenderMetrics = async () => {
             try {
-                const response = await fetch(`${API_BASE}/nodes`);
+                const response = await fetch(`${API_BASE}/node/metrics`);
                 if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
                 const data = await response.json();
-                nodesTableBody.innerHTML = '';
+                metricsTableBody.innerHTML = '';
                 
-                if (data.nodes.length === 0) {
-                    nodesTableBody.innerHTML = '<tr><td colspan="9">No nodes found.</td></tr>';
+                // 修正字段名：使用 nodes_metrics 而不是 nodes
+                if (!data.data || !data.data.nodes_metrics || data.data.nodes_metrics.length === 0) {
+                    metricsTableBody.innerHTML = '<tr><td colspan="9">No node metrics found.</td></tr>';
                     return;
                 }
                 
-                data.nodes.forEach(node => {
-                    const nodeData = node.data;
-                    const secondsSinceHeartbeat = node.seconds_since_last_heartbeat;
+                data.data.nodes_metrics.forEach(node => {
+                    // 修正数据结构：使用 latest_xxx_metrics
+                    const cpu = node.latest_cpu_metrics || {};
+                    const memory = node.latest_memory_metrics || {};
+                    const diskMetrics = node.latest_disk_metrics || {};
+                    const disks = diskMetrics.disks || [];
+                    const networkMetrics = node.latest_network_metrics || {};
+                    const networks = networkMetrics.networks || [];
+                    const gpuMetrics = node.latest_gpu_metrics || {};
+                    const gpus = gpuMetrics.gpus || [];
                     
-                    // Determine node status based on heartbeat
-                    let status = 'Online';
-                    let statusClass = 'status-online';
-                    if (secondsSinceHeartbeat > 30) {
-                        status = 'Offline';
-                        statusClass = 'status-offline';
-                    } else if (secondsSinceHeartbeat > 15) {
-                        status = 'Warning';
-                        statusClass = 'status-warning';
-                    }
+                    // 计算平均磁盘使用率
+                    const avgDiskUsage = disks.length > 0 ? 
+                        (disks.reduce((sum, disk) => sum + (disk.usage_percent || 0), 0) / disks.length).toFixed(1) : 'N/A';
                     
-                    // Format last heartbeat time
-                    const lastHeartbeat = new Date(node.last_heartbeat).toLocaleString();
+                    // 计算网络总流量 (MB)
+                    const totalRxMB = networks.reduce((sum, net) => sum + (net.rx_bytes || 0), 0) / (1024 * 1024);
+                    const totalTxMB = networks.reduce((sum, net) => sum + (net.tx_bytes || 0), 0) / (1024 * 1024);
+                    const networkInfo = networks.length > 0 ? 
+                        `${totalRxMB.toFixed(1)}/${totalTxMB.toFixed(1)} MB` : 'N/A';
                     
-                    // Count GPU devices
-                    const gpuCount = Array.isArray(nodeData.gpu) ? nodeData.gpu.length : 0;
+                    // 格式化内存信息 (GB)
+                    const memoryUsedGB = memory.used ? (memory.used / (1024 * 1024 * 1024)).toFixed(1) : 'N/A';
+                    const memoryTotalGB = memory.total ? (memory.total / (1024 * 1024 * 1024)).toFixed(1) : 'N/A';
+                    const memoryInfo = memory.used && memory.total ? 
+                        `${memoryUsedGB}/${memoryTotalGB} GB` : 'N/A';
+                    
+                    // 格式化最后更新时间
+                    const lastUpdate = cpu.timestamp ? 
+                        new Date(cpu.timestamp * 1000).toLocaleString() : 'N/A';
                     
                     const row = document.createElement('tr');
                     row.innerHTML = `
-                        <td>${escapeHtml(nodeData.host_ip)}</td>
-                        <td>${escapeHtml(nodeData.hostname)}</td>
-                        <td>${escapeHtml(nodeData.box_type)}</td>
-                        <td>${escapeHtml(nodeData.cpu_type)}</td>
-                        <td>${escapeHtml(nodeData.os_type)}</td>
-                        <td>${escapeHtml(nodeData.cpu_arch)}</td>
-                        <td>${gpuCount}</td>
-                        <td>${lastHeartbeat}</td>
-                        <td class="${statusClass}">${status}</td>
+                        <td>${escapeHtml(node.host_ip)}</td>
+                        <td>${(cpu.usage_percent || 0).toFixed(1)}%</td>
+                        <td>${(cpu.load_avg_1m || 0).toFixed(2)}</td>
+                        <td>${(memory.usage_percent || 0).toFixed(1)}%</td>
+                        <td>${memoryInfo}</td>
+                        <td>${avgDiskUsage}%</td>
+                        <td>${networkInfo}</td>
+                        <td>${gpus.length}</td>
+                        <td>${lastUpdate}</td>
                     `;
-                    nodesTableBody.appendChild(row);
+                    metricsTableBody.appendChild(row);
                 });
             } catch (error) {
-                console.error('Error fetching nodes:', error);
-                nodesTableBody.innerHTML = '<tr><td colspan="9">Failed to load node information.</td></tr>';
+                console.error('Error fetching node metrics:', error);
+                metricsTableBody.innerHTML = '<tr><td colspan="9">Failed to load node metrics.</td></tr>';
             }
         };
 
@@ -358,14 +369,14 @@ const char* get_web_page_html() {
 
         cancelEditButton.addEventListener('click', resetForm);
         refreshEventsButton.addEventListener('click', fetchAndRenderEvents);
-        refreshNodesButton.addEventListener('click', fetchAndRenderNodes);
+        refreshMetricsButton.addEventListener('click', fetchAndRenderMetrics);
 
-        fetchAndRenderNodes();
+        fetchAndRenderMetrics();
         fetchAndRenderRules();
         fetchAndRenderEvents();
         
-        // Auto-refresh nodes every 10 seconds
-        setInterval(fetchAndRenderNodes, 10000);
+        // Auto-refresh metrics every 10 seconds
+        setInterval(fetchAndRenderMetrics, 10000);
     });
     </script>
 </body>
@@ -430,6 +441,11 @@ void HttpServer::setup_routes() {
     // 节点数据查询路由
     m_server.Get("/nodes", [this](const httplib::Request& req, httplib::Response& res) {
         this->handle_nodes_list(req, res);
+    });
+    
+    // 节点指标查询路由
+    m_server.Get("/node/metrics", [this](const httplib::Request& req, httplib::Response& res) {
+        this->handle_node_metrics(req, res);
     });
 }
 
@@ -843,11 +859,178 @@ void HttpServer::handle_nodes_list(const httplib::Request& req, httplib::Respons
         
         res.set_content(final_response.dump(2), "application/json");
         res.status = 200;
-        LogManager::getLogger()->info("Successfully retrieved {} nodes data", nodes.size());
+        LogManager::getLogger()->debug("Successfully retrieved {} nodes data", nodes.size());
         
     } catch (const std::exception& e) {
         res.set_content("{\"error\":\"Failed to retrieve nodes data\"}", "application/json");
         res.status = 500;
         LogManager::getLogger()->error("Exception in handle_nodes_list: {}", e.what());
+    }
+}
+
+void HttpServer::handle_node_metrics(const httplib::Request& req, httplib::Response& res) {
+    try {
+        if (!m_node_storage || !m_resource_storage) {
+            res.set_content("{\"error\":\"Storage components not available\"}", "application/json");
+            res.status = 500;
+            LogManager::getLogger()->error("Storage components not available for node metrics request");
+            return;
+        }
+
+        auto nodes = m_node_storage->getAllNodes();
+        json nodes_metrics = json::array();
+        
+        for (const auto& node : nodes) {
+            std::string host_ip = node->host_ip;
+            auto current_timestamp = std::chrono::duration_cast<std::chrono::seconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count();
+            
+            // 使用新的 getNodeResourceData 方法获取所有资源数据
+            auto resourceData = m_resource_storage->getNodeResourceData(host_ip);
+
+            // 构建CPU指标
+            json latest_cpu_metrics = {
+                {"core_allocated", resourceData.cpu.core_allocated},
+                {"core_count", resourceData.cpu.core_count},
+                {"current", resourceData.cpu.current},
+                {"load_avg_15m", resourceData.cpu.load_avg_15m},
+                {"load_avg_1m", resourceData.cpu.load_avg_1m},
+                {"load_avg_5m", resourceData.cpu.load_avg_5m},
+                {"power", resourceData.cpu.power},
+                {"temperature", resourceData.cpu.temperature},
+                {"timestamp", resourceData.cpu.has_data ? 
+                    std::chrono::duration_cast<std::chrono::seconds>(resourceData.timestamp.time_since_epoch()).count() : current_timestamp},
+                {"usage_percent", resourceData.cpu.usage_percent},
+                {"voltage", resourceData.cpu.voltage}
+            };
+            
+            // 构建Memory指标
+            json latest_memory_metrics = {
+                {"free", resourceData.memory.free},
+                {"timestamp", resourceData.memory.has_data ? 
+                    std::chrono::duration_cast<std::chrono::seconds>(resourceData.timestamp.time_since_epoch()).count() : current_timestamp},
+                {"total", resourceData.memory.total},
+                {"usage_percent", resourceData.memory.usage_percent},
+                {"used", resourceData.memory.used}
+            };
+            
+            // 构建Disk指标
+            json disks = json::array();
+            for (const auto& disk : resourceData.disks) {
+                disks.push_back({
+                    {"device", disk.device},
+                    {"free", disk.free},
+                    {"mount_point", disk.mount_point},
+                    {"total", disk.total},
+                    {"usage_percent", disk.usage_percent},
+                    {"used", disk.used}
+                });
+            }
+            json latest_disk_metrics = {
+                {"disk_count", static_cast<int>(resourceData.disks.size())},
+                {"disks", disks},
+                {"timestamp", current_timestamp}
+            };
+            
+            // 构建Network指标
+            json networks = json::array();
+            for (const auto& network : resourceData.networks) {
+                networks.push_back({
+                    {"interface", network.interface},
+                    {"rx_bytes", network.rx_bytes},
+                    {"rx_errors", network.rx_errors},
+                    {"rx_packets", network.rx_packets},
+                    {"tx_bytes", network.tx_bytes},
+                    {"tx_errors", network.tx_errors},
+                    {"tx_packets", network.tx_packets},
+                    {"tx_rate", network.tx_rate},
+                    {"rx_rate", network.rx_rate}
+                });
+            }
+            json latest_network_metrics = {
+                {"network_count", static_cast<int>(resourceData.networks.size())},
+                {"networks", networks},
+                {"timestamp", current_timestamp}
+            };
+            
+            // 构建GPU指标
+            json gpus = json::array();
+            for (const auto& gpu : resourceData.gpus) {
+                gpus.push_back({
+                    {"compute_usage", gpu.compute_usage},
+                    {"current", 0.0}, // Not available in current schema
+                    {"index", gpu.index},
+                    {"mem_total", gpu.mem_total},
+                    {"mem_usage", gpu.mem_usage},
+                    {"mem_used", gpu.mem_used},
+                    {"name", gpu.name},
+                    {"power", gpu.power},
+                    {"temperature", gpu.temperature},
+                    {"voltage", 0.0} // Not available in current schema
+                });
+            }
+            json latest_gpu_metrics = {
+                {"gpu_count", static_cast<int>(resourceData.gpus.size())},
+                {"gpus", gpus},
+                {"timestamp", current_timestamp}
+            };
+            
+            // Docker指标 (暂时使用默认值，因为当前没有docker表)
+            json latest_docker_metrics = {
+                {"component", json::array()},
+                {"container_count", 0},
+                {"paused_count", 0},
+                {"running_count", 0},
+                {"stopped_count", 0},
+                {"timestamp", current_timestamp}
+            };
+            
+            // 构建节点数据
+            json node_data = {
+                {"board_type", node->board_type},
+                {"box_id", node->box_id},
+                {"box_type", node->box_type},
+                {"cpu_arch", node->cpu_arch},
+                {"cpu_id", node->cpu_id},
+                {"cpu_type", node->cpu_type},
+                {"created_at", std::chrono::duration_cast<std::chrono::seconds>(node->last_heartbeat.time_since_epoch()).count()},
+                {"gpu", node->gpu},
+                {"host_ip", node->host_ip},
+                {"hostname", node->hostname},
+                {"id", node->box_id},
+                {"latest_cpu_metrics", latest_cpu_metrics},
+                {"latest_disk_metrics", latest_disk_metrics},
+                {"latest_docker_metrics", latest_docker_metrics},
+                {"latest_gpu_metrics", latest_gpu_metrics},
+                {"latest_memory_metrics", latest_memory_metrics},
+                {"latest_network_metrics", latest_network_metrics},
+                {"os_type", node->os_type},
+                {"resource_type", node->resource_type},
+                {"service_port", node->service_port},
+                {"slot_id", node->slot_id},
+                {"srio_id", node->srio_id},
+                {"status", "online"},
+                {"updated_at", current_timestamp}
+            };
+            
+            nodes_metrics.push_back(node_data);
+        }
+        
+        json response = {
+            {"api_version", 1},
+            {"data", {
+                {"nodes_metrics", nodes_metrics}
+            }},
+            {"status", "success"}
+        };
+        
+        res.set_content(response.dump(2), "application/json");
+        res.status = 200;
+        LogManager::getLogger()->debug("Successfully retrieved node metrics for {} nodes", nodes.size());
+        
+    } catch (const std::exception& e) {
+        res.set_content("{\"error\":\"Failed to retrieve node metrics\"}", "application/json");
+        res.status = 500;
+        LogManager::getLogger()->error("Exception in handle_node_metrics: {}", e.what());
     }
 }

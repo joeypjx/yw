@@ -240,7 +240,8 @@ void AlarmRuleEngine::reconcileAlarmStates(const AlarmRule& rule,
             // 如果不在active_from_db中，说明已恢复
             if (active_from_db.find(fingerprint) == active_from_db.end()) {
                 QueryResult empty_result;
-                empty_result.value = 0.0;
+                // 为空结果添加一个默认指标
+                empty_result.metrics["resolved"] = 0.0;
                 handleResolvedAlarm(pair.second, rule, empty_result, now);
                 if (pair.second.state == AlarmInstanceState::INACTIVE) {
                     to_remove.push_back(fingerprint);
@@ -268,25 +269,30 @@ void AlarmRuleEngine::createNewAlarmInstance(const std::string& fingerprint,
     instance.labels["alertname"] = rule.alert_name;
     instance.labels["severity"] = rule.severity;
     instance.labels["alert_type"] = rule.alert_type;
-    instance.labels["value"] = std::to_string(result.value);
-    instance.labels["metrics"] = result.metric;
-    instance.value = result.value;
+    // 从 metrics map 中获取第一个（通常也是唯一的）指标
+    std::string metric_name = result.metrics.empty() ? "unknown" : result.metrics.begin()->first;
+    double metric_value = result.metrics.empty() ? 0.0 : result.metrics.begin()->second;
+    
+    instance.labels["value"] = std::to_string(metric_value);
+    instance.labels["metrics"] = metric_name;
+    instance.value = metric_value;
     
     instance.annotations["summary"] = rule.summary;
     instance.annotations["description"] = replaceTemplate(rule.description, instance.labels);
     
     m_alarm_instances[fingerprint] = instance;
     
-    logInfo("Created new alarm instance: " + fingerprint + " (PENDING)" + " " + result.metric + " " + std::to_string(result.value));
+    logInfo("Created new alarm instance: " + fingerprint + " (PENDING)" + " " + metric_name + " " + std::to_string(metric_value));
 }
 
 void AlarmRuleEngine::updateExistingAlarmInstance(AlarmInstance& instance, 
                                                 const AlarmRule& rule, 
                                                 const QueryResult& result, 
                                                 std::chrono::system_clock::time_point now) {
-    // 更新当前值
-    instance.value = result.value;
-    instance.labels["value"] = std::to_string(result.value);
+    // 更新当前值 - 从 metrics map 中获取第一个指标
+    double metric_value = result.metrics.empty() ? 0.0 : result.metrics.begin()->second;
+    instance.value = metric_value;
+    instance.labels["value"] = std::to_string(metric_value);
     
     if (instance.state == AlarmInstanceState::PENDING) {
         auto for_duration = parseDuration(rule.for_duration);

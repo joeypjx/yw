@@ -15,7 +15,7 @@ HEART_DATA='{
         "slot_id": 1,
         "cpu_id": 1,
         "srio_id": 0,
-        "host_ip": "192.168.10.29",
+        "host_ip": "192.168.1.100",
         "hostname": "localhost.localdomain",
         "service_port": 23980,
         "box_type": "计算I型",

@@ -78,7 +78,7 @@
                     "load_avg_5m": 1.12,
                     "power": 23.8,
                     "temperature": 35.0,
-                    "timestamp": 1750122089668,
+                    "timestamp": 1750122089,
                     "usage_percent": 12.83806343906511,
                     "voltage": 11.9
                 },
@@ -102,7 +102,7 @@
                             "used": 220384686080
                         }
                     ],
-                    "timestamp": 1750122089668
+                    "timestamp": 1750122089
                 },
                 "latest_docker_metrics": {
                     "component": [],
@@ -110,7 +110,7 @@
                     "paused_count": 0,
                     "running_count": 0,
                     "stopped_count": 0,
-                    "timestamp": 1750122089668
+                    "timestamp": 1750122089
                 },
                 "latest_gpu_metrics": {
                     "gpu_count": 1,
@@ -128,11 +128,11 @@
                             "voltage": 0.0
                         }
                     ],
-                    "timestamp": 1750122089668
+                    "timestamp": 1750122089
                 },
                 "latest_memory_metrics": {
                     "free": 12675907584,
-                    "timestamp": 1750122089668,
+                    "timestamp": 1750122089,
                     "total": 15647768576,
                     "usage_percent": 18.992235075345736,
                     "used": 2971860992
@@ -147,7 +147,9 @@
                             "rx_packets": 0,
                             "tx_bytes": 0,
                             "tx_errors": 0,
-                            "tx_packets": 0
+                            "tx_packets": 0,
+                            "tx_rate": 384,
+                            "rx_rate": 384
                         },
                         {
                             "interface": "docker0",
@@ -156,7 +158,9 @@
                             "rx_packets": 0,
                             "tx_bytes": 716,
                             "tx_errors": 0,
-                            "tx_packets": 8
+                            "tx_packets": 8,
+                            "tx_rate": 384,
+                            "rx_rate": 384
                         },
                         {
                             "interface": "virbr0",
@@ -165,7 +169,9 @@
                             "rx_packets": 0,
                             "tx_bytes": 0,
                             "tx_errors": 0,
-                            "tx_packets": 0
+                            "tx_packets": ,
+                            "tx_rate": 384,
+                            "rx_rate": 384
                         },
                         {
                             "interface": "docker_gwbridge",
@@ -174,7 +180,9 @@
                             "rx_packets": 0,
                             "tx_bytes": 446,
                             "tx_errors": 0,
-                            "tx_packets": 5
+                            "tx_packets": 5,
+                            "tx_rate": 384,
+                            "rx_rate": 384
                         },
                         {
                             "interface": "enaphyt4i0",
@@ -183,10 +191,12 @@
                             "rx_packets": 40992,
                             "tx_bytes": 12865772,
                             "tx_errors": 0,
-                            "tx_packets": 19010
+                            "tx_packets": 19010,
+                            "tx_rate": 384,
+                            "rx_rate": 384
                         }
                     ],
-                    "timestamp": 1750122089668
+                    "timestamp": 1750122089
                 },
                 "os_type": "Kylin Linux Advanced Server V10",
                 "resource_type": "GPU I",

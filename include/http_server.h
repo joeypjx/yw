@@ -110,6 +110,13 @@ private:
      */
     void handle_nodes_list(const httplib::Request& req, httplib::Response& res);
 
+    /**
+     * @brief 处理 /node/metrics 的GET请求 (获取节点指标数据).
+     * @param req HTTP请求.
+     * @param res HTTP响应.
+     */
+    void handle_node_metrics(const httplib::Request& req, httplib::Response& res);
+
     std::shared_ptr<ResourceStorage> m_resource_storage;
     std::shared_ptr<AlarmRuleStorage> m_alarm_rule_storage;
     std::shared_ptr<AlarmManager> m_alarm_manager;

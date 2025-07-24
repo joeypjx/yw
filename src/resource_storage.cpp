@@ -497,46 +497,31 @@ std::vector<QueryResult> ResourceStorage::executeQuerySQL(const std::string& sql
         return results;
     }
     
-    // 处理���询结果
+    // 处理查询结果
     TAOS_ROW row;
     while ((row = taos_fetch_row(res))) {
-        QueryResult result;
         int* lengths = taos_fetch_lengths(res);
         
-        // 默认设置时间戳为当前时间
+        QueryResult result;
         result.timestamp = std::chrono::system_clock::now();
-        result.value = 0.0;
-        result.metric = "";
         
+        // 一次遍历：收集所有字段信息
         for (int i = 0; i < field_count; i++) {
             if (row[i] == nullptr) continue;
             
             std::string field_name = fields[i].name;
             
-            // 处理不同类型的字段
             if (field_name == "ts") {
-                // 时间戳字段
+                // 时间戳字段 - TDengine 通常返回毫秒精度
                 if (fields[i].type == TSDB_DATA_TYPE_TIMESTAMP) {
                     int64_t timestamp = *(int64_t*)row[i];
-                    result.timestamp = std::chrono::system_clock::from_time_t(timestamp / 1000);
+                    // TDengine 时间戳通常是毫秒精度
+                    result.timestamp = std::chrono::system_clock::from_time_t(timestamp / 1000) + 
+                                     std::chrono::milliseconds(timestamp % 1000);
                 }
-            } else if (field_name != "host_ip" && field_name != "mount_point" && field_name != "device" && field_name != "interface" && field_name != "gpu_name" && field_name != "gpu_index" && field_name != "value" && field_name != "ts") {
-                // 数值字段
-                result.metric = field_name;  // 设置指标名称
-                if (fields[i].type == TSDB_DATA_TYPE_FLOAT) {
-                    result.value = *(float*)row[i];
-                } else if (fields[i].type == TSDB_DATA_TYPE_DOUBLE) {
-                    result.value = *(double*)row[i];
-                } else if (fields[i].type == TSDB_DATA_TYPE_INT) {
-                    result.value = *(int*)row[i];
-                } else if (fields[i].type == TSDB_DATA_TYPE_BIGINT) {
-                    result.value = *(int64_t*)row[i];
-                } else if (fields[i].type == TSDB_DATA_TYPE_SMALLINT) {
-                    result.value = *(int16_t*)row[i];
-                } else if (fields[i].type == TSDB_DATA_TYPE_TINYINT) {
-                    result.value = *(int8_t*)row[i];
-                }
-            } else {
+            } else if (field_name == "host_ip" || field_name == "mount_point" || field_name == "device" || 
+                      field_name == "interface" || field_name == "gpu_name" || field_name == "gpu_index" || 
+                      field_name == "value") {
                 // 标签字段
                 if (fields[i].type == TSDB_DATA_TYPE_NCHAR || fields[i].type == TSDB_DATA_TYPE_BINARY) {
                     result.labels[field_name] = std::string((char*)row[i], lengths[i]);
@@ -553,6 +538,23 @@ std::vector<QueryResult> ResourceStorage::executeQuerySQL(const std::string& sql
                 } else if (fields[i].type == TSDB_DATA_TYPE_DOUBLE) {
                     result.labels[field_name] = std::to_string(*(double*)row[i]);
                 }
+            } else {
+                // 数值字段 - 存储到 metrics map 中
+                double value = 0.0;
+                if (fields[i].type == TSDB_DATA_TYPE_FLOAT) {
+                    value = *(float*)row[i];
+                } else if (fields[i].type == TSDB_DATA_TYPE_DOUBLE) {
+                    value = *(double*)row[i];
+                } else if (fields[i].type == TSDB_DATA_TYPE_INT) {
+                    value = *(int*)row[i];
+                } else if (fields[i].type == TSDB_DATA_TYPE_BIGINT) {
+                    value = *(int64_t*)row[i];
+                } else if (fields[i].type == TSDB_DATA_TYPE_SMALLINT) {
+                    value = *(int16_t*)row[i];
+                } else if (fields[i].type == TSDB_DATA_TYPE_TINYINT) {
+                    value = *(int8_t*)row[i];
+                }
+                result.metrics[field_name] = value;
             }
         }
         
@@ -563,4 +565,257 @@ std::vector<QueryResult> ResourceStorage::executeQuerySQL(const std::string& sql
     
     LogManager::getLogger()->debug("ResourceStorage: Query returned {} rows", results.size());
     return results;
+}
+
+NodeResourceData ResourceStorage::getNodeResourceData(const std::string& hostIp) {
+    NodeResourceData nodeData;
+    nodeData.host_ip = hostIp;
+    nodeData.timestamp = std::chrono::system_clock::now();
+    
+    if (!m_connected || !m_taos) {
+        LogManager::getLogger()->error("ResourceStorage: Not connected to TDengine");
+        return nodeData;
+    }
+    
+    // Helper function to clean host IP for table names
+    auto cleanForTableName = [](const std::string& input) {
+        std::string cleaned = input;
+        std::replace(cleaned.begin(), cleaned.end(), '/', '_');
+        std::replace(cleaned.begin(), cleaned.end(), '-', '_');
+        std::replace(cleaned.begin(), cleaned.end(), '.', '_');
+        std::replace(cleaned.begin(), cleaned.end(), ':', '_');
+        std::replace(cleaned.begin(), cleaned.end(), ' ', '_');
+        return cleaned;
+    };
+    
+    std::string cleanHostIp = cleanForTableName(hostIp);
+    
+    try {
+        // 获取CPU数据
+        std::string cpuTable = "cpu_" + cleanHostIp;
+        std::string cpuSql = "SELECT * FROM " + cpuTable + " ORDER BY ts DESC LIMIT 1";
+        auto cpuResults = executeQuerySQL(cpuSql);
+        
+        if (!cpuResults.empty()) {
+            nodeData.cpu.has_data = true;
+            nodeData.timestamp = cpuResults[0].timestamp;
+            
+            // 现在每个 QueryResult 包含所有指标，直接使用第一个结果
+            const auto& cpuMetrics = cpuResults[0].metrics;
+            
+            nodeData.cpu.usage_percent = cpuMetrics.count("usage_percent") ? cpuMetrics.at("usage_percent") : 0.0;
+            nodeData.cpu.load_avg_1m = cpuMetrics.count("load_avg_1m") ? cpuMetrics.at("load_avg_1m") : 0.0;
+            nodeData.cpu.load_avg_5m = cpuMetrics.count("load_avg_5m") ? cpuMetrics.at("load_avg_5m") : 0.0;
+            nodeData.cpu.load_avg_15m = cpuMetrics.count("load_avg_15m") ? cpuMetrics.at("load_avg_15m") : 0.0;
+            nodeData.cpu.core_count = static_cast<int>(cpuMetrics.count("core_count") ? cpuMetrics.at("core_count") : 0);
+            nodeData.cpu.core_allocated = static_cast<int>(cpuMetrics.count("core_allocated") ? cpuMetrics.at("core_allocated") : 0);
+            nodeData.cpu.temperature = cpuMetrics.count("temperature") ? cpuMetrics.at("temperature") : 0.0;
+            nodeData.cpu.voltage = cpuMetrics.count("voltage") ? cpuMetrics.at("voltage") : 0.0;
+            nodeData.cpu.current = cpuMetrics.count("current") ? cpuMetrics.at("current") : 0.0;
+            nodeData.cpu.power = cpuMetrics.count("power") ? cpuMetrics.at("power") : 0.0;
+        }
+        
+        // 获取Memory数据
+        std::string memoryTable = "memory_" + cleanHostIp;
+        std::string memorySql = "SELECT * FROM " + memoryTable + " ORDER BY ts DESC LIMIT 1";
+        auto memoryResults = executeQuerySQL(memorySql);
+        
+        if (!memoryResults.empty()) {
+            nodeData.memory.has_data = true;
+            
+            // 直接使用第一个结果的 metrics
+            const auto& memoryMetrics = memoryResults[0].metrics;
+            
+            nodeData.memory.total = static_cast<int64_t>(memoryMetrics.count("total") ? memoryMetrics.at("total") : 0);
+            nodeData.memory.used = static_cast<int64_t>(memoryMetrics.count("used") ? memoryMetrics.at("used") : 0);
+            nodeData.memory.free = static_cast<int64_t>(memoryMetrics.count("free") ? memoryMetrics.at("free") : 0);
+            nodeData.memory.usage_percent = memoryMetrics.count("usage_percent") ? memoryMetrics.at("usage_percent") : 0.0;
+        }
+        
+        // 获取Disk数据
+        std::string diskSql = "SELECT * FROM disk WHERE host_ip = '" + hostIp + "' ORDER BY ts DESC";
+        auto diskResults = executeQuerySQL(diskSql);
+        
+        std::map<std::string, QueryResult> diskDataMap;
+        std::map<std::string, int64_t> diskTimestamps;
+        
+        for (const auto& result : diskResults) {
+            std::string device = result.labels.count("device") ? result.labels.at("device") : "unknown";
+            int64_t timestamp = std::chrono::duration_cast<std::chrono::seconds>(result.timestamp.time_since_epoch()).count();
+            
+            // 只保留每个设备的最新数据
+            if (diskTimestamps.count(device) == 0 || timestamp > diskTimestamps[device]) {
+                diskDataMap[device] = result;
+                diskTimestamps[device] = timestamp;
+            }
+        }
+        
+        for (const auto& diskPair : diskDataMap) {
+            const std::string& device = diskPair.first;
+            const auto& result = diskPair.second;
+            
+            NodeResourceData::DiskData diskData;
+            diskData.device = device;
+            diskData.mount_point = result.labels.count("mount_point") ? result.labels.at("mount_point") : "/";
+            diskData.total = static_cast<int64_t>(result.metrics.count("total") ? result.metrics.at("total") : 0);
+            diskData.used = static_cast<int64_t>(result.metrics.count("used") ? result.metrics.at("used") : 0);
+            diskData.free = static_cast<int64_t>(result.metrics.count("free") ? result.metrics.at("free") : 0);
+            diskData.usage_percent = result.metrics.count("usage_percent") ? result.metrics.at("usage_percent") : 0.0;
+            
+            nodeData.disks.push_back(diskData);
+        }
+        
+        // 获取Network数据
+        std::string networkSql = "SELECT * FROM network WHERE host_ip = '" + hostIp + "' ORDER BY ts DESC";
+        auto networkResults = executeQuerySQL(networkSql);
+        
+        std::map<std::string, QueryResult> networkDataMap;
+        std::map<std::string, int64_t> networkTimestamps;
+        
+        for (const auto& result : networkResults) {
+            std::string interface = result.labels.count("interface") ? result.labels.at("interface") : "unknown";
+            int64_t timestamp = std::chrono::duration_cast<std::chrono::seconds>(result.timestamp.time_since_epoch()).count();
+            
+            // 只保留每个接口的最新数据
+            if (networkTimestamps.count(interface) == 0 || timestamp > networkTimestamps[interface]) {
+                networkDataMap[interface] = result;
+                networkTimestamps[interface] = timestamp;
+            }
+        }
+        
+        for (const auto& networkPair : networkDataMap) {
+            const std::string& interface = networkPair.first;
+            const auto& result = networkPair.second;
+            
+            NodeResourceData::NetworkData networkData;
+            networkData.interface = interface;
+            networkData.rx_bytes = static_cast<int64_t>(result.metrics.count("rx_bytes") ? result.metrics.at("rx_bytes") : 0);
+            networkData.tx_bytes = static_cast<int64_t>(result.metrics.count("tx_bytes") ? result.metrics.at("tx_bytes") : 0);
+            networkData.rx_packets = static_cast<int64_t>(result.metrics.count("rx_packets") ? result.metrics.at("rx_packets") : 0);
+            networkData.tx_packets = static_cast<int64_t>(result.metrics.count("tx_packets") ? result.metrics.at("tx_packets") : 0);
+            networkData.rx_errors = static_cast<int>(result.metrics.count("rx_errors") ? result.metrics.at("rx_errors") : 0);
+            networkData.tx_errors = static_cast<int>(result.metrics.count("tx_errors") ? result.metrics.at("tx_errors") : 0);
+            networkData.rx_rate = static_cast<int64_t>(result.metrics.count("rx_rate") ? result.metrics.at("rx_rate") : 0);
+            networkData.tx_rate = static_cast<int64_t>(result.metrics.count("tx_rate") ? result.metrics.at("tx_rate") : 0);
+            
+            nodeData.networks.push_back(networkData);
+        }
+        
+        // 获取GPU数据
+        std::string gpuSql = "SELECT * FROM gpu WHERE host_ip = '" + hostIp + "' ORDER BY ts DESC";
+        auto gpuResults = executeQuerySQL(gpuSql);
+        
+        std::map<int, QueryResult> gpuDataMap;
+        std::map<int, int64_t> gpuTimestamps;
+        
+        for (const auto& result : gpuResults) {
+            int gpuIndex = result.labels.count("gpu_index") ? std::stoi(result.labels.at("gpu_index")) : 0;
+            int64_t timestamp = std::chrono::duration_cast<std::chrono::seconds>(result.timestamp.time_since_epoch()).count();
+            
+            // 只保留每个GPU的最新数据
+            if (gpuTimestamps.count(gpuIndex) == 0 || timestamp > gpuTimestamps[gpuIndex]) {
+                gpuDataMap[gpuIndex] = result;
+                gpuTimestamps[gpuIndex] = timestamp;
+            }
+        }
+        
+        for (const auto& gpuPair : gpuDataMap) {
+            int gpuIndex = gpuPair.first;
+            const auto& result = gpuPair.second;
+            
+            NodeResourceData::GpuData gpuData;
+            gpuData.index = gpuIndex;
+            gpuData.name = result.labels.count("gpu_name") ? result.labels.at("gpu_name") : "Unknown GPU";
+            gpuData.compute_usage = result.metrics.count("compute_usage") ? result.metrics.at("compute_usage") : 0.0;
+            gpuData.mem_usage = result.metrics.count("mem_usage") ? result.metrics.at("mem_usage") : 0.0;
+            gpuData.mem_used = static_cast<int64_t>(result.metrics.count("mem_used") ? result.metrics.at("mem_used") : 0);
+            gpuData.mem_total = static_cast<int64_t>(result.metrics.count("mem_total") ? result.metrics.at("mem_total") : 0);
+            gpuData.temperature = result.metrics.count("temperature") ? result.metrics.at("temperature") : 0.0;
+            gpuData.power = result.metrics.count("power") ? result.metrics.at("power") : 0.0;
+            
+            nodeData.gpus.push_back(gpuData);
+        }
+        
+        LogManager::getLogger()->debug("ResourceStorage: Retrieved resource data for node {}: CPU={}, Memory={}, Disks={}, Networks={}, GPUs={}", 
+                                     hostIp, nodeData.cpu.has_data, nodeData.memory.has_data, 
+                                     nodeData.disks.size(), nodeData.networks.size(), nodeData.gpus.size());
+        
+    } catch (const std::exception& e) {
+        LogManager::getLogger()->error("ResourceStorage: Failed to get resource data for node {}: {}", hostIp, e.what());
+    }
+    
+    return nodeData;
+}
+
+nlohmann::json NodeResourceData::to_json() const {
+    nlohmann::json j;
+    
+    j["host_ip"] = host_ip;
+    j["timestamp"] = std::chrono::duration_cast<std::chrono::milliseconds>(timestamp.time_since_epoch()).count();
+    
+    // CPU data
+    j["cpu"]["usage_percent"] = cpu.usage_percent;
+    j["cpu"]["load_avg_1m"] = cpu.load_avg_1m;
+    j["cpu"]["load_avg_5m"] = cpu.load_avg_5m;
+    j["cpu"]["load_avg_15m"] = cpu.load_avg_15m;
+    j["cpu"]["core_count"] = cpu.core_count;
+    j["cpu"]["core_allocated"] = cpu.core_allocated;
+    j["cpu"]["temperature"] = cpu.temperature;
+    j["cpu"]["voltage"] = cpu.voltage;
+    j["cpu"]["current"] = cpu.current;
+    j["cpu"]["power"] = cpu.power;
+    j["cpu"]["has_data"] = cpu.has_data;
+    
+    // Memory data
+    j["memory"]["total"] = memory.total;
+    j["memory"]["used"] = memory.used;
+    j["memory"]["free"] = memory.free;
+    j["memory"]["usage_percent"] = memory.usage_percent;
+    j["memory"]["has_data"] = memory.has_data;
+    
+    // Disk data
+    j["disk"] = nlohmann::json::array();
+    for (const auto& disk : disks) {
+        nlohmann::json diskJson;
+        diskJson["device"] = disk.device;
+        diskJson["mount_point"] = disk.mount_point;
+        diskJson["total"] = disk.total;
+        diskJson["used"] = disk.used;
+        diskJson["free"] = disk.free;
+        diskJson["usage_percent"] = disk.usage_percent;
+        j["disk"].push_back(diskJson);
+    }
+    
+    // Network data
+    j["network"] = nlohmann::json::array();
+    for (const auto& network : networks) {
+        nlohmann::json networkJson;
+        networkJson["interface"] = network.interface;
+        networkJson["rx_bytes"] = network.rx_bytes;
+        networkJson["tx_bytes"] = network.tx_bytes;
+        networkJson["rx_packets"] = network.rx_packets;
+        networkJson["tx_packets"] = network.tx_packets;
+        networkJson["rx_errors"] = network.rx_errors;
+        networkJson["tx_errors"] = network.tx_errors;
+        networkJson["rx_rate"] = network.rx_rate;
+        networkJson["tx_rate"] = network.tx_rate;
+        j["network"].push_back(networkJson);
+    }
+    
+    // GPU data
+    j["gpu"] = nlohmann::json::array();
+    for (const auto& gpu : gpus) {
+        nlohmann::json gpuJson;
+        gpuJson["index"] = gpu.index;
+        gpuJson["name"] = gpu.name;
+        gpuJson["compute_usage"] = gpu.compute_usage;
+        gpuJson["mem_usage"] = gpu.mem_usage;
+        gpuJson["mem_used"] = gpu.mem_used;
+        gpuJson["mem_total"] = gpu.mem_total;
+        gpuJson["temperature"] = gpu.temperature;
+        gpuJson["power"] = gpu.power;
+        j["gpu"].push_back(gpuJson);
+    }
+    
+    return j;
 }

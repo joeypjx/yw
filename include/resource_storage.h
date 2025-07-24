@@ -10,10 +10,79 @@
 
 // 查询结果结构
 struct QueryResult {
-    std::map<std::string, std::string> labels;  // 标签
-    double value;                                // 值
+    std::map<std::string, std::string> labels;   // 标签
+    std::map<std::string, double> metrics;       // 指标名称到值的映射，如 'usage_percent' -> 85.5
     std::chrono::system_clock::time_point timestamp;
-    std::string metric;                          // 指标名称，如 'usage_percent'
+};
+
+// 节点资源数据结构
+struct NodeResourceData {
+    std::string host_ip;
+    std::chrono::system_clock::time_point timestamp;
+    
+    // CPU数据
+    struct {
+        double usage_percent = 0.0;
+        double load_avg_1m = 0.0;
+        double load_avg_5m = 0.0;
+        double load_avg_15m = 0.0;
+        int core_count = 0;
+        int core_allocated = 0;
+        double temperature = 0.0;
+        double voltage = 0.0;
+        double current = 0.0;
+        double power = 0.0;
+        bool has_data = false;
+    } cpu;
+    
+    // Memory数据
+    struct {
+        int64_t total = 0;
+        int64_t used = 0;
+        int64_t free = 0;
+        double usage_percent = 0.0;
+        bool has_data = false;
+    } memory;
+    
+    // Disk数据
+    struct DiskData {
+        std::string device;
+        std::string mount_point;
+        int64_t total = 0;
+        int64_t used = 0;
+        int64_t free = 0;
+        double usage_percent = 0.0;
+    };
+    std::vector<DiskData> disks;
+    
+    // Network数据
+    struct NetworkData {
+        std::string interface;
+        int64_t rx_bytes = 0;
+        int64_t tx_bytes = 0;
+        int64_t rx_packets = 0;
+        int64_t tx_packets = 0;
+        int rx_errors = 0;
+        int tx_errors = 0;
+        int64_t rx_rate = 0;
+        int64_t tx_rate = 0;
+    };
+    std::vector<NetworkData> networks;
+    
+    // GPU数据
+    struct GpuData {
+        int index = 0;
+        std::string name;
+        double compute_usage = 0.0;
+        double mem_usage = 0.0;
+        int64_t mem_used = 0;
+        int64_t mem_total = 0;
+        double temperature = 0.0;
+        double power = 0.0;
+    };
+    std::vector<GpuData> gpus;
+    
+    nlohmann::json to_json() const;
 };
 
 class ResourceStorage {
@@ -29,6 +98,9 @@ public:
     
     // 查询接口
     std::vector<QueryResult> executeQuerySQL(const std::string& sql);
+    
+    // 获取指定节点的所有资源数据
+    NodeResourceData getNodeResourceData(const std::string& hostIp);
 
 private:
     std::string m_host;
