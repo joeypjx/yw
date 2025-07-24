@@ -1,6 +1,7 @@
 #include "alarm_system.h"
 #include "multicast_sender.h"
 #include "http_server.h"
+#include "node_storage.h"
 #include "log_manager.h"
 #include "resource_storage.h"
 #include "alarm_rule_storage.h"
@@ -483,7 +484,8 @@ bool AlarmSystem::initializeServices() {
         
         // 2. 启动HTTP服务器
         LogManager::getLogger()->info("🌐 启动HTTP服务器...");
-        http_server_ = std::make_shared<HttpServer>(resource_storage_, alarm_rule_storage_, alarm_manager_);
+        auto node_storage = std::make_shared<NodeStorage>();
+        http_server_ = std::make_shared<HttpServer>(resource_storage_, alarm_rule_storage_, alarm_manager_, node_storage);
         if (!http_server_->start()) {
             std::lock_guard<std::mutex> lock(error_mutex_);
             last_error_ = "HTTP服务器启动失败";

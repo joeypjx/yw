@@ -5,6 +5,7 @@
 #include "http_server.h"
 #include "resource_storage.h"
 #include "alarm_rule_storage.h"
+#include "node_storage.h"
 #include "json.hpp"
 
 using json = nlohmann::json;
@@ -23,7 +24,8 @@ protected:
         m_alarm_rule_storage->createTable();
         
         // 初始化HTTP服务器 (alarm_manager传nullptr，因为这些测试不需要告警事件功能)
-        m_server = std::make_shared<HttpServer>(m_resource_storage, m_alarm_rule_storage, nullptr, "127.0.0.1", 8081);
+        auto node_storage = std::make_shared<NodeStorage>();
+        m_server = std::make_shared<HttpServer>(m_resource_storage, m_alarm_rule_storage, nullptr, node_storage, "127.0.0.1", 8081);
         
         // 启动服务器
         ASSERT_TRUE(m_server->start());

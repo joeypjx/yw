@@ -36,11 +36,36 @@ const char* get_web_page_html() {
         .delete-btn { background-color: #dc3545; color: white; }
         pre { white-space: pre-wrap; word-wrap: break-word; background: #eee; padding: 5px; border-radius: 3px; }
         .section-header { display: flex; justify-content: space-between; align-items: center; }
+        .status-online { color: #28a745; font-weight: bold; }
+        .status-offline { color: #dc3545; font-weight: bold; }
+        .status-warning { color: #ffc107; font-weight: bold; }
     </style>
 </head>
 <body>
     <div id="container">
-        <h1>Alarm Management</h1>
+        <h1>System Management</h1>
+
+        <!-- Nodes Section -->
+        <div class="section-header">
+            <h2>Node Information</h2>
+            <button id="refresh-nodes" class="refresh-btn">Refresh Nodes</button>
+        </div>
+        <table id="nodes-table">
+            <thead>
+                <tr>
+                    <th>Host IP</th>
+                    <th>Hostname</th>
+                    <th>Box Type</th>
+                    <th>CPU Type</th>
+                    <th>OS Type</th>
+                    <th>CPU Arch</th>
+                    <th>GPU Count</th>
+                    <th>Last Heartbeat</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
 
         <!-- Alarm Rules Section -->
         <div class="section-header">
@@ -113,14 +138,69 @@ const char* get_web_page_html() {
 
     <script>
     document.addEventListener('DOMContentLoaded', () => {
+        const nodesTableBody = document.querySelector('#nodes-table tbody');
         const rulesTableBody = document.querySelector('#rules-table tbody');
         const eventsTableBody = document.querySelector('#events-table tbody');
         const ruleForm = document.getElementById('rule-form');
         const ruleIdInput = document.getElementById('rule-id');
         const cancelEditButton = document.getElementById('cancel-edit');
         const refreshEventsButton = document.getElementById('refresh-events');
+        const refreshNodesButton = document.getElementById('refresh-nodes');
 
         const API_BASE = '';
+
+        const fetchAndRenderNodes = async () => {
+            try {
+                const response = await fetch(`${API_BASE}/nodes`);
+                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                const data = await response.json();
+                nodesTableBody.innerHTML = '';
+                
+                if (data.nodes.length === 0) {
+                    nodesTableBody.innerHTML = '<tr><td colspan="9">No nodes found.</td></tr>';
+                    return;
+                }
+                
+                data.nodes.forEach(node => {
+                    const nodeData = node.data;
+                    const secondsSinceHeartbeat = node.seconds_since_last_heartbeat;
+                    
+                    // Determine node status based on heartbeat
+                    let status = 'Online';
+                    let statusClass = 'status-online';
+                    if (secondsSinceHeartbeat > 30) {
+                        status = 'Offline';
+                        statusClass = 'status-offline';
+                    } else if (secondsSinceHeartbeat > 15) {
+                        status = 'Warning';
+                        statusClass = 'status-warning';
+                    }
+                    
+                    // Format last heartbeat time
+                    const lastHeartbeat = new Date(node.last_heartbeat).toLocaleString();
+                    
+                    // Count GPU devices
+                    const gpuCount = Array.isArray(nodeData.gpu) ? nodeData.gpu.length : 0;
+                    
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td>${escapeHtml(nodeData.host_ip)}</td>
+                        <td>${escapeHtml(nodeData.hostname)}</td>
+                        <td>${escapeHtml(nodeData.box_type)}</td>
+                        <td>${escapeHtml(nodeData.cpu_type)}</td>
+                        <td>${escapeHtml(nodeData.os_type)}</td>
+                        <td>${escapeHtml(nodeData.cpu_arch)}</td>
+                        <td>${gpuCount}</td>
+                        <td>${lastHeartbeat}</td>
+                        <td class="${statusClass}">${status}</td>
+                    `;
+                    nodesTableBody.appendChild(row);
+                });
+            } catch (error) {
+                console.error('Error fetching nodes:', error);
+                nodesTableBody.innerHTML = '<tr><td colspan="9">Failed to load node information.</td></tr>';
+            }
+        };
 
         const fetchAndRenderRules = async () => {
             try {
@@ -278,9 +358,14 @@ const char* get_web_page_html() {
 
         cancelEditButton.addEventListener('click', resetForm);
         refreshEventsButton.addEventListener('click', fetchAndRenderEvents);
+        refreshNodesButton.addEventListener('click', fetchAndRenderNodes);
 
+        fetchAndRenderNodes();
         fetchAndRenderRules();
         fetchAndRenderEvents();
+        
+        // Auto-refresh nodes every 10 seconds
+        setInterval(fetchAndRenderNodes, 10000);
     });
     </script>
 </body>
@@ -291,9 +376,10 @@ const char* get_web_page_html() {
 HttpServer::HttpServer(std::shared_ptr<ResourceStorage> resource_storage,
                        std::shared_ptr<AlarmRuleStorage> alarm_rule_storage,
                        std::shared_ptr<AlarmManager> alarm_manager,
+                       std::shared_ptr<NodeStorage> node_storage,
                        const std::string& host, int port)
     : m_resource_storage(resource_storage), m_alarm_rule_storage(alarm_rule_storage), 
-      m_alarm_manager(alarm_manager), m_host(host), m_port(port) {
+      m_alarm_manager(alarm_manager), m_node_storage(node_storage), m_host(host), m_port(port) {
     setup_routes();
 }
 
@@ -334,6 +420,16 @@ void HttpServer::setup_routes() {
     // 告警事件相关路由
     m_server.Get("/alarm/events", [this](const httplib::Request& req, httplib::Response& res) {
         this->handle_alarm_events_list(req, res);
+    });
+    
+    // 节点心跳路由
+    m_server.Post("/heart", [this](const httplib::Request& req, httplib::Response& res) {
+        this->handle_heart(req, res);
+    });
+    
+    // 节点数据查询路由
+    m_server.Get("/nodes", [this](const httplib::Request& req, httplib::Response& res) {
+        this->handle_nodes_list(req, res);
     });
 }
 
@@ -646,5 +742,112 @@ void HttpServer::handle_alarm_events_list(const httplib::Request& req, httplib::
         res.set_content("{\"error\":\"Failed to retrieve alarm events\"}", "application/json");
         res.status = 500;
         LogManager::getLogger()->error("Exception in handle_alarm_events_list: {}", e.what());
+    }
+}
+
+void HttpServer::handle_heart(const httplib::Request& req, httplib::Response& res) {
+    try {
+        json body = json::parse(req.body);
+
+        if (!body.contains("data") || !body["data"].is_object()) {
+            res.set_content("{\"error\":\"'data' field is missing or not an object\"}", "application/json");
+            res.status = 400;
+            LogManager::getLogger()->warn("Heart request missing 'data' field");
+            return;
+        }
+
+        const auto& data = body["data"];
+        if (!data.contains("host_ip") || !data["host_ip"].is_string()) {
+            res.set_content("{\"error\":\"'host_ip' is missing or not a string\"}", "application/json");
+            res.status = 400;
+            LogManager::getLogger()->warn("Heart request missing 'host_ip' field");
+            return;
+        }
+
+        std::string host_ip = data["host_ip"];
+
+        if (!m_node_storage) {
+            res.set_content("{\"error\":\"Node storage not available\"}", "application/json");
+            res.status = 500;
+            LogManager::getLogger()->error("Node storage not available for heart request");
+            return;
+        }
+
+        if (m_node_storage->storeNodeData(host_ip, body)) {
+            res.set_content("{\"status\":\"success\"}", "application/json");
+            res.status = 200;
+            LogManager::getLogger()->debug("Successfully processed heart data for node: {}", host_ip);
+        } else {
+            res.set_content("{\"error\":\"Failed to store node data\"}", "application/json");
+            res.status = 500;
+            LogManager::getLogger()->error("Failed to store heart data for node: {}", host_ip);
+        }
+
+    } catch (const json::parse_error& e) {
+        res.set_content("{\"error\":\"Invalid JSON format\"}", "application/json");
+        res.status = 400;
+        LogManager::getLogger()->error("JSON parse error in handle_heart: {}", e.what());
+    } catch (const std::exception& e) {
+        res.set_content("{\"error\":\"An unexpected error occurred\"}", "application/json");
+        res.status = 500;
+        LogManager::getLogger()->error("Exception in handle_heart: {}", e.what());
+    }
+}
+
+void HttpServer::handle_nodes_list(const httplib::Request& req, httplib::Response& res) {
+    try {
+        if (!m_node_storage) {
+            res.set_content("{\"error\":\"Node storage not available\"}", "application/json");
+            res.status = 500;
+            LogManager::getLogger()->error("Node storage not available for nodes list request");
+            return;
+        }
+
+        auto nodes = m_node_storage->getAllNodes();
+        
+        json response = json::array();
+        for (const auto& node : nodes) {
+            // Calculate time since last heartbeat
+            auto now = std::chrono::system_clock::now();
+            auto duration = std::chrono::duration_cast<std::chrono::seconds>(now - node->last_heartbeat);
+            
+            json node_json = {
+                {"api_version", node->api_version},
+                {"data", {
+                    {"box_id", node->box_id},
+                    {"slot_id", node->slot_id},
+                    {"cpu_id", node->cpu_id},
+                    {"srio_id", node->srio_id},
+                    {"host_ip", node->host_ip},
+                    {"hostname", node->hostname},
+                    {"service_port", node->service_port},
+                    {"box_type", node->box_type},
+                    {"board_type", node->board_type},
+                    {"cpu_type", node->cpu_type},
+                    {"os_type", node->os_type},
+                    {"resource_type", node->resource_type},
+                    {"cpu_arch", node->cpu_arch},
+                    {"gpu", node->gpu}
+                }},
+                {"last_heartbeat", std::chrono::duration_cast<std::chrono::milliseconds>(
+                    node->last_heartbeat.time_since_epoch()).count()},
+                {"seconds_since_last_heartbeat", duration.count()}
+            };
+            response.push_back(node_json);
+        }
+        
+        json final_response = {
+            {"total_nodes", nodes.size()},
+            {"nodes", response}
+        };
+        
+        res.set_content(final_response.dump(2), "application/json");
+        res.status = 200;
+        LogManager::getLogger()->info("Successfully retrieved {} nodes data", nodes.size());
+        
+    } catch (const std::exception& e) {
+        res.set_content("{\"error\":\"Failed to retrieve nodes data\"}", "application/json");
+        res.status = 500;
+        LogManager::getLogger()->error("Exception in handle_nodes_list: {}", e.what());
     }
 }

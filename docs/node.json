@@ -1,0 +1,24 @@
+{
+    "api_version" : 1,
+    "data": {
+        "box_id": "1，int，机箱号",
+        "slot_id": "1，int, 槽位号",
+        "cpu_id": "1，int，cpu号",
+        "srio_id": "0，int，srio号",
+        "host_ip": "192.168.10.29，string，点分十进制，主机ip",
+        "hostname": "localhost.localdomain，string，主机名",
+        "service_port": "23980, uint16_t，命令响应服务端口",
+        "box_type": "计算I型，string，机箱类型",
+        "board_type": "GPU，string，板卡类型",
+        "cpu_type": "Phytium,D2000/8，string，cpu类型",
+        "os_type": "Kylin Linux Advanced Server V10，string，操作系统类型",
+        "resource_type": "GPU I，string，GPU计算模块I型",
+        "cpu_arch": "aarch64，string，cpu架构",
+        "gpu": [
+            {
+                "index": "int，gpu设备序号",
+                "name": "string，gpu设备名称",
+            }
+        ]
+    }
+}
