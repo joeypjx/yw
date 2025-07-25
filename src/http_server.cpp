@@ -434,7 +434,7 @@ void HttpServer::setup_routes() {
     });
     
     // 节点心跳路由
-    m_server.Post("/heart", [this](const httplib::Request& req, httplib::Response& res) {
+    m_server.Post("/heartbeart", [this](const httplib::Request& req, httplib::Response& res) {
         this->handle_heart(req, res);
     });
     
@@ -662,7 +662,7 @@ void HttpServer::handle_resource(const httplib::Request& req, httplib::Response&
         if (m_resource_storage->insertResourceData(host_ip, resource)) {
             res.set_content("{\"status\":\"success\"}", "application/json");
             res.status = 200;
-            LogManager::getLogger()->info("Successfully processed resource data for host: {}", host_ip);
+            LogManager::getLogger()->debug("Successfully processed resource data for host: {}", host_ip);
         } else {
             res.set_content("{\"error\":\"Failed to store resource data\"}", "application/json");
             res.status = 500;
