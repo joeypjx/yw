@@ -45,7 +45,7 @@
 ```
 
 ## GET /node/historical-metrics?host_ip=192.168.10.58&time_range=1m&metrics=cpu,memory,disk,network,container,gpu
-###
+### 指定节点资源详情
 
 ```json
 {
@@ -531,12 +531,12 @@
         "nodes_metrics": [
             {
                 "board_type": "GPU",
-                "box_id": 1,
-                "box_type": "计算I型",
+                "box_id": 0,
+                "box_type": "",
                 "cpu_arch": "aarch64",
                 "cpu_id": 1,
                 "cpu_type": " Phytium,D2000/8",
-                "created_at": 1750038100,
+                "created_at": 1753425801,
                 "gpu": [
                     {
                         "index": 0,
@@ -546,48 +546,73 @@
                 "host_ip": "192.168.10.58",
                 "hostname": "localhost.localdomain",
                 "id": 1,
+                "latest_container_metrics": {
+                    "component": [
+                        {
+                            "component_index": 1,
+                            "container_id": "4c34877129713614d7a5eb89a00d117a72ffcc1e560bd7ea57962cb2e26b0000",
+                            "container_name": "192.168.10.58:5000/sleep3:latest",
+                            "instance_id": "874811e8-9e53-41ea-a543-275a4bff3864",
+                            "resource": {
+                                "cpu": {
+                                    "load": 0.0
+                                },
+                                "memory": {
+                                    "mem_limit": 15647768576,
+                                    "mem_used": 524288,
+                                    "usage_percent": 0.0033505608001139194
+                                },
+                                "network": {
+                                    "rx": 0,
+                                    "tx": 0
+                                }
+                            },
+                            "status": "RUNNING",
+                            "timestamp": 1752713939,
+                            "uuid": "1233211234569"
+                        }
+                    ],
+                    "container_count": 40,
+                    "paused_count": 0,
+                    "running_count": 0,
+                    "stopped_count": 0,
+                    "timestamp": 1752713939
+                },
                 "latest_cpu_metrics": {
                     "core_allocated": 0,
                     "core_count": 8,
-                    "current": 2.0,
-                    "load_avg_15m": 0.69,
-                    "load_avg_1m": 1.12,
-                    "load_avg_5m": 1.12,
-                    "power": 23.8,
-                    "temperature": 35.0,
-                    "timestamp": 1750122089668,
-                    "usage_percent": 12.83806343906511,
-                    "voltage": 11.9
+                    "current": 0.0,
+                    "load_avg_15m": 1.2899999618530273,
+                    "load_avg_1m": 1.2000000476837158,
+                    "load_avg_5m": 1.190000057220459,
+                    "power": 0.0,
+                    "temperature": 0.0,
+                    "timestamp": 1753428501,
+                    "usage_percent": 14.112459182739258,
+                    "voltage": 0.0
                 },
                 "latest_disk_metrics": {
                     "disk_count": 2,
                     "disks": [
                         {
                             "device": "/dev/mapper/klas-root",
-                            "free": 6929584128,
+                            "free": 1205067776,
                             "mount_point": "/",
+                            "timestamp": 1753428501,
                             "total": 107321753600,
-                            "usage_percent": 93.54316911944309,
-                            "used": 100392169472
+                            "usage_percent": 98.87714385986328,
+                            "used": 106116685824
                         },
                         {
                             "device": "/dev/mapper/klas-data",
-                            "free": 34764398592,
+                            "free": 24150638592,
                             "mount_point": "/data",
+                            "timestamp": 1753428501,
                             "total": 255149084672,
-                            "usage_percent": 86.37486838853825,
-                            "used": 220384686080
+                            "usage_percent": 90.53469848632813,
+                            "used": 230998446080
                         }
-                    ],
-                    "timestamp": 1750122089668
-                },
-                "latest_docker_metrics": {
-                    "component": [],
-                    "container_count": 0,
-                    "paused_count": 0,
-                    "running_count": 0,
-                    "stopped_count": 0,
-                    "timestamp": 1750122089668
+                    ]
                 },
                 "latest_gpu_metrics": {
                     "gpu_count": 1,
@@ -597,22 +622,22 @@
                             "current": 0.0,
                             "index": 0,
                             "mem_total": 17179869184,
-                            "mem_usage": 1.0,
+                            "mem_usage": 0.009999999776482582,
                             "mem_used": 119537664,
                             "name": " Iluvatar MR-V50A",
-                            "power": 0.0,
-                            "temperature": 0.0,
+                            "power": 19.0,
+                            "temperature": 45.0,
+                            "timestamp": 1753428501,
                             "voltage": 0.0
                         }
-                    ],
-                    "timestamp": 1750122089668
+                    ]
                 },
                 "latest_memory_metrics": {
-                    "free": 12675907584,
-                    "timestamp": 1750122089668,
+                    "free": 7225147392,
+                    "timestamp": 1753428501,
                     "total": 15647768576,
-                    "usage_percent": 18.992235075345736,
-                    "used": 2971860992
+                    "usage_percent": 53.82633972167969,
+                    "used": 8422621184
                 },
                 "latest_network_metrics": {
                     "network_count": 5,
@@ -622,56 +647,60 @@
                             "rx_bytes": 0,
                             "rx_errors": 0,
                             "rx_packets": 0,
+                            "timestamp": 1753428501,
                             "tx_bytes": 0,
                             "tx_errors": 0,
                             "tx_packets": 0
                         },
                         {
                             "interface": "docker0",
-                            "rx_bytes": 0,
+                            "rx_bytes": 1201064492,
                             "rx_errors": 0,
-                            "rx_packets": 0,
-                            "tx_bytes": 716,
+                            "rx_packets": 191884,
+                            "timestamp": 1753428501,
+                            "tx_bytes": 503961699,
                             "tx_errors": 0,
-                            "tx_packets": 8
+                            "tx_packets": 157325
                         },
                         {
                             "interface": "virbr0",
                             "rx_bytes": 0,
                             "rx_errors": 0,
                             "rx_packets": 0,
+                            "timestamp": 1753428501,
                             "tx_bytes": 0,
                             "tx_errors": 0,
                             "tx_packets": 0
+                        },
+                        {
+                            "interface": "enaphyt4i0",
+                            "rx_bytes": 4653124362,
+                            "rx_errors": 0,
+                            "rx_packets": 15926364,
+                            "timestamp": 1753428501,
+                            "tx_bytes": 4634613068,
+                            "tx_errors": 0,
+                            "tx_packets": 6797803
                         },
                         {
                             "interface": "docker_gwbridge",
                             "rx_bytes": 0,
                             "rx_errors": 0,
                             "rx_packets": 0,
+                            "timestamp": 1753428501,
                             "tx_bytes": 446,
                             "tx_errors": 0,
                             "tx_packets": 5
-                        },
-                        {
-                            "interface": "enaphyt4i0",
-                            "rx_bytes": 3947210,
-                            "rx_errors": 0,
-                            "rx_packets": 40992,
-                            "tx_bytes": 12865772,
-                            "tx_errors": 0,
-                            "tx_packets": 19010
                         }
-                    ],
-                    "timestamp": 1750122089668
+                    ]
                 },
                 "os_type": "Kylin Linux Advanced Server V10",
                 "resource_type": "GPU I",
                 "service_port": 23980,
-                "slot_id": 1,
-                "srio_id": 5,
+                "slot_id": 0,
+                "srio_id": 1,
                 "status": "online",
-                "updated_at": 1750122094
+                "updated_at": 1753428506
             }
         ]
     },
