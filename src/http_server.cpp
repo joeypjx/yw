@@ -683,6 +683,16 @@ bool HttpServer::start() {
     if (m_server.is_running()) {
         return true;
     }
+
+    m_server.set_default_headers({
+        {"Access-Control-Allow-Origin", "*"},
+        {"Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS"},
+        {"Access-Control-Allow-Headers", "Content-Type"}
+    });
+
+    m_server.Options(".*", [](const httplib::Request& req, httplib::Response& res) {
+        res.set_content("OK", "text/plain");
+    });
     
     m_server_thread = std::thread([this]() {
         LogManager::getLogger()->info("HTTP server starting on {}:{}", m_host, m_port);
