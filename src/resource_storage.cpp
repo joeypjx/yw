@@ -161,76 +161,6 @@ bool ResourceStorage::executeQuery(const std::string& sql) {
     return true;
 }
 
-std::string ResourceStorage::generateCreateTableSQL() {
-    std::ostringstream oss;
-    
-    // Create CPU super table
-    oss << "CREATE STABLE IF NOT EXISTS cpu ("
-        << "ts TIMESTAMP, "
-        << "usage_percent DOUBLE, "
-        << "load_avg_1m DOUBLE, "
-        << "load_avg_5m DOUBLE, "
-        << "load_avg_15m DOUBLE, "
-        << "core_count INT, "
-        << "core_allocated INT, "
-        << "temperature DOUBLE, "
-        << "voltage DOUBLE, "
-        << "current DOUBLE, "
-        << "power DOUBLE"
-        << ") TAGS (host_ip NCHAR(16)); ";
-
-    // Create Memory super table
-    oss << "CREATE STABLE IF NOT EXISTS memory ("
-        << "ts TIMESTAMP, "
-        << "total BIGINT, "
-        << "used BIGINT, "
-        << "free BIGINT, "
-        << "usage_percent DOUBLE"
-        << ") TAGS (host_ip NCHAR(16)); ";
-
-    // Create Network super table
-    oss << "CREATE STABLE IF NOT EXISTS network ("
-        << "ts TIMESTAMP, "
-        << "rx_bytes BIGINT, "
-        << "tx_bytes BIGINT, "
-        << "rx_packets BIGINT, "
-        << "tx_packets BIGINT, "
-        << "rx_errors INT, "
-        << "tx_errors INT, "
-        << "rx_rate BIGINT, "
-        << "tx_rate BIGINT"
-        << ") TAGS (host_ip NCHAR(16), interface NCHAR(32)); ";
-
-    // Create Disk super table
-    oss << "CREATE STABLE IF NOT EXISTS disk ("
-        << "ts TIMESTAMP, "
-        << "total BIGINT, "
-        << "used BIGINT, "
-        << "free BIGINT, "
-        << "usage_percent DOUBLE"
-        << ") TAGS (host_ip NCHAR(16), device NCHAR(32), mount_point NCHAR(64)); ";
-
-    // Create GPU super table
-    oss << "CREATE STABLE IF NOT EXISTS gpu ("
-        << "ts TIMESTAMP, "
-        << "compute_usage DOUBLE, "
-        << "mem_usage DOUBLE, "
-        << "mem_used BIGINT, "
-        << "mem_total BIGINT, "
-        << "temperature DOUBLE, "
-        << "power DOUBLE"
-        << ") TAGS (host_ip NCHAR(16), gpu_index INT, gpu_name NCHAR(64)); ";
-
-    // Create Node super table
-    oss << "CREATE STABLE IF NOT EXISTS node ("
-        << "ts TIMESTAMP, "
-        << "gpu_allocated INT, "
-        << "gpu_num INT"
-        << ") TAGS (host_ip NCHAR(16)); ";
-
-    return oss.str();
-}
-
 bool ResourceStorage::insertResourceData(const std::string& hostIp, const nlohmann::json& resourceData) {
     if (!m_connected) {
         LogManager::getLogger()->error("Not connected to TDengine");
@@ -747,6 +677,7 @@ NodeResourceData ResourceStorage::getNodeResourceData(const std::string& hostIp)
     return nodeData;
 }
 
+// 将NodeResourceData转换为json
 nlohmann::json NodeResourceData::to_json() const {
     nlohmann::json j;
     

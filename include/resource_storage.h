@@ -110,8 +110,6 @@ private:
     bool m_connected;
 
     bool executeQuery(const std::string& sql);
-    std::string generateCreateTableSQL();
-    std::string generateInsertSQL(const std::string& hostIp, const nlohmann::json& resourceData);
     
     bool insertCpuData(const std::string& hostIp, const nlohmann::json& cpuData);
     bool insertMemoryData(const std::string& hostIp, const nlohmann::json& memoryData);
