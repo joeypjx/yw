@@ -85,6 +85,24 @@ struct NodeResourceData {
     nlohmann::json to_json() const;
 };
 
+// 节点时间段资源数据结构
+struct NodeResourceRangeData {
+    std::string host_ip;
+    std::string time_range;
+    std::vector<std::string> metrics_types;
+    std::chrono::system_clock::time_point start_time;
+    std::chrono::system_clock::time_point end_time;
+    
+    // 时序数据，每个指标类型对应一个数据序列
+    struct TimeSeriesData {
+        std::string metric_type;  // cpu, memory, disk, network, gpu
+        std::vector<QueryResult> data_points;
+    };
+    std::vector<TimeSeriesData> time_series;
+    
+    nlohmann::json to_json() const;
+};
+
 class ResourceStorage {
 public:
     ResourceStorage(const std::string& host, const std::string& user, const std::string& password);
@@ -101,6 +119,11 @@ public:
     
     // 获取指定节点的所有资源数据
     NodeResourceData getNodeResourceData(const std::string& hostIp);
+    
+    // 获取指定节点在某个时间段内的资源数据
+    NodeResourceRangeData getNodeResourceRangeData(const std::string& hostIp, 
+                                                   const std::string& time_range,
+                                                   const std::vector<std::string>& metrics);
 
 private:
     std::string m_host;

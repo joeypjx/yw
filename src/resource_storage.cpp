@@ -4,6 +4,8 @@
 #include <sstream>
 #include <chrono>
 #include <algorithm>
+#include <numeric>
+#include <cctype>
 
 namespace {
     // Helper function to clean strings for use as table names
@@ -747,6 +749,298 @@ nlohmann::json NodeResourceData::to_json() const {
         gpuJson["power"] = gpu.power;
         j["gpu"].push_back(gpuJson);
     }
+    
+    return j;
+}
+
+// 时间范围解析辅助函数
+std::chrono::seconds parseTimeRange(const std::string& time_range) {
+    if (time_range.empty()) {
+        return std::chrono::seconds(3600); // 默认1小时
+    }
+    
+    std::string number_str;
+    char unit = 's';
+    
+    // 分离数字和单位
+    for (char c : time_range) {
+        if (std::isdigit(c)) {
+            number_str += c;
+        } else {
+            unit = c;
+            break;
+        }
+    }
+    
+    if (number_str.empty()) {
+        return std::chrono::seconds(3600); // 默认1小时
+    }
+    
+    int number = std::stoi(number_str);
+    
+    switch (unit) {
+        case 's': return std::chrono::seconds(number);
+        case 'm': return std::chrono::seconds(number * 60);
+        case 'h': return std::chrono::seconds(number * 3600);
+        case 'd': return std::chrono::seconds(number * 86400);
+        default: return std::chrono::seconds(number); // 默认按秒处理
+    }
+}
+
+NodeResourceRangeData ResourceStorage::getNodeResourceRangeData(const std::string& hostIp, 
+                                                               const std::string& time_range,
+                                                               const std::vector<std::string>& metrics) {
+    NodeResourceRangeData rangeData;
+    rangeData.host_ip = hostIp;
+    rangeData.time_range = time_range;
+    rangeData.metrics_types = metrics;
+    
+    if (!m_connected || !m_taos) {
+        LogManager::getLogger()->error("ResourceStorage: Not connected to TDengine");
+        return rangeData;
+    }
+    
+    // 记录查询时间范围
+    rangeData.end_time = std::chrono::system_clock::now();
+    auto duration = parseTimeRange(time_range);
+    rangeData.start_time = rangeData.end_time - duration;
+    
+    // 清理hostIp用于表名
+    std::string cleanHostIp = cleanForTableName(hostIp);
+    
+    try {
+        for (const std::string& metric : metrics) {
+            NodeResourceRangeData::TimeSeriesData timeSeriesData;
+            timeSeriesData.metric_type = metric;
+            
+            if (metric == "cpu") {
+                std::string sql = "SELECT * FROM cpu WHERE host_ip = '" + hostIp + "'" +
+                                " AND ts > NOW() - " + time_range + 
+                                " ORDER BY ts ASC";
+                timeSeriesData.data_points = executeQuerySQL(sql);
+                
+            } else if (metric == "memory") {
+                std::string sql = "SELECT * FROM memory WHERE host_ip = '" + hostIp + "'" +
+                                " AND ts > NOW() - " + time_range + 
+                                " ORDER BY ts ASC";
+                timeSeriesData.data_points = executeQuerySQL(sql);
+                
+            } else if (metric == "disk") {
+                std::string sql = "SELECT * FROM disk WHERE host_ip = '" + hostIp + "'" +
+                                " AND ts > NOW() - " + time_range + 
+                                " ORDER BY ts ASC";
+                timeSeriesData.data_points = executeQuerySQL(sql);
+                
+            } else if (metric == "network") {
+                std::string sql = "SELECT * FROM network WHERE host_ip = '" + hostIp + "'" +
+                                " AND ts > NOW() - " + time_range + 
+                                " ORDER BY ts ASC";
+                timeSeriesData.data_points = executeQuerySQL(sql);
+                
+            } else if (metric == "gpu") {
+                std::string sql = "SELECT * FROM gpu WHERE host_ip = '" + hostIp + "'" +
+                                " AND ts > NOW() - " + time_range + 
+                                " ORDER BY ts ASC";
+                timeSeriesData.data_points = executeQuerySQL(sql);
+            }
+            
+            if (!timeSeriesData.data_points.empty()) {
+                rangeData.time_series.push_back(timeSeriesData);
+            }
+        }
+        
+        LogManager::getLogger()->debug("ResourceStorage: Retrieved range data for node {} over {}: {} metric types with total {} data points", 
+                                     hostIp, time_range, rangeData.time_series.size(),
+                                     std::accumulate(rangeData.time_series.begin(), rangeData.time_series.end(), 0,
+                                                   [](int sum, const auto& ts) { return sum + ts.data_points.size(); }));
+        
+    } catch (const std::exception& e) {
+        LogManager::getLogger()->error("ResourceStorage: Failed to get range data for node {}: {}", hostIp, e.what());
+    }
+    
+    return rangeData;
+}
+
+// NodeResourceRangeData的to_json实现
+nlohmann::json NodeResourceRangeData::to_json() const {
+    nlohmann::json j;
+    
+    // 从time_series中提取节点信息，如果可用的话
+    int box_id = 0, cpu_id = 1, slot_id = 0;
+    for (const auto& ts : time_series) {
+        for (const auto& point : ts.data_points) {
+            if (point.labels.count("box_id")) {
+                box_id = std::stoi(point.labels.at("box_id"));
+            }
+            if (point.labels.count("cpu_id")) {
+                cpu_id = std::stoi(point.labels.at("cpu_id"));
+            }
+            if (point.labels.count("slot_id")) {
+                slot_id = std::stoi(point.labels.at("slot_id"));
+            }
+            break; // 只需要从第一个点获取这些信息
+        }
+        if (box_id != 0) break;
+    }
+    
+    j["box_id"] = box_id;
+    j["cpu_id"] = cpu_id;
+    j["host_ip"] = host_ip;
+    j["slot_id"] = slot_id;
+    j["time_range"] = time_range;
+    
+    // 构建metrics对象
+    nlohmann::json metrics;
+    
+    // 容器指标（暂时为空）
+    metrics["container"] = nlohmann::json::object();
+    
+    for (const auto& ts : time_series) {
+        if (ts.metric_type == "cpu") {
+            // CPU数据是数组格式
+            nlohmann::json cpu_array = nlohmann::json::array();
+            for (const auto& point : ts.data_points) {
+                nlohmann::json cpu_point;
+                
+                // 从metrics中提取所有字段
+                for (const auto& metric : point.metrics) {
+                    if (metric.first == "timestamp") {
+                        cpu_point["timestamp"] = static_cast<int64_t>(metric.second);
+                    } else {
+                        cpu_point[metric.first] = metric.second;
+                    }
+                }
+                
+                cpu_array.push_back(cpu_point);
+            }
+            metrics["cpu"] = cpu_array;
+            
+        } else if (ts.metric_type == "memory") {
+            // Memory数据是数组格式
+            nlohmann::json memory_array = nlohmann::json::array();
+            for (const auto& point : ts.data_points) {
+                nlohmann::json memory_point;
+                
+                for (const auto& metric : point.metrics) {
+                    if (metric.first == "timestamp") {
+                        memory_point["timestamp"] = static_cast<int64_t>(metric.second);
+                    } else {
+                        memory_point[metric.first] = metric.second;
+                    }
+                }
+                
+                memory_array.push_back(memory_point);
+            }
+            metrics["memory"] = memory_array;
+            
+        } else if (ts.metric_type == "disk") {
+            // Disk数据按设备分组
+            nlohmann::json disk_groups;
+            std::map<std::string, nlohmann::json> device_data;
+            
+            for (const auto& point : ts.data_points) {
+                std::string device_key = point.labels.count("group_key") ? point.labels.at("group_key") : "unknown";
+                
+                nlohmann::json disk_point;
+                for (const auto& metric : point.metrics) {
+                    if (metric.first == "timestamp") {
+                        disk_point["timestamp"] = static_cast<int64_t>(metric.second);
+                    } else {
+                        disk_point[metric.first] = metric.second;
+                    }
+                }
+                
+                // 添加标签字段
+                if (point.labels.count("device")) {
+                    disk_point["device"] = point.labels.at("device");
+                }
+                if (point.labels.count("mount_point")) {
+                    disk_point["mount_point"] = point.labels.at("mount_point");
+                }
+                
+                if (device_data.find(device_key) == device_data.end()) {
+                    device_data[device_key] = nlohmann::json::array();
+                }
+                device_data[device_key].push_back(disk_point);
+            }
+            
+            for (const auto& device : device_data) {
+                disk_groups[device.first] = device.second;
+            }
+            metrics["disk"] = disk_groups;
+            
+        } else if (ts.metric_type == "network") {
+            // Network数据按接口分组
+            nlohmann::json network_groups;
+            std::map<std::string, nlohmann::json> interface_data;
+            
+            for (const auto& point : ts.data_points) {
+                std::string interface_key = point.labels.count("group_key") ? point.labels.at("group_key") : "unknown";
+                
+                nlohmann::json network_point;
+                for (const auto& metric : point.metrics) {
+                    if (metric.first == "timestamp") {
+                        network_point["timestamp"] = static_cast<int64_t>(metric.second);
+                    } else {
+                        network_point[metric.first] = metric.second;
+                    }
+                }
+                
+                // 添加接口字段
+                if (point.labels.count("interface")) {
+                    network_point["interface"] = point.labels.at("interface");
+                }
+                
+                if (interface_data.find(interface_key) == interface_data.end()) {
+                    interface_data[interface_key] = nlohmann::json::array();
+                }
+                interface_data[interface_key].push_back(network_point);
+            }
+            
+            for (const auto& interface : interface_data) {
+                network_groups[interface.first] = interface.second;
+            }
+            metrics["network"] = network_groups;
+            
+        } else if (ts.metric_type == "gpu") {
+            // GPU数据按GPU索引分组
+            nlohmann::json gpu_groups;
+            std::map<std::string, nlohmann::json> gpu_data;
+            
+            for (const auto& point : ts.data_points) {
+                std::string gpu_key = point.labels.count("group_key") ? point.labels.at("group_key") : "gpu_0";
+                
+                nlohmann::json gpu_point;
+                for (const auto& metric : point.metrics) {
+                    if (metric.first == "timestamp") {
+                        gpu_point["timestamp"] = static_cast<int64_t>(metric.second);
+                    } else {
+                        gpu_point[metric.first] = metric.second;
+                    }
+                }
+                
+                // 添加GPU相关字段
+                if (point.labels.count("gpu_index")) {
+                    gpu_point["index"] = std::stoi(point.labels.at("gpu_index"));
+                }
+                if (point.labels.count("gpu_name")) {
+                    gpu_point["name"] = point.labels.at("gpu_name");
+                }
+                
+                if (gpu_data.find(gpu_key) == gpu_data.end()) {
+                    gpu_data[gpu_key] = nlohmann::json::array();
+                }
+                gpu_data[gpu_key].push_back(gpu_point);
+            }
+            
+            for (const auto& gpu : gpu_data) {
+                gpu_groups[gpu.first] = gpu.second;
+            }
+            metrics["gpu"] = gpu_groups;
+        }
+    }
+    
+    j["metrics"] = metrics;
     
     return j;
 }

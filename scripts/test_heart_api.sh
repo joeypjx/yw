@@ -5,7 +5,7 @@
 
 # Server configuration
 SERVER_URL="http://localhost:8080"
-HEART_ENDPOINT="$SERVER_URL/heart"
+HEART_ENDPOINT="$SERVER_URL/heartbeat"
 
 # JSON data based on @docs/node.json
 HEART_DATA='{

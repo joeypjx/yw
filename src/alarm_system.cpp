@@ -4,6 +4,7 @@
 #include "node_storage.h"
 #include "log_manager.h"
 #include "resource_storage.h"
+#include "resource_manager.h"
 #include "alarm_rule_storage.h"
 #include "alarm_rule_engine.h"
 #include "alarm_manager.h"
@@ -482,10 +483,18 @@ bool AlarmSystem::initializeServices() {
         multicast_sender_->start();
         LogManager::getLogger()->info("✅ 组播发送器启动成功");
         
-        // 2. 启动HTTP服务器
+        // 2. 初始化节点存储和资源管理器
+        LogManager::getLogger()->info("📦 初始化节点存储...");
+        node_storage_ = std::make_shared<NodeStorage>();
+        LogManager::getLogger()->info("✅ 节点存储初始化成功");
+        
+        LogManager::getLogger()->info("📊 初始化资源管理器...");
+        resource_manager_ = std::make_shared<ResourceManager>(resource_storage_, node_storage_);
+        LogManager::getLogger()->info("✅ 资源管理器初始化成功");
+        
+        // 3. 启动HTTP服务器
         LogManager::getLogger()->info("🌐 启动HTTP服务器...");
-        auto node_storage = std::make_shared<NodeStorage>();
-        http_server_ = std::make_shared<HttpServer>(resource_storage_, alarm_rule_storage_, alarm_manager_, node_storage);
+        http_server_ = std::make_shared<HttpServer>(resource_storage_, alarm_rule_storage_, alarm_manager_, node_storage_, resource_manager_);
         if (!http_server_->start()) {
             std::lock_guard<std::mutex> lock(error_mutex_);
             last_error_ = "HTTP服务器启动失败";
@@ -493,12 +502,12 @@ bool AlarmSystem::initializeServices() {
         }
         LogManager::getLogger()->info("✅ HTTP服务器启动成功，端口: {}", config_.http_port);
         
-        // 3. 初始化告警规则引擎
+        // 4. 初始化告警规则引擎
         LogManager::getLogger()->info("⚙️ 初始化告警规则引擎...");
         alarm_rule_engine_ = std::make_shared<AlarmRuleEngine>(
             alarm_rule_storage_, resource_storage_, alarm_manager_);
         
-        // 4. 设置告警事件监控
+        // 5. 设置告警事件监控
         alarm_monitor_ = std::make_shared<AlarmEventMonitor>();
         alarm_rule_engine_->setAlarmEventCallback([this](const AlarmEvent& event) {
             if (alarm_monitor_) {
@@ -515,7 +524,7 @@ bool AlarmSystem::initializeServices() {
         // 设置评估间隔
         alarm_rule_engine_->setEvaluationInterval(config_.evaluation_interval);
         
-        // 5. 启动告警引擎
+        // 6. 启动告警引擎
         if (!alarm_rule_engine_->start()) {
             std::lock_guard<std::mutex> lock(error_mutex_);
             last_error_ = "告警引擎启动失败";

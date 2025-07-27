@@ -11,8 +11,6 @@ include_directories(include)
 # Use local nlohmann/json header file
 # json.hpp is included in the include/ directory
 
-add_subdirectory(third_party/googletest EXCLUDE_FROM_ALL)
-
 # Find TDengine library
 find_library(TAOS_LIBRARY 
     NAMES taos
@@ -93,8 +91,3 @@ if(APPLE)
     )
 endif()
 
-option(BUILD_TESTS "Build test programs" ON)
-if(BUILD_TESTS)
-    enable_testing()
-    add_subdirectory(tests)
-endif()

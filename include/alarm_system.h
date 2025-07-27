@@ -17,6 +17,8 @@ class AlarmRuleEngine;
 class HttpServer;
 class MulticastSender;
 class AlarmEventMonitor;
+class NodeStorage;
+class ResourceManager;
 struct AlarmEvent;
 
 /**
@@ -202,6 +204,8 @@ private:
     std::shared_ptr<HttpServer> http_server_;
     std::shared_ptr<MulticastSender> multicast_sender_;
     std::shared_ptr<AlarmEventMonitor> alarm_monitor_;
+    std::shared_ptr<NodeStorage> node_storage_;
+    std::shared_ptr<ResourceManager> resource_manager_;
     
     // 线程管理
     std::vector<std::thread> data_threads_;
