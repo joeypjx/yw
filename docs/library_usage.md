@@ -39,9 +39,7 @@ int main() {
 
 int main() {
     AlarmSystemConfig config;
-    config.enable_simulation = true;
     config.stats_interval = std::chrono::seconds(30);
-    config.simulation_nodes = {"192.168.1.100", "192.168.1.101"};
     
     return runAlarmSystem(config);
 }
@@ -73,10 +71,6 @@ struct AlarmSystemConfig {
     std::chrono::seconds evaluation_interval = std::chrono::seconds(3);  // 告警评估间隔
     std::chrono::seconds stats_interval = std::chrono::seconds(60);      // 统计输出间隔
     
-    // 模拟数据配置
-    bool enable_simulation = true;                   // 是否启用模拟数据
-    std::vector<std::string> simulation_nodes = {"192.168.1.100", "192.168.1.101"};  // 模拟节点列表
-    std::chrono::seconds data_generation_interval = std::chrono::seconds(2);  // 数据生成间隔
     
     // 日志配置
     std::string log_config_file = "log_config.json";  // 日志配置文件
@@ -91,16 +85,13 @@ struct AlarmSystemConfig {
 // 构造函数
 AlarmSystem(const AlarmSystemConfig& config = AlarmSystemConfig{});
 
-// 初始化系统（连接数据库、创建表等）
+// 初始化并启动系统（连接数据库、创建表、启动服务）
 bool initialize();
-
-// 启动系统（启动服务和监控线程）
-bool start();
 
 // 停止系统
 void stop();
 
-// 运行系统（简化的方式，包含初始化、启动和等待停止）
+// 运行系统（简化的方式，包含初始化并等待停止）
 void run();
 
 // 等待系统停止
@@ -171,7 +162,6 @@ struct AlarmSystemStats {
 ```cpp
 int main() {
     AlarmSystemConfig config;
-    config.enable_simulation = true;
     
     // 这会一直运行直到收到 Ctrl+C 信号
     return runAlarmSystem(config);
@@ -200,10 +190,6 @@ public:
             return false;
         }
         
-        if (!alarm_system_.start()) {
-            return false;
-        }
-        
         // 启动其他应用逻辑...
         return true;
     }
@@ -223,7 +209,6 @@ private:
     
     AlarmSystemConfig createConfig() {
         AlarmSystemConfig config;
-        config.enable_simulation = false;  // 使用真实数据
         config.stats_interval = std::chrono::seconds(300);  // 5分钟输出一次统计
         return config;
     }
@@ -237,7 +222,6 @@ private:
 ```cpp
 AlarmSystem alarm_system(config);
 alarm_system.initialize();
-alarm_system.start();
 
 // 在另一个线程中定期查询状态
 std::thread monitor_thread([&]() {
@@ -329,11 +313,6 @@ if (!alarm_system.initialize()) {
     std::cerr << "初始化失败: " << alarm_system.getLastError() << std::endl;
     return 1;
 }
-
-if (!alarm_system.start()) {
-    std::cerr << "启动失败: " << alarm_system.getLastError() << std::endl;
-    return 1;
-}
 ```
 
 ### 2. 优雅关闭
@@ -343,7 +322,7 @@ if (!alarm_system.start()) {
 std::atomic<bool> should_stop{false};
 signal(SIGINT, [](int) { should_stop = true; });
 
-alarm_system.start();
+alarm_system.initialize();
 
 while (!should_stop && alarm_system.isRunning()) {
     std::this_thread::sleep_for(std::chrono::seconds(1));
@@ -395,8 +374,6 @@ private:
 
 ## 常见问题
 
-### Q: 如何禁用模拟数据生成？
-A: 设置 `config.enable_simulation = false;`
 
 ### Q: 如何修改告警评估频率？
 A: 设置 `config.evaluation_interval = std::chrono::seconds(你的间隔);`

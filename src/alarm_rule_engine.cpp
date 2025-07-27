@@ -1,5 +1,5 @@
 #include "alarm_rule_engine.h"
-#include "alarm_manager.h"
+#include "resource_storage.h"
 #include "log_manager.h"
 #include <iostream>
 #include <sstream>
@@ -10,14 +10,7 @@
 
 AlarmRuleEngine::AlarmRuleEngine(std::shared_ptr<AlarmRuleStorage> rule_storage,
                                std::shared_ptr<ResourceStorage> resource_storage)
-    : m_rule_storage(rule_storage), m_resource_storage(resource_storage), m_alarm_manager(nullptr),
-      m_running(false), m_evaluation_interval(std::chrono::seconds(30)) {
-}
-
-AlarmRuleEngine::AlarmRuleEngine(std::shared_ptr<AlarmRuleStorage> rule_storage,
-                               std::shared_ptr<ResourceStorage> resource_storage,
-                               std::shared_ptr<AlarmManager> alarm_manager)
-    : m_rule_storage(rule_storage), m_resource_storage(resource_storage), m_alarm_manager(alarm_manager),
+    : m_rule_storage(rule_storage), m_resource_storage(resource_storage),
       m_running(false), m_evaluation_interval(std::chrono::seconds(30)) {
 }
 
@@ -338,10 +331,6 @@ void AlarmRuleEngine::generateAlarmEvent(const AlarmInstance& instance,
     }
     
     logInfo("Generated alarm event: " + event.toJson());
-    
-    if (m_alarm_manager) {
-        m_alarm_manager->processAlarmEvent(event);
-    }
     
     if (m_alarm_event_callback) {
         m_alarm_event_callback(event);

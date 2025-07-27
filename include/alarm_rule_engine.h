@@ -13,8 +13,6 @@
 #include "alarm_rule_storage.h"
 #include "resource_storage.h"
 
-// 前向声明
-class AlarmManager;
 
 // 告警实例状态
 enum class AlarmInstanceState {
@@ -54,11 +52,6 @@ class AlarmRuleEngine {
 public:
     AlarmRuleEngine(std::shared_ptr<AlarmRuleStorage> rule_storage,
                    std::shared_ptr<ResourceStorage> resource_storage);
-    
-    // 构造函数，支持告警管理器
-    AlarmRuleEngine(std::shared_ptr<AlarmRuleStorage> rule_storage,
-                   std::shared_ptr<ResourceStorage> resource_storage,
-                   std::shared_ptr<AlarmManager> alarm_manager);
     ~AlarmRuleEngine();
 
     // 启动和停止引擎
@@ -80,7 +73,6 @@ public:
 private:
     std::shared_ptr<AlarmRuleStorage> m_rule_storage;
     std::shared_ptr<ResourceStorage> m_resource_storage;
-    std::shared_ptr<AlarmManager> m_alarm_manager;
     
     std::vector<AlarmRule> m_rules;                           // 内存中的告警规则
     std::map<std::string, AlarmInstance> m_alarm_instances;   // 告警实例状态

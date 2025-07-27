@@ -977,7 +977,7 @@ void HttpServer::handle_alarm_rules_list(const httplib::Request& req, httplib::R
             
             res.set_content(response.dump(2), "application/json");
             res.status = 200;
-            LogManager::getLogger()->info("Successfully retrieved {} alarm rules (page {}/{}, total: {})", 
+            LogManager::getLogger()->debug("Successfully retrieved {} alarm rules (page {}/{}, total: {})", 
                 paginated_result.rules.size(), paginated_result.page, 
                 paginated_result.total_pages, paginated_result.total_count);
                 
@@ -1011,7 +1011,7 @@ void HttpServer::handle_alarm_rules_list(const httplib::Request& req, httplib::R
             
             res.set_content(response.dump(2), "application/json");
             res.status = 200;
-            LogManager::getLogger()->info("Successfully retrieved {} alarm rules (legacy mode)", rules.size());
+            LogManager::getLogger()->debug("Successfully retrieved {} alarm rules (legacy mode)", rules.size());
         }
         
     } catch (const std::exception& e) {
@@ -1056,7 +1056,7 @@ void HttpServer::handle_alarm_rules_get(const httplib::Request& req, httplib::Re
         
         res.set_content(response.dump(2), "application/json");
         res.status = 200;
-        LogManager::getLogger()->info("Successfully retrieved alarm rule: {}", rule_id);
+        LogManager::getLogger()->debug("Successfully retrieved alarm rule: {}", rule_id);
         
     } catch (const std::exception& e) {
         res.set_content("{\"error\":\"Failed to retrieve alarm rule\"}", "application/json");
@@ -1279,7 +1279,7 @@ void HttpServer::handle_alarm_events_list(const httplib::Request& req, httplib::
             
             res.set_content(response.dump(2), "application/json");
             res.status = 200;
-            LogManager::getLogger()->info("Successfully retrieved {} alarm events (page {}/{}, total: {})", 
+            LogManager::getLogger()->debug("Successfully retrieved {} alarm events (page {}/{}, total: {})", 
                 paginated_result.events.size(), paginated_result.page, 
                 paginated_result.total_pages, paginated_result.total_count);
             
@@ -1324,7 +1324,7 @@ void HttpServer::handle_alarm_events_list(const httplib::Request& req, httplib::
             
             res.set_content(response.dump(2), "application/json");
             res.status = 200;
-            LogManager::getLogger()->info("Successfully retrieved {} alarm events (legacy mode)", events.size());
+            LogManager::getLogger()->debug("Successfully retrieved {} alarm events (legacy mode)", events.size());
         }
         
     } catch (const std::exception& e) {
@@ -1458,7 +1458,7 @@ void HttpServer::handle_node_metrics(const httplib::Request& req, httplib::Respo
                 
                 res.set_content(response.dump(2), "application/json");
                 res.status = 200;
-                LogManager::getLogger()->info("Successfully retrieved {} node metrics (page {}/{}, total: {})", 
+                LogManager::getLogger()->debug("Successfully retrieved {} node metrics (page {}/{}, total: {})", 
                     paginated_result.data.size(), paginated_result.page, 
                     paginated_result.total_pages, paginated_result.total_count);
             } else {

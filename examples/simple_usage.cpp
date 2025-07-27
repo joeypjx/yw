@@ -8,9 +8,7 @@ int main() {
     
     // 1. 创建自定义配置
     AlarmSystemConfig config;
-    config.enable_simulation = true;
     config.stats_interval = std::chrono::seconds(30); // 30秒输出一次统计
-    config.simulation_nodes = {"192.168.1.100", "192.168.1.101", "192.168.1.102"};
     
     // 2. 创建告警系统实例
     AlarmSystem alarm_system(config);
@@ -22,23 +20,15 @@ int main() {
     });
     
     try {
-        // 4. 初始化系统
-        std::cout << "⏳ 正在初始化告警系统..." << std::endl;
+        // 4. 初始化并启动系统
+        std::cout << "⏳ 正在初始化并启动告警系统..." << std::endl;
         if (!alarm_system.initialize()) {
             std::cerr << "❌ 初始化失败: " << alarm_system.getLastError() << std::endl;
             return 1;
         }
-        std::cout << "✅ 系统初始化成功" << std::endl;
+        std::cout << "✅ 系统初始化并启动成功" << std::endl;
         
-        // 5. 启动系统
-        std::cout << "🚀 正在启动告警系统..." << std::endl;
-        if (!alarm_system.start()) {
-            std::cerr << "❌ 启动失败: " << alarm_system.getLastError() << std::endl;
-            return 1;
-        }
-        std::cout << "✅ 系统启动成功" << std::endl;
-        
-        // 6. 运行一段时间并监控状态
+        // 5. 运行一段时间并监控状态
         std::cout << "🔄 系统运行中，将运行2分钟..." << std::endl;
         for (int i = 0; i < 4; ++i) {
             std::this_thread::sleep_for(std::chrono::seconds(30));
@@ -53,7 +43,7 @@ int main() {
             std::cout << "   恢复事件: " << stats.resolved_events << std::endl;
         }
         
-        // 7. 停止系统
+        // 6. 停止系统
         std::cout << "\n🛑 正在停止系统..." << std::endl;
         alarm_system.stop();
         std::cout << "✅ 系统已停止" << std::endl;

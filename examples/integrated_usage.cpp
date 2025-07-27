@@ -29,23 +29,11 @@ public:
         });
     }
     
-    bool initialize() {
-        std::cout << "🔧 初始化应用程序..." << std::endl;
-        
-        if (!alarm_system_.initialize()) {
-            std::cerr << "❌ 告警系统初始化失败: " << alarm_system_.getLastError() << std::endl;
-            return false;
-        }
-        
-        std::cout << "✅ 应用程序初始化完成" << std::endl;
-        return true;
-    }
-    
     bool start() {
         std::cout << "🚀 启动应用程序..." << std::endl;
         
-        if (!alarm_system_.start()) {
-            std::cerr << "❌ 告警系统启动失败: " << alarm_system_.getLastError() << std::endl;
+        if (!alarm_system_.initialize()) {
+            std::cerr << "❌ 告警系统初始化失败: " << alarm_system_.getLastError() << std::endl;
             return false;
         }
         
@@ -71,10 +59,6 @@ public:
     }
     
     void run() {
-        if (!initialize()) {
-            return;
-        }
-        
         if (!start()) {
             return;
         }
@@ -208,10 +192,8 @@ int main() {
     
     // 配置告警系统
     AlarmSystemConfig config;
-    config.enable_simulation = true;
     config.stats_interval = std::chrono::seconds(60);
     config.evaluation_interval = std::chrono::seconds(5);
-    config.simulation_nodes = {"192.168.1.100", "192.168.1.101"};
     
     // 创建并运行应用程序
     MyApplication app(config);

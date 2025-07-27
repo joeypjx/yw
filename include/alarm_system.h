@@ -16,7 +16,6 @@ class AlarmManager;
 class AlarmRuleEngine;
 class HttpServer;
 class MulticastSender;
-class AlarmEventMonitor;
 class NodeStorage;
 class ResourceManager;
 struct AlarmEvent;
@@ -45,10 +44,6 @@ struct AlarmSystemConfig {
     std::chrono::seconds evaluation_interval = std::chrono::seconds(3);
     std::chrono::seconds stats_interval = std::chrono::seconds(60);
     
-    // 模拟数据配置
-    bool enable_simulation = true;
-    std::vector<std::string> simulation_nodes = {"192.168.1.100", "192.168.1.101"};
-    std::chrono::seconds data_generation_interval = std::chrono::seconds(2);
     
     // 日志配置
     std::string log_config_file = "log_config.json";
@@ -111,16 +106,10 @@ public:
     AlarmSystem& operator=(const AlarmSystem&) = delete;
     
     /**
-     * 初始化告警系统
+     * 初始化并启动告警系统
      * @return 成功返回true，失败返回false
      */
     bool initialize();
-    
-    /**
-     * 启动告警系统
-     * @return 成功返回true，失败返回false
-     */
-    bool start();
     
     /**
      * 停止告警系统
@@ -181,9 +170,6 @@ private:
     bool initializeSignalHandlers();
     bool initializeDatabase();
     bool initializeServices();
-    bool startDataGeneration();
-    void stopDataGeneration();
-    void monitoringLoop();
     
     // 信号处理
     static void signalHandler(int signal);
@@ -203,13 +189,9 @@ private:
     std::shared_ptr<AlarmRuleEngine> alarm_rule_engine_;
     std::shared_ptr<HttpServer> http_server_;
     std::shared_ptr<MulticastSender> multicast_sender_;
-    std::shared_ptr<AlarmEventMonitor> alarm_monitor_;
     std::shared_ptr<NodeStorage> node_storage_;
     std::shared_ptr<ResourceManager> resource_manager_;
     
-    // 线程管理
-    std::vector<std::thread> data_threads_;
-    std::thread monitoring_thread_;
     
     // 时间记录
     std::chrono::steady_clock::time_point start_time_;
