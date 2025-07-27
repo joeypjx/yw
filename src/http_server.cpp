@@ -32,6 +32,8 @@ const char* get_web_page_html() {
         button { cursor: pointer; padding: 10px 15px; border: none; border-radius: 4px; font-size: 1em; font-weight: 500; }
         button[type="submit"] { background-color: #28a745; color: white; }
         #cancel-edit, .refresh-btn { background-color: #6c757d; color: white; }
+        .refresh-btn:disabled { background-color: #adb5bd; cursor: not-allowed; }
+        .refresh-btn.refreshing { background-color: #ffc107; color: #212529; }
         .actions-cell button { margin-right: 5px; padding: 5px 10px; font-size: 0.9em; }
         .edit-btn { background-color: #007bff; color: white; }
         .delete-btn { background-color: #dc3545; color: white; }
@@ -40,10 +42,12 @@ const char* get_web_page_html() {
         .status-online { color: #28a745; font-weight: bold; }
         .status-offline { color: #dc3545; font-weight: bold; }
         .status-warning { color: #ffc107; font-weight: bold; }
+        .last-update { position: fixed; top: 10px; right: 20px; background: rgba(0,0,0,0.7); color: white; padding: 5px 10px; border-radius: 3px; font-size: 0.8em; z-index: 1000; }
     </style>
 </head>
 <body>
     <div id="container">
+        <div id="last-update" class="last-update">Last update: Never</div>
         <h1>System Management</h1>
 
         <!-- Node Metrics Section -->
@@ -87,6 +91,7 @@ const char* get_web_page_html() {
         <!-- Alarm Rules Section -->
         <div class="section-header">
             <h2>Alarm Rules</h2>
+            <button id="refresh-rules" class="refresh-btn">Refresh Rules</button>
         </div>
         <table id="rules-table">
             <thead>
@@ -195,6 +200,8 @@ const char* get_web_page_html() {
         const cancelEditButton = document.getElementById('cancel-edit');
         const refreshEventsButton = document.getElementById('refresh-events');
         const refreshMetricsButton = document.getElementById('refresh-metrics');
+        const refreshRulesButton = document.getElementById('refresh-rules');
+        const lastUpdateDiv = document.getElementById('last-update');
         
         // Events Pagination elements
         const eventsPaginationDiv = document.getElementById('events-pagination');
@@ -230,8 +237,18 @@ const char* get_web_page_html() {
         let metricsCurrentPageSize = 20;
 
         const API_BASE = '';
+        
+        const updateLastRefreshTime = () => {
+            const now = new Date();
+            lastUpdateDiv.textContent = `Last update: ${now.toLocaleTimeString()}`;
+        };
 
         const fetchAndRenderMetrics = async (page = metricsCurrentPage, pageSize = metricsCurrentPageSize) => {
+            // Show refreshing state
+            refreshMetricsButton.classList.add('refreshing');
+            refreshMetricsButton.textContent = 'Refreshing...';
+            refreshMetricsButton.disabled = true;
+            
             try {
                 const response = await fetch(`${API_BASE}/node/metrics?page=${page}&page_size=${pageSize}`);
                 if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
@@ -265,13 +282,14 @@ const char* get_web_page_html() {
                     // Update page size select
                     metricsPageSizeSelect.value = metricsCurrentPageSize;
                     
-                    // For paginated response, data is directly the array
-                    if (!Array.isArray(data) || data.length === 0) {
+                    // For paginated response, extract data from the standardized format
+                    const nodes_metrics = data.data ? data.data.nodes_metrics : data;
+                    if (!Array.isArray(nodes_metrics) || nodes_metrics.length === 0) {
                         metricsTableBody.innerHTML = '<tr><td colspan="9">No node metrics found.</td></tr>';
                         return;
                     }
                     
-                    data.forEach(node => {
+                    nodes_metrics.forEach(node => {
                     // 修正数据结构：使用 latest_xxx_metrics
                     const cpu = node.latest_cpu_metrics || {};
                     const memory = node.latest_memory_metrics || {};
@@ -376,14 +394,29 @@ const char* get_web_page_html() {
                 console.error('Error fetching node metrics:', error);
                 metricsTableBody.innerHTML = '<tr><td colspan="9">Failed to load node metrics.</td></tr>';
                 metricsPaginationDiv.style.display = 'none';
+            } finally {
+                // Reset button state
+                refreshMetricsButton.classList.remove('refreshing');
+                refreshMetricsButton.textContent = 'Refresh Metrics';
+                refreshMetricsButton.disabled = false;
+                // Update last refresh time
+                updateLastRefreshTime();
             }
         };
 
         const fetchAndRenderRules = async (page = rulesCurrentPage, pageSize = rulesCurrentPageSize) => {
+            // Show refreshing state
+            refreshRulesButton.classList.add('refreshing');
+            refreshRulesButton.textContent = 'Refreshing...';
+            refreshRulesButton.disabled = true;
+            
             try {
                 const response = await fetch(`${API_BASE}/alarm/rules?page=${page}&page_size=${pageSize}`);
                 if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-                const rules = await response.json();
+                const responseData = await response.json();
+                
+                // Extract rules data from the new response format
+                const rules = Array.isArray(responseData) ? responseData : (responseData.data || responseData);
                 
                 rulesTableBody.innerHTML = '';
                 
@@ -418,17 +451,25 @@ const char* get_web_page_html() {
                     rulesPaginationDiv.style.display = 'none';
                 }
                 
-                if (rules.length === 0) {
+                if (!Array.isArray(rules) || rules.length === 0) {
                     rulesTableBody.innerHTML = '<tr><td colspan="6">No alarm rules found.</td></tr>';
                     return;
                 }
                 
                 rules.forEach(rule => {
+                    // Format expression for display (it should already be a parsed object from the backend)
+                    let expressionDisplay = '';
+                    try {
+                        expressionDisplay = JSON.stringify(rule.expression, null, 2);
+                    } catch (e) {
+                        expressionDisplay = rule.expression || 'Invalid JSON';
+                    }
+                    
                     const row = document.createElement('tr');
                     row.innerHTML = `
                         <td>${escapeHtml(rule.alert_name)}</td>
-                        <td><pre>${escapeHtml(JSON.stringify(rule.expression, null, 2))}</pre></td>
-                        <td>${escapeHtml(rule.for)}</td>
+                        <td><pre>${escapeHtml(expressionDisplay)}</pre></td>
+                        <td>${escapeHtml(rule.for || rule.for_duration)}</td>
                         <td>${escapeHtml(rule.severity)}</td>
                         <td>${escapeHtml(rule.summary)}</td>
                         <td class="actions-cell">
@@ -442,14 +483,29 @@ const char* get_web_page_html() {
                 console.error('Error fetching rules:', error);
                 rulesTableBody.innerHTML = '<tr><td colspan="6">Failed to load alarm rules.</td></tr>';
                 rulesPaginationDiv.style.display = 'none';
+            } finally {
+                // Reset button state
+                refreshRulesButton.classList.remove('refreshing');
+                refreshRulesButton.textContent = 'Refresh Rules';
+                refreshRulesButton.disabled = false;
+                // Update last refresh time only if this isn't an automatic refresh
+                updateLastRefreshTime();
             }
         };
 
         const fetchAndRenderEvents = async (page = currentPage, pageSize = currentPageSize) => {
+            // Show refreshing state
+            refreshEventsButton.classList.add('refreshing');
+            refreshEventsButton.textContent = 'Refreshing...';
+            refreshEventsButton.disabled = true;
+            
             try {
                 const response = await fetch(`${API_BASE}/alarm/events?page=${page}&page_size=${pageSize}`);
                 if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-                const events = await response.json();
+                const responseData = await response.json();
+                
+                // Extract events data from the new response format
+                const events = Array.isArray(responseData) ? responseData : (responseData.data || responseData);
                 
                 eventsTableBody.innerHTML = '';
                 
@@ -484,7 +540,7 @@ const char* get_web_page_html() {
                     eventsPaginationDiv.style.display = 'none';
                 }
                 
-                if (events.length === 0) {
+                if (!Array.isArray(events) || events.length === 0) {
                     eventsTableBody.innerHTML = '<tr><td colspan="5">No alarm events found.</td></tr>';
                     return;
                 }
@@ -504,6 +560,13 @@ const char* get_web_page_html() {
                 console.error('Error fetching events:', error);
                 eventsTableBody.innerHTML = '<tr><td colspan="5">Failed to load alarm events.</td></tr>';
                 eventsPaginationDiv.style.display = 'none';
+            } finally {
+                // Reset button state
+                refreshEventsButton.classList.remove('refreshing');
+                refreshEventsButton.textContent = 'Refresh Events';
+                refreshEventsButton.disabled = false;
+                // Update last refresh time
+                updateLastRefreshTime();
             }
         };
 
@@ -547,7 +610,11 @@ const char* get_web_page_html() {
                     const errData = await response.json();
                     throw new Error(errData.error || `HTTP error! status: ${response.status}`);
                 }
-                await response.json();
+                const result = await response.json();
+                // Check if response is in standard format and verify success
+                if (result.status && result.status !== 'success') {
+                    throw new Error('Operation failed');
+                }
                 resetForm();
                 fetchAndRenderRules();
             } catch (error) {
@@ -560,13 +627,25 @@ const char* get_web_page_html() {
             try {
                 const response = await fetch(`${API_BASE}/alarm/rules/${id}`);
                 if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-                const rule = await response.json();
+                const responseData = await response.json();
+                
+                // Extract rule data from the new response format
+                const rule = responseData.data || responseData; // Support both new and legacy formats
                 
                 document.querySelector('h3').innerText = `Edit Rule: ${escapeHtml(rule.alert_name)}`;
                 ruleIdInput.value = rule.id;
                 document.getElementById('alert_name').value = rule.alert_name;
-                document.getElementById('expression').value = JSON.stringify(rule.expression, null, 2);
-                document.getElementById('for_duration').value = rule.for;
+                
+                // Format expression for editing (it should already be a parsed object from the backend)
+                let expressionValue = '';
+                try {
+                    expressionValue = JSON.stringify(rule.expression, null, 2);
+                } catch (e) {
+                    expressionValue = rule.expression || '{}';
+                }
+                document.getElementById('expression').value = expressionValue;
+                
+                document.getElementById('for_duration').value = rule.for || rule.for_duration;
                 document.getElementById('severity').value = rule.severity;
                 document.getElementById('summary').value = rule.summary;
                 document.getElementById('description').value = rule.description;
@@ -588,7 +667,11 @@ const char* get_web_page_html() {
                     const errData = await response.json();
                     throw new Error(errData.error || `HTTP error! status: ${response.status}`);
                 }
-                await response.json();
+                const result = await response.json();
+                // Check if response is in standard format and verify success
+                if (result.status && result.status !== 'success') {
+                    throw new Error('Delete operation failed');
+                }
                 fetchAndRenderRules();
             } catch (error) {
                 console.error('Error deleting rule:', error);
@@ -610,6 +693,7 @@ const char* get_web_page_html() {
         cancelEditButton.addEventListener('click', resetForm);
         refreshEventsButton.addEventListener('click', () => fetchAndRenderEvents(currentPage, currentPageSize));
         refreshMetricsButton.addEventListener('click', () => fetchAndRenderMetrics(metricsCurrentPage, metricsCurrentPageSize));
+        refreshRulesButton.addEventListener('click', () => fetchAndRenderRules(rulesCurrentPage, rulesCurrentPageSize));
         
         // Events Pagination event listeners
         prevPageButton.addEventListener('click', () => {
@@ -669,8 +753,10 @@ const char* get_web_page_html() {
         fetchAndRenderRules();
         fetchAndRenderEvents();
         
-        // Auto-refresh metrics every 10 seconds
-        setInterval(fetchAndRenderMetrics, 10000);
+        // Auto-refresh all data periodically
+        setInterval(fetchAndRenderMetrics, 10000);    // Node metrics every 10 seconds (most dynamic)
+        setInterval(fetchAndRenderEvents, 20000);     // Alarm events every 20 seconds (dynamic)
+        setInterval(fetchAndRenderRules, 60000);      // Alarm rules every 60 seconds (less dynamic)
     });
     </script>
 </body>
@@ -806,8 +892,18 @@ void HttpServer::handle_alarm_rules_create(const httplib::Request& req, httplib:
             res.set_content("{\"error\":\"Failed to store alarm rules\"}", "application/json");
             res.status = 500;
             LogManager::getLogger()->error("Failed to store alarm rules");
+            return;
         }
-        res.set_content("{\"status\":\"success\", \"id\":\"" + id + "\"}", "application/json");
+        
+        json response = {
+            {"api_version", 1},
+            {"status", "success"},
+            {"data", {
+                {"id", id}
+            }}
+        };
+        
+        res.set_content(response.dump(2), "application/json");
         res.status = 200;
         LogManager::getLogger()->info("Successfully processed alarm rules");
     } catch (const json::parse_error& e) {
@@ -997,7 +1093,15 @@ void HttpServer::handle_alarm_rules_update(const httplib::Request& req, httplib:
         );
         
         if (success) {
-            res.set_content("{\"status\":\"success\", \"id\":\"" + rule_id + "\"}", "application/json");
+            json response = {
+                {"api_version", 1},
+                {"status", "success"},
+                {"data", {
+                    {"id", rule_id}
+                }}
+            };
+            
+            res.set_content(response.dump(2), "application/json");
             res.status = 200;
             LogManager::getLogger()->info("Successfully updated alarm rule: {}", rule_id);
         } else {
@@ -1034,7 +1138,15 @@ void HttpServer::handle_alarm_rules_delete(const httplib::Request& req, httplib:
         bool success = m_alarm_rule_storage->deleteAlarmRule(rule_id);
         
         if (success) {
-            res.set_content("{\"status\":\"success\", \"id\":\"" + rule_id + "\"}", "application/json");
+            json response = {
+                {"api_version", 1},
+                {"status", "success"},
+                {"data", {
+                    {"id", rule_id}
+                }}
+            };
+            
+            res.set_content(response.dump(2), "application/json");
             res.status = 200;
             LogManager::getLogger()->info("Successfully deleted alarm rule: {}", rule_id);
         } else {
@@ -1076,7 +1188,13 @@ void HttpServer::handle_resource(const httplib::Request& req, httplib::Response&
         const auto& resource = data["resource"];
 
         if (m_resource_storage->insertResourceData(host_ip, resource)) {
-            res.set_content("{\"status\":\"success\"}", "application/json");
+            json response = {
+                {"api_version", 1},
+                {"status", "success"},
+                {"data", {}}
+            };
+            
+            res.set_content(response.dump(2), "application/json");
             res.status = 200;
             LogManager::getLogger()->debug("Successfully processed resource data for host: {}", host_ip);
         } else {
@@ -1245,7 +1363,13 @@ void HttpServer::handle_heart(const httplib::Request& req, httplib::Response& re
         }
 
         if (m_node_storage->storeNodeData(host_ip, body)) {
-            res.set_content("{\"status\":\"success\"}", "application/json");
+            json response = {
+                {"api_version", 1},
+                {"status", "success"},
+                {"data", {}}
+            };
+            
+            res.set_content(response.dump(2), "application/json");
             res.status = 200;
             LogManager::getLogger()->debug("Successfully processed heart data for node: {}", host_ip);
         } else {
