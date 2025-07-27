@@ -67,6 +67,22 @@ const char* get_web_page_html() {
             </thead>
             <tbody></tbody>
         </table>
+        
+        <!-- Metrics Pagination Controls -->
+        <div id="metrics-pagination" style="margin-top: 20px; text-align: center; display: none;">
+            <button id="metrics-prev-page" class="refresh-btn">Previous</button>
+            <span id="metrics-page-info" style="margin: 0 20px;">Page 1 of 1</span>
+            <button id="metrics-next-page" class="refresh-btn">Next</button>
+            <span style="margin-left: 20px;">
+                Page size: 
+                <select id="metrics-page-size-select">
+                    <option value="10">10</option>
+                    <option value="20" selected>20</option>
+                    <option value="50">50</option>
+                    <option value="100">100</option>
+                </select>
+            </span>
+        </div>
 
         <!-- Alarm Rules Section -->
         <div class="section-header">
@@ -85,6 +101,22 @@ const char* get_web_page_html() {
             </thead>
             <tbody></tbody>
         </table>
+        
+        <!-- Rules Pagination Controls -->
+        <div id="rules-pagination" style="margin-top: 20px; text-align: center; display: none;">
+            <button id="rules-prev-page" class="refresh-btn">Previous</button>
+            <span id="rules-page-info" style="margin: 0 20px;">Page 1 of 1</span>
+            <button id="rules-next-page" class="refresh-btn">Next</button>
+            <span style="margin-left: 20px;">
+                Page size: 
+                <select id="rules-page-size-select">
+                    <option value="10">10</option>
+                    <option value="20" selected>20</option>
+                    <option value="50">50</option>
+                    <option value="100">100</option>
+                </select>
+            </span>
+        </div>
         
         <h3>Add / Edit Rule</h3>
         <form id="rule-form">
@@ -135,6 +167,22 @@ const char* get_web_page_html() {
             </thead>
             <tbody></tbody>
         </table>
+        
+        <!-- Pagination Controls -->
+        <div id="events-pagination" style="margin-top: 20px; text-align: center; display: none;">
+            <button id="prev-page" class="refresh-btn">Previous</button>
+            <span id="page-info" style="margin: 0 20px;">Page 1 of 1</span>
+            <button id="next-page" class="refresh-btn">Next</button>
+            <span style="margin-left: 20px;">
+                Page size: 
+                <select id="page-size-select">
+                    <option value="10">10</option>
+                    <option value="20" selected>20</option>
+                    <option value="50">50</option>
+                    <option value="100">100</option>
+                </select>
+            </span>
+        </div>
     </div>
 
     <script>
@@ -147,23 +195,83 @@ const char* get_web_page_html() {
         const cancelEditButton = document.getElementById('cancel-edit');
         const refreshEventsButton = document.getElementById('refresh-events');
         const refreshMetricsButton = document.getElementById('refresh-metrics');
+        
+        // Events Pagination elements
+        const eventsPaginationDiv = document.getElementById('events-pagination');
+        const prevPageButton = document.getElementById('prev-page');
+        const nextPageButton = document.getElementById('next-page');
+        const pageInfoSpan = document.getElementById('page-info');
+        const pageSizeSelect = document.getElementById('page-size-select');
+        
+        // Rules Pagination elements
+        const rulesPaginationDiv = document.getElementById('rules-pagination');
+        const rulesPrevPageButton = document.getElementById('rules-prev-page');
+        const rulesNextPageButton = document.getElementById('rules-next-page');
+        const rulesPageInfoSpan = document.getElementById('rules-page-info');
+        const rulesPageSizeSelect = document.getElementById('rules-page-size-select');
+        
+        // Metrics Pagination elements
+        const metricsPaginationDiv = document.getElementById('metrics-pagination');
+        const metricsPrevPageButton = document.getElementById('metrics-prev-page');
+        const metricsNextPageButton = document.getElementById('metrics-next-page');
+        const metricsPageInfoSpan = document.getElementById('metrics-page-info');
+        const metricsPageSizeSelect = document.getElementById('metrics-page-size-select');
+        
+        // Events Pagination state
+        let currentPage = 1;
+        let currentPageSize = 20;
+        
+        // Rules Pagination state
+        let rulesCurrentPage = 1;
+        let rulesCurrentPageSize = 20;
+        
+        // Metrics Pagination state
+        let metricsCurrentPage = 1;
+        let metricsCurrentPageSize = 20;
 
         const API_BASE = '';
 
-        const fetchAndRenderMetrics = async () => {
+        const fetchAndRenderMetrics = async (page = metricsCurrentPage, pageSize = metricsCurrentPageSize) => {
             try {
-                const response = await fetch(`${API_BASE}/node/metrics`);
+                const response = await fetch(`${API_BASE}/node/metrics?page=${page}&page_size=${pageSize}`);
                 if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
                 const data = await response.json();
                 metricsTableBody.innerHTML = '';
                 
-                // 修正字段名：使用 nodes_metrics 而不是 nodes
-                if (!data.data || !data.data.nodes_metrics || data.data.nodes_metrics.length === 0) {
-                    metricsTableBody.innerHTML = '<tr><td colspan="9">No node metrics found.</td></tr>';
-                    return;
-                }
-                
-                data.data.nodes_metrics.forEach(node => {
+                // Check if pagination headers are present
+                const totalCount = response.headers.get('X-Total-Count');
+                if (totalCount !== null) {
+                    // Paginated response - read pagination info from headers
+                    const pageHeader = response.headers.get('X-Page');
+                    const pageSizeHeader = response.headers.get('X-Page-Size');
+                    const totalPages = response.headers.get('X-Total-Pages');
+                    const hasNext = response.headers.get('X-Has-Next') === 'true';
+                    const hasPrev = response.headers.get('X-Has-Prev') === 'true';
+                    
+                    // Update pagination state
+                    metricsCurrentPage = pageHeader ? parseInt(pageHeader) : page;
+                    metricsCurrentPageSize = pageSizeHeader ? parseInt(pageSizeHeader) : pageSize;
+                    
+                    // Show pagination controls
+                    metricsPaginationDiv.style.display = 'block';
+                    
+                    // Update pagination info
+                    metricsPageInfoSpan.textContent = `Page ${metricsCurrentPage} of ${totalPages} (${totalCount} total)`;
+                    
+                    // Update button states
+                    metricsPrevPageButton.disabled = !hasPrev;
+                    metricsNextPageButton.disabled = !hasNext;
+                    
+                    // Update page size select
+                    metricsPageSizeSelect.value = metricsCurrentPageSize;
+                    
+                    // For paginated response, data is directly the array
+                    if (!Array.isArray(data) || data.length === 0) {
+                        metricsTableBody.innerHTML = '<tr><td colspan="9">No node metrics found.</td></tr>';
+                        return;
+                    }
+                    
+                    data.forEach(node => {
                     // 修正数据结构：使用 latest_xxx_metrics
                     const cpu = node.latest_cpu_metrics || {};
                     const memory = node.latest_memory_metrics || {};
@@ -206,20 +314,115 @@ const char* get_web_page_html() {
                         <td>${gpus.length}</td>
                         <td>${lastUpdate}</td>
                     `;
-                    metricsTableBody.appendChild(row);
-                });
+                        metricsTableBody.appendChild(row);
+                    });
+                } else {
+                    // Legacy response - hide pagination controls and use old data format
+                    metricsPaginationDiv.style.display = 'none';
+                    
+                    // 修正字段名：使用 nodes_metrics 而不是 nodes
+                    if (!data.data || !data.data.nodes_metrics || data.data.nodes_metrics.length === 0) {
+                        metricsTableBody.innerHTML = '<tr><td colspan="9">No node metrics found.</td></tr>';
+                        return;
+                    }
+                    
+                    data.data.nodes_metrics.forEach(node => {
+                        // 修正数据结构：使用 latest_xxx_metrics
+                        const cpu = node.latest_cpu_metrics || {};
+                        const memory = node.latest_memory_metrics || {};
+                        const diskMetrics = node.latest_disk_metrics || {};
+                        const disks = diskMetrics.disks || [];
+                        const networkMetrics = node.latest_network_metrics || {};
+                        const networks = networkMetrics.networks || [];
+                        const gpuMetrics = node.latest_gpu_metrics || {};
+                        const gpus = gpuMetrics.gpus || [];
+                        
+                        // 计算平均磁盘使用率
+                        const avgDiskUsage = disks.length > 0 ? 
+                            (disks.reduce((sum, disk) => sum + (disk.usage_percent || 0), 0) / disks.length).toFixed(1) : 'N/A';
+                        
+                        // 计算网络总流量 (MB)
+                        const totalRxMB = networks.reduce((sum, net) => sum + (net.rx_bytes || 0), 0) / (1024 * 1024);
+                        const totalTxMB = networks.reduce((sum, net) => sum + (net.tx_bytes || 0), 0) / (1024 * 1024);
+                        const networkInfo = networks.length > 0 ? 
+                            `${totalRxMB.toFixed(1)}/${totalTxMB.toFixed(1)} MB` : 'N/A';
+                        
+                        // 格式化内存信息 (GB)
+                        const memoryUsedGB = memory.used ? (memory.used / (1024 * 1024 * 1024)).toFixed(1) : 'N/A';
+                        const memoryTotalGB = memory.total ? (memory.total / (1024 * 1024 * 1024)).toFixed(1) : 'N/A';
+                        const memoryInfo = memory.used && memory.total ? 
+                            `${memoryUsedGB}/${memoryTotalGB} GB` : 'N/A';
+                        
+                        // 格式化最后更新时间
+                        const lastUpdate = cpu.timestamp ? 
+                            new Date(cpu.timestamp * 1000).toLocaleString() : 'N/A';
+                        
+                        const row = document.createElement('tr');
+                        row.innerHTML = `
+                            <td>${escapeHtml(node.host_ip)}</td>
+                            <td>${(cpu.usage_percent || 0).toFixed(1)}%</td>
+                            <td>${(cpu.load_avg_1m || 0).toFixed(2)}</td>
+                            <td>${(memory.usage_percent || 0).toFixed(1)}%</td>
+                            <td>${memoryInfo}</td>
+                            <td>${avgDiskUsage}%</td>
+                            <td>${networkInfo}</td>
+                            <td>${gpus.length}</td>
+                            <td>${lastUpdate}</td>
+                        `;
+                        metricsTableBody.appendChild(row);
+                    });
+                }
             } catch (error) {
                 console.error('Error fetching node metrics:', error);
                 metricsTableBody.innerHTML = '<tr><td colspan="9">Failed to load node metrics.</td></tr>';
+                metricsPaginationDiv.style.display = 'none';
             }
         };
 
-        const fetchAndRenderRules = async () => {
+        const fetchAndRenderRules = async (page = rulesCurrentPage, pageSize = rulesCurrentPageSize) => {
             try {
-                const response = await fetch(`${API_BASE}/alarm/rules`);
+                const response = await fetch(`${API_BASE}/alarm/rules?page=${page}&page_size=${pageSize}`);
                 if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
                 const rules = await response.json();
+                
                 rulesTableBody.innerHTML = '';
+                
+                // Check if pagination headers are present
+                const totalCount = response.headers.get('X-Total-Count');
+                if (totalCount !== null) {
+                    // Paginated response - read pagination info from headers
+                    const pageHeader = response.headers.get('X-Page');
+                    const pageSizeHeader = response.headers.get('X-Page-Size');
+                    const totalPages = response.headers.get('X-Total-Pages');
+                    const hasNext = response.headers.get('X-Has-Next') === 'true';
+                    const hasPrev = response.headers.get('X-Has-Prev') === 'true';
+                    
+                    // Update pagination state
+                    rulesCurrentPage = pageHeader ? parseInt(pageHeader) : page;
+                    rulesCurrentPageSize = pageSizeHeader ? parseInt(pageSizeHeader) : pageSize;
+                    
+                    // Show pagination controls
+                    rulesPaginationDiv.style.display = 'block';
+                    
+                    // Update pagination info
+                    rulesPageInfoSpan.textContent = `Page ${rulesCurrentPage} of ${totalPages} (${totalCount} total)`;
+                    
+                    // Update button states
+                    rulesPrevPageButton.disabled = !hasPrev;
+                    rulesNextPageButton.disabled = !hasNext;
+                    
+                    // Update page size select
+                    rulesPageSizeSelect.value = rulesCurrentPageSize;
+                } else {
+                    // Legacy response - hide pagination controls
+                    rulesPaginationDiv.style.display = 'none';
+                }
+                
+                if (rules.length === 0) {
+                    rulesTableBody.innerHTML = '<tr><td colspan="6">No alarm rules found.</td></tr>';
+                    return;
+                }
+                
                 rules.forEach(rule => {
                     const row = document.createElement('tr');
                     row.innerHTML = `
@@ -238,19 +441,54 @@ const char* get_web_page_html() {
             } catch (error) {
                 console.error('Error fetching rules:', error);
                 rulesTableBody.innerHTML = '<tr><td colspan="6">Failed to load alarm rules.</td></tr>';
+                rulesPaginationDiv.style.display = 'none';
             }
         };
 
-        const fetchAndRenderEvents = async () => {
+        const fetchAndRenderEvents = async (page = currentPage, pageSize = currentPageSize) => {
             try {
-                const response = await fetch(`${API_BASE}/alarm/events?limit=100`);
+                const response = await fetch(`${API_BASE}/alarm/events?page=${page}&page_size=${pageSize}`);
                 if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
                 const events = await response.json();
+                
                 eventsTableBody.innerHTML = '';
+                
+                // Check if pagination headers are present
+                const totalCount = response.headers.get('X-Total-Count');
+                if (totalCount !== null) {
+                    // Paginated response - read pagination info from headers
+                    const pageHeader = response.headers.get('X-Page');
+                    const pageSizeHeader = response.headers.get('X-Page-Size');
+                    const totalPages = response.headers.get('X-Total-Pages');
+                    const hasNext = response.headers.get('X-Has-Next') === 'true';
+                    const hasPrev = response.headers.get('X-Has-Prev') === 'true';
+                    
+                    // Update pagination state
+                    currentPage = pageHeader ? parseInt(pageHeader) : page;
+                    currentPageSize = pageSizeHeader ? parseInt(pageSizeHeader) : pageSize;
+                    
+                    // Show pagination controls
+                    eventsPaginationDiv.style.display = 'block';
+                    
+                    // Update pagination info
+                    pageInfoSpan.textContent = `Page ${currentPage} of ${totalPages} (${totalCount} total)`;
+                    
+                    // Update button states
+                    prevPageButton.disabled = !hasPrev;
+                    nextPageButton.disabled = !hasNext;
+                    
+                    // Update page size select
+                    pageSizeSelect.value = currentPageSize;
+                } else {
+                    // Legacy response - hide pagination controls
+                    eventsPaginationDiv.style.display = 'none';
+                }
+                
                 if (events.length === 0) {
                     eventsTableBody.innerHTML = '<tr><td colspan="5">No alarm events found.</td></tr>';
                     return;
                 }
+                
                 events.forEach(event => {
                     const row = document.createElement('tr');
                     row.innerHTML = `
@@ -265,6 +503,7 @@ const char* get_web_page_html() {
             } catch (error) {
                 console.error('Error fetching events:', error);
                 eventsTableBody.innerHTML = '<tr><td colspan="5">Failed to load alarm events.</td></tr>';
+                eventsPaginationDiv.style.display = 'none';
             }
         };
 
@@ -369,8 +608,62 @@ const char* get_web_page_html() {
         }
 
         cancelEditButton.addEventListener('click', resetForm);
-        refreshEventsButton.addEventListener('click', fetchAndRenderEvents);
-        refreshMetricsButton.addEventListener('click', fetchAndRenderMetrics);
+        refreshEventsButton.addEventListener('click', () => fetchAndRenderEvents(currentPage, currentPageSize));
+        refreshMetricsButton.addEventListener('click', () => fetchAndRenderMetrics(metricsCurrentPage, metricsCurrentPageSize));
+        
+        // Events Pagination event listeners
+        prevPageButton.addEventListener('click', () => {
+            if (currentPage > 1) {
+                fetchAndRenderEvents(currentPage - 1, currentPageSize);
+            }
+        });
+        
+        nextPageButton.addEventListener('click', () => {
+            fetchAndRenderEvents(currentPage + 1, currentPageSize);
+        });
+        
+        pageSizeSelect.addEventListener('change', (e) => {
+            const newPageSize = parseInt(e.target.value);
+            currentPageSize = newPageSize;
+            // Reset to page 1 when changing page size
+            fetchAndRenderEvents(1, newPageSize);
+        });
+        
+        // Rules Pagination event listeners
+        rulesPrevPageButton.addEventListener('click', () => {
+            if (rulesCurrentPage > 1) {
+                fetchAndRenderRules(rulesCurrentPage - 1, rulesCurrentPageSize);
+            }
+        });
+        
+        rulesNextPageButton.addEventListener('click', () => {
+            fetchAndRenderRules(rulesCurrentPage + 1, rulesCurrentPageSize);
+        });
+        
+        rulesPageSizeSelect.addEventListener('change', (e) => {
+            const newPageSize = parseInt(e.target.value);
+            rulesCurrentPageSize = newPageSize;
+            // Reset to page 1 when changing page size
+            fetchAndRenderRules(1, newPageSize);
+        });
+        
+        // Metrics Pagination event listeners
+        metricsPrevPageButton.addEventListener('click', () => {
+            if (metricsCurrentPage > 1) {
+                fetchAndRenderMetrics(metricsCurrentPage - 1, metricsCurrentPageSize);
+            }
+        });
+        
+        metricsNextPageButton.addEventListener('click', () => {
+            fetchAndRenderMetrics(metricsCurrentPage + 1, metricsCurrentPageSize);
+        });
+        
+        metricsPageSizeSelect.addEventListener('change', (e) => {
+            const newPageSize = parseInt(e.target.value);
+            metricsCurrentPageSize = newPageSize;
+            // Reset to page 1 when changing page size
+            fetchAndRenderMetrics(1, newPageSize);
+        });
 
         fetchAndRenderMetrics();
         fetchAndRenderRules();
@@ -530,29 +823,100 @@ void HttpServer::handle_alarm_rules_create(const httplib::Request& req, httplib:
 
 void HttpServer::handle_alarm_rules_list(const httplib::Request& req, httplib::Response& res) {
     try {
-        auto rules = m_alarm_rule_storage->getAllAlarmRules();
+        // 获取查询参数
+        std::string page_str = req.get_param_value("page");
+        std::string page_size_str = req.get_param_value("page_size");
+        std::string enabled_only_str = req.get_param_value("enabled_only");
         
-        json response = json::array();
-        for (const auto& rule : rules) {
-            json rule_json = {
-                {"id", rule.id},
-                {"alert_name", rule.alert_name},
-                {"expression", json::parse(rule.expression_json)},
-                {"for", rule.for_duration},
-                {"severity", rule.severity},
-                {"summary", rule.summary},
-                {"description", rule.description},
-                {"alert_type", rule.alert_type},
-                {"enabled", rule.enabled},
-                {"created_at", rule.created_at},
-                {"updated_at", rule.updated_at}
+        // 检查是否使用分页模式
+        bool use_pagination = !page_str.empty() || !page_size_str.empty();
+        
+        if (use_pagination) {
+            // 分页模式
+            int page = page_str.empty() ? 1 : std::stoi(page_str);
+            int page_size = page_size_str.empty() ? 20 : std::stoi(page_size_str);
+            bool enabled_only = enabled_only_str == "true";
+            
+            // 验证参数范围
+            if (page < 1) page = 1;
+            if (page_size < 1) page_size = 20;
+            if (page_size > 1000) page_size = 1000;
+            
+            // 使用分页API
+            auto paginated_result = m_alarm_rule_storage->getPaginatedAlarmRules(page, page_size, enabled_only);
+            
+            json result_data = json::array();
+            
+            // 直接添加规则数据到数组
+            for (const auto& rule : paginated_result.rules) {
+                json rule_json = {
+                    {"id", rule.id},
+                    {"alert_name", rule.alert_name},
+                    {"expression", json::parse(rule.expression_json)},
+                    {"for", rule.for_duration},
+                    {"severity", rule.severity},
+                    {"summary", rule.summary},
+                    {"description", rule.description},
+                    {"alert_type", rule.alert_type},
+                    {"enabled", rule.enabled},
+                    {"created_at", rule.created_at},
+                    {"updated_at", rule.updated_at}
+                };
+                result_data.push_back(rule_json);
+            }
+            
+            // 通过HTTP头部传递分页信息
+            res.set_header("X-Page", std::to_string(paginated_result.page));
+            res.set_header("X-Page-Size", std::to_string(paginated_result.page_size));
+            res.set_header("X-Total-Count", std::to_string(paginated_result.total_count));
+            res.set_header("X-Total-Pages", std::to_string(paginated_result.total_pages));
+            res.set_header("X-Has-Next", paginated_result.has_next ? "true" : "false");
+            res.set_header("X-Has-Prev", paginated_result.has_prev ? "true" : "false");
+            
+            json response = {
+                {"api_version", 1},
+                {"status", "success"},
+                {"data", result_data}
             };
-            response.push_back(rule_json);
+            
+            res.set_content(response.dump(2), "application/json");
+            res.status = 200;
+            LogManager::getLogger()->info("Successfully retrieved {} alarm rules (page {}/{}, total: {})", 
+                paginated_result.rules.size(), paginated_result.page, 
+                paginated_result.total_pages, paginated_result.total_count);
+                
+        } else {
+            // 兼容模式 - 使用旧的API
+            auto rules = m_alarm_rule_storage->getAllAlarmRules();
+            
+            json result_data = json::array();
+            for (const auto& rule : rules) {
+                json rule_json = {
+                    {"id", rule.id},
+                    {"alert_name", rule.alert_name},
+                    {"expression", json::parse(rule.expression_json)},
+                    {"for", rule.for_duration},
+                    {"severity", rule.severity},
+                    {"summary", rule.summary},
+                    {"description", rule.description},
+                    {"alert_type", rule.alert_type},
+                    {"enabled", rule.enabled},
+                    {"created_at", rule.created_at},
+                    {"updated_at", rule.updated_at}
+                };
+                result_data.push_back(rule_json);
+            }
+            
+            json response = {
+                {"api_version", 1},
+                {"status", "success"},
+                {"data", result_data}
+            };
+            
+            res.set_content(response.dump(2), "application/json");
+            res.status = 200;
+            LogManager::getLogger()->info("Successfully retrieved {} alarm rules (legacy mode)", rules.size());
         }
-        
-        res.set_content(response.dump(2), "application/json");
-        res.status = 200;
-        LogManager::getLogger()->info("Successfully retrieved {} alarm rules", rules.size());
         
     } catch (const std::exception& e) {
         res.set_content("{\"error\":\"Failed to retrieve alarm rules\"}", "application/json");
@@ -574,7 +938,7 @@ void HttpServer::handle_alarm_rules_get(const httplib::Request& req, httplib::Re
             return;
         }
         
-        json rule_json = {
+        json rule_data = {
             {"id", rule.id},
             {"alert_name", rule.alert_name},
             {"expression", json::parse(rule.expression_json)},
@@ -588,7 +952,13 @@ void HttpServer::handle_alarm_rules_get(const httplib::Request& req, httplib::Re
             {"updated_at", rule.updated_at}
         };
         
-        res.set_content(rule_json.dump(2), "application/json");
+        json response = {
+            {"api_version", 1},
+            {"status", "success"},
+            {"data", rule_data}
+        };
+        
+        res.set_content(response.dump(2), "application/json");
         res.status = 200;
         LogManager::getLogger()->info("Successfully retrieved alarm rule: {}", rule_id);
         
@@ -734,44 +1104,110 @@ void HttpServer::handle_alarm_events_list(const httplib::Request& req, httplib::
             return;
         }
         
-        // 支持查询参数
+        // 获取查询参数
         std::string status = req.get_param_value("status");
-        std::string limit_str = req.get_param_value("limit");
+        std::string page_str = req.get_param_value("page");
+        std::string page_size_str = req.get_param_value("page_size");
+        std::string limit_str = req.get_param_value("limit"); // 兼容旧参数
         
-        std::vector<AlarmEventRecord> events;
+        // 检查是否使用分页模式
+        bool use_pagination = !page_str.empty() || !page_size_str.empty();
         
-        if (status == "active" || status == "firing") {
-            // 获取活跃的告警事件
-            events = m_alarm_manager->getActiveAlarmEvents();
-        } else if (!limit_str.empty()) {
-            // 获取最近的告警事件（带限制）
-            int limit = std::stoi(limit_str);
-            events = m_alarm_manager->getRecentAlarmEvents(limit);
-        } else {
-            // 获取最近的告警事件（默认限制100条）
-            events = m_alarm_manager->getRecentAlarmEvents(100);
-        }
-        
-        json response = json::array();
-        for (const auto& event : events) {
-            json event_json = {
-                {"id", event.id},
-                {"fingerprint", event.fingerprint},
-                {"status", event.status},
-                {"labels", json::parse(event.labels_json)},
-                {"annotations", json::parse(event.annotations_json)},
-                {"starts_at", event.starts_at},
-                {"ends_at", event.ends_at},
-                {"generator_url", event.generator_url},
-                {"created_at", event.created_at},
-                {"updated_at", event.updated_at}
+        if (use_pagination) {
+            // 分页模式
+            int page = page_str.empty() ? 1 : std::stoi(page_str);
+            int page_size = page_size_str.empty() ? 20 : std::stoi(page_size_str);
+            
+            // 验证参数范围
+            if (page < 1) page = 1;
+            if (page_size < 1) page_size = 20;
+            if (page_size > 1000) page_size = 1000;
+            
+            // 使用分页API
+            auto paginated_result = m_alarm_manager->getPaginatedAlarmEvents(page, page_size, status);
+            
+            json result_data = json::array();
+            
+            // 直接添加事件数据到数组
+            for (const auto& event : paginated_result.events) {
+                json event_json = {
+                    {"id", event.id},
+                    {"fingerprint", event.fingerprint},
+                    {"status", event.status},
+                    {"labels", json::parse(event.labels_json)},
+                    {"annotations", json::parse(event.annotations_json)},
+                    {"starts_at", event.starts_at},
+                    {"ends_at", event.ends_at},
+                    {"generator_url", event.generator_url},
+                    {"created_at", event.created_at},
+                    {"updated_at", event.updated_at}
+                };
+                result_data.push_back(event_json);
+            }
+            
+            // 通过HTTP头部传递分页信息
+            res.set_header("X-Page", std::to_string(paginated_result.page));
+            res.set_header("X-Page-Size", std::to_string(paginated_result.page_size));
+            res.set_header("X-Total-Count", std::to_string(paginated_result.total_count));
+            res.set_header("X-Total-Pages", std::to_string(paginated_result.total_pages));
+            res.set_header("X-Has-Next", paginated_result.has_next ? "true" : "false");
+            res.set_header("X-Has-Prev", paginated_result.has_prev ? "true" : "false");
+            
+            json response = {
+                {"api_version", 1},
+                {"status", "success"},
+                {"data", result_data}
             };
-            response.push_back(event_json);
+            
+            res.set_content(response.dump(2), "application/json");
+            res.status = 200;
+            LogManager::getLogger()->info("Successfully retrieved {} alarm events (page {}/{}, total: {})", 
+                paginated_result.events.size(), paginated_result.page, 
+                paginated_result.total_pages, paginated_result.total_count);
+            
+        } else {
+            // 兼容模式 - 使用旧的API
+            std::vector<AlarmEventRecord> events;
+            
+            if (status == "active" || status == "firing") {
+                // 获取活跃的告警事件
+                events = m_alarm_manager->getActiveAlarmEvents();
+            } else if (!limit_str.empty()) {
+                // 获取最近的告警事件（带限制）
+                int limit = std::stoi(limit_str);
+                events = m_alarm_manager->getRecentAlarmEvents(limit);
+            } else {
+                // 获取最近的告警事件（默认限制100条）
+                events = m_alarm_manager->getRecentAlarmEvents(100);
+            }
+            
+            json result_data = json::array();
+            for (const auto& event : events) {
+                json event_json = {
+                    {"id", event.id},
+                    {"fingerprint", event.fingerprint},
+                    {"status", event.status},
+                    {"labels", json::parse(event.labels_json)},
+                    {"annotations", json::parse(event.annotations_json)},
+                    {"starts_at", event.starts_at},
+                    {"ends_at", event.ends_at},
+                    {"generator_url", event.generator_url},
+                    {"created_at", event.created_at},
+                    {"updated_at", event.updated_at}
+                };
+                result_data.push_back(event_json);
+            }
+            
+            json response = {
+                {"api_version", 1},
+                {"status", "success"},
+                {"data", result_data}
+            };
+            
+            res.set_content(response.dump(2), "application/json");
+            res.status = 200;
+            LogManager::getLogger()->info("Successfully retrieved {} alarm events (legacy mode)", events.size());
         }
-        
-        res.set_content(response.dump(2), "application/json");
-        res.status = 200;
-        LogManager::getLogger()->info("Successfully retrieved {} alarm events", events.size());
         
     } catch (const std::exception& e) {
         res.set_content("{\"error\":\"Failed to retrieve alarm events\"}", "application/json");
@@ -867,17 +1303,59 @@ void HttpServer::handle_node_metrics(const httplib::Request& req, httplib::Respo
             return;
         }
 
-        // 使用ResourceManager获取当前指标数据
-        auto metrics_response = m_resource_manager->getCurrentMetrics();
+        // 检查是否启用分页
+        std::string page_str = req.get_param_value("page");
+        std::string page_size_str = req.get_param_value("page_size");
         
-        if (metrics_response.success) {
-            res.set_content(metrics_response.data.dump(2), "application/json");
-            res.status = 200;
-            LogManager::getLogger()->debug("Successfully retrieved node metrics using ResourceManager");
+        if (!page_str.empty() || !page_size_str.empty()) {
+            // 使用分页API
+            int page = page_str.empty() ? 1 : std::stoi(page_str);
+            int page_size = page_size_str.empty() ? 20 : std::stoi(page_size_str);
+            
+            auto paginated_result = m_resource_manager->getPaginatedCurrentMetrics(page, page_size);
+            
+            if (paginated_result.success) {
+                // 构建与兼容模式一致的响应格式
+                json response = {
+                    {"api_version", 1},
+                    {"data", {
+                        {"nodes_metrics", paginated_result.data}
+                    }},
+                    {"status", "success"}
+                };
+                
+                // 通过HTTP头部传递分页信息
+                res.set_header("X-Page", std::to_string(paginated_result.page));
+                res.set_header("X-Page-Size", std::to_string(paginated_result.page_size));
+                res.set_header("X-Total-Count", std::to_string(paginated_result.total_count));
+                res.set_header("X-Total-Pages", std::to_string(paginated_result.total_pages));
+                res.set_header("X-Has-Next", paginated_result.has_next ? "true" : "false");
+                res.set_header("X-Has-Prev", paginated_result.has_prev ? "true" : "false");
+                
+                res.set_content(response.dump(2), "application/json");
+                res.status = 200;
+                LogManager::getLogger()->info("Successfully retrieved {} node metrics (page {}/{}, total: {})", 
+                    paginated_result.data.size(), paginated_result.page, 
+                    paginated_result.total_pages, paginated_result.total_count);
+            } else {
+                res.set_content("{\"error\":\"" + paginated_result.error_message + "\"}", "application/json");
+                res.status = 500;
+                LogManager::getLogger()->error("ResourceManager failed to retrieve paginated node metrics: {}", paginated_result.error_message);
+            }
+            
         } else {
-            res.set_content("{\"error\":\"" + metrics_response.error_message + "\"}", "application/json");
-            res.status = 500;
-            LogManager::getLogger()->error("ResourceManager failed to retrieve node metrics: {}", metrics_response.error_message);
+            // 兼容模式 - 使用旧的API
+            auto metrics_response = m_resource_manager->getCurrentMetrics();
+            
+            if (metrics_response.success) {
+                res.set_content(metrics_response.data.dump(2), "application/json");
+                res.status = 200;
+                LogManager::getLogger()->debug("Successfully retrieved node metrics using ResourceManager (legacy mode)");
+            } else {
+                res.set_content("{\"error\":\"" + metrics_response.error_message + "\"}", "application/json");
+                res.status = 500;
+                LogManager::getLogger()->error("ResourceManager failed to retrieve node metrics: {}", metrics_response.error_message);
+            }
         }
         
     } catch (const std::exception& e) {

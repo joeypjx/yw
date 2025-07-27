@@ -362,3 +362,110 @@ std::string AlarmRuleStorage::generateUUID() {
     }
     return oss.str();
 }
+
+PaginatedAlarmRules AlarmRuleStorage::getPaginatedAlarmRules(int page, int page_size, bool enabled_only) {
+    PaginatedAlarmRules result;
+    result.page = page;
+    result.page_size = page_size;
+    result.total_count = 0;
+    result.total_pages = 0;
+    result.has_next = false;
+    result.has_prev = false;
+    
+    if (!m_connected) {
+        LogManager::getLogger()->error("Not connected to MySQL");
+        return result;
+    }
+    
+    // 验证参数
+    if (page < 1) page = 1;
+    if (page_size < 1) page_size = 20;
+    if (page_size > 1000) page_size = 1000; // 限制最大页面大小
+    
+    result.page = page;
+    result.page_size = page_size;
+    
+    // 构建COUNT查询来获取总记录数
+    std::string count_sql = "SELECT COUNT(*) FROM alarm_rules";
+    if (enabled_only) {
+        count_sql += " WHERE enabled = 1";
+    }
+    
+    // 获取总记录数
+    if (mysql_query(m_mysql, count_sql.c_str()) != 0) {
+        LogManager::getLogger()->error("Count query failed: {}", mysql_error(m_mysql));
+        return result;
+    }
+    
+    MYSQL_RES* count_result = mysql_store_result(m_mysql);
+    if (count_result == nullptr) {
+        LogManager::getLogger()->error("Failed to get count result: {}", mysql_error(m_mysql));
+        return result;
+    }
+    
+    MYSQL_ROW count_row = mysql_fetch_row(count_result);
+    if (count_row && count_row[0]) {
+        result.total_count = std::stoi(count_row[0]);
+    }
+    mysql_free_result(count_result);
+    
+    // 计算总页数
+    result.total_pages = (result.total_count + page_size - 1) / page_size;
+    
+    // 设置分页状态
+    result.has_prev = page > 1;
+    result.has_next = page < result.total_pages;
+    
+    // 如果没有数据，直接返回
+    if (result.total_count == 0) {
+        return result;
+    }
+    
+    // 计算OFFSET
+    int offset = (page - 1) * page_size;
+    
+    // 构建数据查询
+    std::ostringstream data_query;
+    data_query << "SELECT id, alert_name, expression_json, for_duration, severity, summary, description, alert_type, enabled, created_at, updated_at "
+               << "FROM alarm_rules";
+    
+    if (enabled_only) {
+        data_query << " WHERE enabled = 1";
+    }
+    
+    data_query << " ORDER BY created_at DESC LIMIT " << page_size << " OFFSET " << offset;
+    
+    // 执行数据查询
+    if (mysql_query(m_mysql, data_query.str().c_str()) != 0) {
+        LogManager::getLogger()->error("Data query failed: {}", mysql_error(m_mysql));
+        return result;
+    }
+    
+    MYSQL_RES* data_result = mysql_store_result(m_mysql);
+    if (data_result == nullptr) {
+        LogManager::getLogger()->error("Failed to get data result: {}", mysql_error(m_mysql));
+        return result;
+    }
+    
+    // 填充结果数据
+    MYSQL_ROW row;
+    while ((row = mysql_fetch_row(data_result)) != nullptr) {
+        AlarmRule rule;
+        rule.id = row[0] ? row[0] : "";
+        rule.alert_name = row[1] ? row[1] : "";
+        rule.expression_json = row[2] ? row[2] : "";
+        rule.for_duration = row[3] ? row[3] : "";
+        rule.severity = row[4] ? row[4] : "";
+        rule.summary = row[5] ? row[5] : "";
+        rule.description = row[6] ? row[6] : "";
+        rule.alert_type = row[7] ? row[7] : "";
+        rule.enabled = row[8] ? (std::string(row[8]) == "1") : false;
+        rule.created_at = row[9] ? row[9] : "";
+        rule.updated_at = row[10] ? row[10] : "";
+        
+        result.rules.push_back(rule);
+    }
+    
+    mysql_free_result(data_result);
+    return result;
+}

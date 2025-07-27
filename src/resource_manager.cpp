@@ -370,6 +370,202 @@ NodeMetricsResponse ResourceManager::getCurrentMetrics() {
     return response;
 }
 
+PaginatedNodeMetricsResponse ResourceManager::getPaginatedCurrentMetrics(int page, int page_size) {
+    PaginatedNodeMetricsResponse response;
+    response.page = page;
+    response.page_size = page_size;
+    
+    if (!m_node_storage || !m_resource_storage) {
+        response.success = false;
+        response.error_message = "Storage components not available";
+        LogManager::getLogger()->error("ResourceManager: Storage components not available for paginated current metrics request");
+        return response;
+    }
+    
+    // 验证参数
+    if (page < 1) page = 1;
+    if (page_size < 1) page_size = 20;
+    if (page_size > 1000) page_size = 1000; // 限制最大页面大小
+    
+    response.page = page;
+    response.page_size = page_size;
+    
+    try {
+        auto nodes = m_node_storage->getAllNodes();
+        response.total_count = nodes.size();
+        
+        // 计算总页数
+        response.total_pages = (response.total_count + page_size - 1) / page_size;
+        
+        // 设置分页状态
+        response.has_prev = page > 1;
+        response.has_next = page < response.total_pages;
+        
+        // 如果没有数据，直接返回
+        if (response.total_count == 0) {
+            response.data = json::array();
+            response.success = true;
+            return response;
+        }
+        
+        // 计算起始和结束索引
+        int start_index = (page - 1) * page_size;
+        int end_index = std::min(start_index + page_size, static_cast<int>(nodes.size()));
+        
+        json nodes_metrics = json::array();
+        
+        for (int i = start_index; i < end_index; ++i) {
+            const auto& node = nodes[i];
+            std::string host_ip = node->host_ip;
+            auto current_timestamp = std::chrono::duration_cast<std::chrono::seconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count();
+            
+            // 使用 getNodeResourceData 方法获取所有资源数据
+            auto resourceData = m_resource_storage->getNodeResourceData(host_ip);
+
+            // 构建CPU指标
+            json latest_cpu_metrics = {
+                {"core_allocated", resourceData.cpu.core_allocated},
+                {"core_count", resourceData.cpu.core_count},
+                {"current", resourceData.cpu.current},
+                {"load_avg_15m", resourceData.cpu.load_avg_15m},
+                {"load_avg_1m", resourceData.cpu.load_avg_1m},
+                {"load_avg_5m", resourceData.cpu.load_avg_5m},
+                {"power", resourceData.cpu.power},
+                {"temperature", resourceData.cpu.temperature},
+                {"timestamp", resourceData.cpu.has_data ? 
+                    std::chrono::duration_cast<std::chrono::seconds>(resourceData.timestamp.time_since_epoch()).count() : current_timestamp},
+                {"usage_percent", resourceData.cpu.usage_percent},
+                {"voltage", resourceData.cpu.voltage}
+            };
+            
+            // 构建Memory指标
+            json latest_memory_metrics = {
+                {"free", resourceData.memory.free},
+                {"timestamp", resourceData.memory.has_data ? 
+                    std::chrono::duration_cast<std::chrono::seconds>(resourceData.timestamp.time_since_epoch()).count() : current_timestamp},
+                {"total", resourceData.memory.total},
+                {"usage_percent", resourceData.memory.usage_percent},
+                {"used", resourceData.memory.used}
+            };
+            
+            // 构建Disk指标
+            json disks = json::array();
+            for (const auto& disk : resourceData.disks) {
+                disks.push_back({
+                    {"device", disk.device},
+                    {"free", disk.free},
+                    {"mount_point", disk.mount_point},
+                    {"total", disk.total},
+                    {"usage_percent", disk.usage_percent},
+                    {"used", disk.used}
+                });
+            }
+            json latest_disk_metrics = {
+                {"disk_count", static_cast<int>(resourceData.disks.size())},
+                {"disks", disks},
+                {"timestamp", current_timestamp}
+            };
+            
+            // 构建Network指标
+            json networks = json::array();
+            for (const auto& network : resourceData.networks) {
+                networks.push_back({
+                    {"interface", network.interface},
+                    {"rx_bytes", network.rx_bytes},
+                    {"rx_errors", network.rx_errors},
+                    {"rx_packets", network.rx_packets},
+                    {"tx_bytes", network.tx_bytes},
+                    {"tx_errors", network.tx_errors},
+                    {"tx_packets", network.tx_packets},
+                    {"tx_rate", network.tx_rate},
+                    {"rx_rate", network.rx_rate}
+                });
+            }
+            json latest_network_metrics = {
+                {"network_count", static_cast<int>(resourceData.networks.size())},
+                {"networks", networks},
+                {"timestamp", current_timestamp}
+            };
+            
+            // 构建GPU指标
+            json gpus = json::array();
+            for (const auto& gpu : resourceData.gpus) {
+                gpus.push_back({
+                    {"compute_usage", gpu.compute_usage},
+                    {"current", 0.0}, // Not available in current schema
+                    {"index", gpu.index},
+                    {"mem_total", gpu.mem_total},
+                    {"mem_usage", gpu.mem_usage},
+                    {"mem_used", gpu.mem_used},
+                    {"name", gpu.name},
+                    {"power", gpu.power},
+                    {"temperature", gpu.temperature},
+                    {"voltage", 0.0} // Not available in current schema
+                });
+            }
+            json latest_gpu_metrics = {
+                {"gpu_count", static_cast<int>(resourceData.gpus.size())},
+                {"gpus", gpus},
+                {"timestamp", current_timestamp}
+            };
+            
+            // Docker指标 (暂时使用默认值，因为当前没有docker表)
+            json latest_docker_metrics = {
+                {"component", json::array()},
+                {"container_count", 0},
+                {"paused_count", 0},
+                {"running_count", 0},
+                {"stopped_count", 0},
+                {"timestamp", current_timestamp}
+            };
+            
+            // 构建节点数据
+            json node_data = {
+                {"board_type", node->board_type},
+                {"box_id", node->box_id},
+                {"box_type", node->box_type},
+                {"cpu_arch", node->cpu_arch},
+                {"cpu_id", node->cpu_id},
+                {"cpu_type", node->cpu_type},
+                {"created_at", std::chrono::duration_cast<std::chrono::seconds>(node->last_heartbeat.time_since_epoch()).count()},
+                {"gpu", node->gpu},
+                {"host_ip", node->host_ip},
+                {"hostname", node->hostname},
+                {"id", node->box_id},
+                {"latest_cpu_metrics", latest_cpu_metrics},
+                {"latest_disk_metrics", latest_disk_metrics},
+                {"latest_docker_metrics", latest_docker_metrics},
+                {"latest_gpu_metrics", latest_gpu_metrics},
+                {"latest_memory_metrics", latest_memory_metrics},
+                {"latest_network_metrics", latest_network_metrics},
+                {"os_type", node->os_type},
+                {"resource_type", node->resource_type},
+                {"service_port", node->service_port},
+                {"slot_id", node->slot_id},
+                {"srio_id", node->srio_id},
+                {"status", "online"},
+                {"updated_at", current_timestamp}
+            };
+            
+            nodes_metrics.push_back(node_data);
+        }
+        
+        response.data = nodes_metrics;
+        response.success = true;
+        
+        LogManager::getLogger()->debug("ResourceManager: Successfully retrieved paginated current metrics for page {}/{} ({} out of {} nodes)", 
+                                     response.page, response.total_pages, end_index - start_index, response.total_count);
+        
+    } catch (const std::exception& e) {
+        response.success = false;
+        response.error_message = "Failed to retrieve paginated current metrics: " + std::string(e.what());
+        LogManager::getLogger()->error("ResourceManager: Exception in getPaginatedCurrentMetrics: {}", e.what());
+    }
+    
+    return response;
+}
+
 NodesListResponse ResourceManager::getNodesList() {
     NodesListResponse response;
     

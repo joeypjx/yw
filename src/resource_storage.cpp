@@ -523,9 +523,8 @@ NodeResourceData ResourceStorage::getNodeResourceData(const std::string& hostIp)
     std::string cleanHostIp = cleanForTableName(hostIp);
     
     try {
-        // 获取CPU数据
-        std::string cpuTable = "cpu_" + cleanHostIp;
-        std::string cpuSql = "SELECT * FROM " + cpuTable + " ORDER BY ts DESC LIMIT 1";
+        // 获取CPU数据 - 使用LAST_ROW优化
+        std::string cpuSql = "SELECT LAST_ROW(ts) as ts, LAST_ROW(usage_percent) as usage_percent, LAST_ROW(load_avg_1m) as load_avg_1m, LAST_ROW(load_avg_5m) as load_avg_5m, LAST_ROW(load_avg_15m) as load_avg_15m, LAST_ROW(core_count) as core_count, LAST_ROW(core_allocated) as core_allocated, LAST_ROW(temperature) as temperature, LAST_ROW(voltage) as voltage, LAST_ROW(current) as current, LAST_ROW(power) as power FROM cpu WHERE host_ip = '" + hostIp + "'";
         auto cpuResults = executeQuerySQL(cpuSql);
         
         if (!cpuResults.empty()) {
@@ -547,9 +546,8 @@ NodeResourceData ResourceStorage::getNodeResourceData(const std::string& hostIp)
             nodeData.cpu.power = cpuMetrics.count("power") ? cpuMetrics.at("power") : 0.0;
         }
         
-        // 获取Memory数据
-        std::string memoryTable = "memory_" + cleanHostIp;
-        std::string memorySql = "SELECT * FROM " + memoryTable + " ORDER BY ts DESC LIMIT 1";
+        // 获取Memory数据 - 使用LAST_ROW优化
+        std::string memorySql = "SELECT LAST_ROW(ts) as ts, LAST_ROW(total) as total, LAST_ROW(used) as used, LAST_ROW(free) as free, LAST_ROW(usage_percent) as usage_percent FROM memory WHERE host_ip = '" + hostIp + "'";
         auto memoryResults = executeQuerySQL(memorySql);
         
         if (!memoryResults.empty()) {
@@ -564,30 +562,13 @@ NodeResourceData ResourceStorage::getNodeResourceData(const std::string& hostIp)
             nodeData.memory.usage_percent = memoryMetrics.count("usage_percent") ? memoryMetrics.at("usage_percent") : 0.0;
         }
         
-        // 获取Disk数据
-        std::string diskSql = "SELECT * FROM disk WHERE host_ip = '" + hostIp + "' ORDER BY ts DESC";
+        // 获取Disk数据 - 使用LAST_ROW和GROUP BY优化
+        std::string diskSql = "SELECT LAST_ROW(ts) as ts, LAST_ROW(total) as total, LAST_ROW(used) as used, LAST_ROW(free) as free, LAST_ROW(usage_percent) as usage_percent, device, mount_point FROM disk WHERE host_ip = '" + hostIp + "' GROUP BY device, mount_point";
         auto diskResults = executeQuerySQL(diskSql);
         
-        std::map<std::string, QueryResult> diskDataMap;
-        std::map<std::string, int64_t> diskTimestamps;
-        
         for (const auto& result : diskResults) {
-            std::string device = result.labels.count("device") ? result.labels.at("device") : "unknown";
-            int64_t timestamp = std::chrono::duration_cast<std::chrono::seconds>(result.timestamp.time_since_epoch()).count();
-            
-            // 只保留每个设备的最新数据
-            if (diskTimestamps.count(device) == 0 || timestamp > diskTimestamps[device]) {
-                diskDataMap[device] = result;
-                diskTimestamps[device] = timestamp;
-            }
-        }
-        
-        for (const auto& diskPair : diskDataMap) {
-            const std::string& device = diskPair.first;
-            const auto& result = diskPair.second;
-            
             NodeResourceData::DiskData diskData;
-            diskData.device = device;
+            diskData.device = result.labels.count("device") ? result.labels.at("device") : "unknown";
             diskData.mount_point = result.labels.count("mount_point") ? result.labels.at("mount_point") : "/";
             diskData.total = static_cast<int64_t>(result.metrics.count("total") ? result.metrics.at("total") : 0);
             diskData.used = static_cast<int64_t>(result.metrics.count("used") ? result.metrics.at("used") : 0);
@@ -597,30 +578,13 @@ NodeResourceData ResourceStorage::getNodeResourceData(const std::string& hostIp)
             nodeData.disks.push_back(diskData);
         }
         
-        // 获取Network数据
-        std::string networkSql = "SELECT * FROM network WHERE host_ip = '" + hostIp + "' ORDER BY ts DESC";
+        // 获取Network数据 - 使用LAST_ROW和GROUP BY优化
+        std::string networkSql = "SELECT LAST_ROW(ts) as ts, LAST_ROW(rx_bytes) as rx_bytes, LAST_ROW(tx_bytes) as tx_bytes, LAST_ROW(rx_packets) as rx_packets, LAST_ROW(tx_packets) as tx_packets, LAST_ROW(rx_errors) as rx_errors, LAST_ROW(tx_errors) as tx_errors, LAST_ROW(rx_rate) as rx_rate, LAST_ROW(tx_rate) as tx_rate, interface FROM network WHERE host_ip = '" + hostIp + "' GROUP BY interface";
         auto networkResults = executeQuerySQL(networkSql);
         
-        std::map<std::string, QueryResult> networkDataMap;
-        std::map<std::string, int64_t> networkTimestamps;
-        
         for (const auto& result : networkResults) {
-            std::string interface = result.labels.count("interface") ? result.labels.at("interface") : "unknown";
-            int64_t timestamp = std::chrono::duration_cast<std::chrono::seconds>(result.timestamp.time_since_epoch()).count();
-            
-            // 只保留每个接口的最新数据
-            if (networkTimestamps.count(interface) == 0 || timestamp > networkTimestamps[interface]) {
-                networkDataMap[interface] = result;
-                networkTimestamps[interface] = timestamp;
-            }
-        }
-        
-        for (const auto& networkPair : networkDataMap) {
-            const std::string& interface = networkPair.first;
-            const auto& result = networkPair.second;
-            
             NodeResourceData::NetworkData networkData;
-            networkData.interface = interface;
+            networkData.interface = result.labels.count("interface") ? result.labels.at("interface") : "unknown";
             networkData.rx_bytes = static_cast<int64_t>(result.metrics.count("rx_bytes") ? result.metrics.at("rx_bytes") : 0);
             networkData.tx_bytes = static_cast<int64_t>(result.metrics.count("tx_bytes") ? result.metrics.at("tx_bytes") : 0);
             networkData.rx_packets = static_cast<int64_t>(result.metrics.count("rx_packets") ? result.metrics.at("rx_packets") : 0);
@@ -633,30 +597,13 @@ NodeResourceData ResourceStorage::getNodeResourceData(const std::string& hostIp)
             nodeData.networks.push_back(networkData);
         }
         
-        // 获取GPU数据
-        std::string gpuSql = "SELECT * FROM gpu WHERE host_ip = '" + hostIp + "' ORDER BY ts DESC";
+        // 获取GPU数据 - 使用LAST_ROW和GROUP BY优化
+        std::string gpuSql = "SELECT LAST_ROW(ts) as ts, LAST_ROW(compute_usage) as compute_usage, LAST_ROW(mem_usage) as mem_usage, LAST_ROW(mem_used) as mem_used, LAST_ROW(mem_total) as mem_total, LAST_ROW(temperature) as temperature, LAST_ROW(power) as power, gpu_index, gpu_name FROM gpu WHERE host_ip = '" + hostIp + "' GROUP BY gpu_index, gpu_name";
         auto gpuResults = executeQuerySQL(gpuSql);
         
-        std::map<int, QueryResult> gpuDataMap;
-        std::map<int, int64_t> gpuTimestamps;
-        
         for (const auto& result : gpuResults) {
-            int gpuIndex = result.labels.count("gpu_index") ? std::stoi(result.labels.at("gpu_index")) : 0;
-            int64_t timestamp = std::chrono::duration_cast<std::chrono::seconds>(result.timestamp.time_since_epoch()).count();
-            
-            // 只保留每个GPU的最新数据
-            if (gpuTimestamps.count(gpuIndex) == 0 || timestamp > gpuTimestamps[gpuIndex]) {
-                gpuDataMap[gpuIndex] = result;
-                gpuTimestamps[gpuIndex] = timestamp;
-            }
-        }
-        
-        for (const auto& gpuPair : gpuDataMap) {
-            int gpuIndex = gpuPair.first;
-            const auto& result = gpuPair.second;
-            
             NodeResourceData::GpuData gpuData;
-            gpuData.index = gpuIndex;
+            gpuData.index = result.labels.count("gpu_index") ? std::stoi(result.labels.at("gpu_index")) : 0;
             gpuData.name = result.labels.count("gpu_name") ? result.labels.at("gpu_name") : "Unknown GPU";
             gpuData.compute_usage = result.metrics.count("compute_usage") ? result.metrics.at("compute_usage") : 0.0;
             gpuData.mem_usage = result.metrics.count("mem_usage") ? result.metrics.at("mem_usage") : 0.0;

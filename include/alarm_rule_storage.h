@@ -20,6 +20,17 @@ struct AlarmRule {
     std::string updated_at;
 };
 
+// 分页结果结构
+struct PaginatedAlarmRules {
+    std::vector<AlarmRule> rules;
+    int total_count;                   // 总记录数
+    int page;                          // 当前页码 (从1开始)
+    int page_size;                     // 每页大小
+    int total_pages;                   // 总页数
+    bool has_next;                     // 是否有下一页
+    bool has_prev;                     // 是否有上一页
+};
+
 class AlarmRuleStorage {
 public:
     AlarmRuleStorage(const std::string& host, int port, const std::string& user, 
@@ -54,6 +65,9 @@ public:
     AlarmRule getAlarmRule(const std::string& id);
     std::vector<AlarmRule> getAllAlarmRules();
     std::vector<AlarmRule> getEnabledAlarmRules();
+    
+    // 分页查询功能
+    PaginatedAlarmRules getPaginatedAlarmRules(int page = 1, int page_size = 20, bool enabled_only = false);
 
 private:
     std::string m_host;

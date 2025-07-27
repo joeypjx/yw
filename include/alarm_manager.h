@@ -23,6 +23,17 @@ struct AlarmEventRecord {
     std::string updated_at;            // 记录更新时间
 };
 
+// 分页结果结构
+struct PaginatedAlarmEvents {
+    std::vector<AlarmEventRecord> events;
+    int total_count;                   // 总记录数
+    int page;                          // 当前页码 (从1开始)
+    int page_size;                     // 每页大小
+    int total_pages;                   // 总页数
+    bool has_next;                     // 是否有下一页
+    bool has_prev;                     // 是否有上一页
+};
+
 // 简单告警管理器
 // 功能：接收告警事件，存储到MySQL数据库
 // 暂不实现：分组、静默、抑制等高级功能
@@ -47,6 +58,9 @@ public:
     std::vector<AlarmEventRecord> getAlarmEventsByFingerprint(const std::string& fingerprint);
     std::vector<AlarmEventRecord> getRecentAlarmEvents(int limit = 100);
     AlarmEventRecord getAlarmEventById(const std::string& id);
+    
+    // 分页查询功能
+    PaginatedAlarmEvents getPaginatedAlarmEvents(int page = 1, int page_size = 20, const std::string& status = "");
     
     // 统计功能
     int getActiveAlarmCount();

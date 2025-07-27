@@ -25,6 +25,19 @@ struct NodeMetricsResponse {
     nlohmann::json data;
 };
 
+// 分页节点指标响应结构
+struct PaginatedNodeMetricsResponse {
+    bool success = false;
+    std::string error_message;
+    nlohmann::json data;             // 节点指标数据数组
+    int total_count = 0;             // 总记录数
+    int page = 1;                    // 当前页码 (从1开始)
+    int page_size = 20;              // 每页大小
+    int total_pages = 0;             // 总页数
+    bool has_next = false;           // 是否有下一页
+    bool has_prev = false;           // 是否有上一页
+};
+
 struct NodesListResponse {
     bool success = false;
     std::string error_message;
@@ -49,6 +62,14 @@ public:
      * @return 节点指标响应
      */
     NodeMetricsResponse getCurrentMetrics();
+    
+    /**
+     * @brief 获取分页的节点指标数据
+     * @param page 页码 (从1开始)
+     * @param page_size 每页大小
+     * @return 分页节点指标响应
+     */
+    PaginatedNodeMetricsResponse getPaginatedCurrentMetrics(int page = 1, int page_size = 20);
 
     /**
      * @brief 获取所有节点列表数据

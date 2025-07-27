@@ -377,6 +377,99 @@ int AlarmManager::getTotalAlarmCount() {
     return count;
 }
 
+PaginatedAlarmEvents AlarmManager::getPaginatedAlarmEvents(int page, int page_size, const std::string& status) {
+    PaginatedAlarmEvents result;
+    result.page = page;
+    result.page_size = page_size;
+    result.total_count = 0;
+    result.total_pages = 0;
+    result.has_next = false;
+    result.has_prev = false;
+    
+    // 验证参数
+    if (page < 1) page = 1;
+    if (page_size < 1) page_size = 20;
+    if (page_size > 1000) page_size = 1000; // 限制最大页面大小
+    
+    result.page = page;
+    result.page_size = page_size;
+    
+    // 构建COUNT查询来获取总记录数
+    std::ostringstream count_query;
+    count_query << "SELECT COUNT(*) FROM alarm_events";
+    if (!status.empty()) {
+        std::string escaped_status = escapeString(status);
+        count_query << " WHERE status = '" << escaped_status << "'";
+    }
+    
+    // 获取总记录数
+    MYSQL_RES* count_result = executeSelectQuery(count_query.str());
+    if (!count_result) {
+        return result;
+    }
+    
+    MYSQL_ROW count_row = mysql_fetch_row(count_result);
+    if (count_row && count_row[0]) {
+        result.total_count = std::stoi(count_row[0]);
+    }
+    mysql_free_result(count_result);
+    
+    // 计算总页数
+    result.total_pages = (result.total_count + page_size - 1) / page_size;
+    
+    // 设置分页状态
+    result.has_prev = page > 1;
+    result.has_next = page < result.total_pages;
+    
+    // 如果没有数据，直接返回
+    if (result.total_count == 0) {
+        return result;
+    }
+    
+    // 计算OFFSET
+    int offset = (page - 1) * page_size;
+    
+    // 构建数据查询
+    std::ostringstream data_query;
+    data_query << "SELECT id, fingerprint, status, labels_json, annotations_json, "
+               << "starts_at, ends_at, generator_url, created_at, updated_at "
+               << "FROM alarm_events";
+    
+    if (!status.empty()) {
+        std::string escaped_status = escapeString(status);
+        data_query << " WHERE status = '" << escaped_status << "'";
+    }
+    
+    data_query << " ORDER BY created_at DESC LIMIT " << page_size << " OFFSET " << offset;
+    
+    // 执行数据查询
+    MYSQL_RES* data_result = executeSelectQuery(data_query.str());
+    if (!data_result) {
+        return result;
+    }
+    
+    // 填充结果数据
+    MYSQL_ROW row;
+    while ((row = mysql_fetch_row(data_result)) != nullptr) {
+        AlarmEventRecord record;
+        record.id = row[0] ? row[0] : "";
+        record.fingerprint = row[1] ? row[1] : "";
+        record.status = row[2] ? row[2] : "";
+        record.labels_json = row[3] ? row[3] : "";
+        record.annotations_json = row[4] ? row[4] : "";
+        record.starts_at = row[5] ? row[5] : "";
+        record.ends_at = row[6] ? row[6] : "";
+        record.generator_url = row[7] ? row[7] : "";
+        record.created_at = row[8] ? row[8] : "";
+        record.updated_at = row[9] ? row[9] : "";
+        
+        result.events.push_back(record);
+    }
+    
+    mysql_free_result(data_result);
+    return result;
+}
+
 bool AlarmManager::executeQuery(const std::string& query) {
     if (!m_connection) {
         logError("No database connection");
