@@ -65,6 +65,11 @@ public:
     // 统计功能
     int getActiveAlarmCount();
     int getTotalAlarmCount();
+    
+    // 节点状态监控相关方法
+    std::string calculateFingerprint(const std::string& alert_name, const std::map<std::string, std::string>& labels);
+    bool createOrUpdateAlarm(const std::string& fingerprint, const nlohmann::json& labels, const nlohmann::json& annotations);
+    bool resolveAlarm(const std::string& fingerprint);
 
 private:
     std::string m_host;

@@ -551,3 +551,81 @@ void AlarmManager::logError(const std::string& message) {
 void AlarmManager::logDebug(const std::string& message) {
     LogManager::getLogger()->debug("AlarmManager: {}", message);
 }
+
+std::string AlarmManager::calculateFingerprint(const std::string& alert_name, const std::map<std::string, std::string>& labels) {
+    std::ostringstream fingerprint;
+    fingerprint << "alertname=" << alert_name;
+    
+    std::vector<std::pair<std::string, std::string>> sorted_labels(labels.begin(), labels.end());
+    std::sort(sorted_labels.begin(), sorted_labels.end());
+    
+    for (const auto& label : sorted_labels) {
+        fingerprint << "," << label.first << "=" << label.second;
+    }
+    
+    return fingerprint.str();
+}
+
+bool AlarmManager::createOrUpdateAlarm(const std::string& fingerprint, const nlohmann::json& labels, const nlohmann::json& annotations) {
+    // 检查是否已存在该指纹的告警
+    if (alarmEventExists(fingerprint)) {
+        logDebug("Alarm already exists for fingerprint: " + fingerprint);
+        return true;
+    }
+    
+    // 创建新的告警事件
+    AlarmEvent event;
+    event.fingerprint = fingerprint;
+    event.status = "firing";
+    event.starts_at = std::chrono::system_clock::now();
+    event.generator_url = "http://localhost:8080/alerts";
+    
+    // 转换JSON标签为map
+    for (const auto& [key, value] : labels.items()) {
+        event.labels[key] = value.get<std::string>();
+    }
+    
+    // 转换JSON注解为map
+    for (const auto& [key, value] : annotations.items()) {
+        event.annotations[key] = value.get<std::string>();
+    }
+    
+    return processAlarmEvent(event);
+}
+
+bool AlarmManager::resolveAlarm(const std::string& fingerprint) {
+    // 检查是否存在该指纹的告警
+    if (!alarmEventExists(fingerprint)) {
+        logDebug("No alarm found for fingerprint: " + fingerprint);
+        return true;
+    }
+    
+    // 创建解决告警事件
+    AlarmEvent event;
+    event.fingerprint = fingerprint;
+    event.status = "resolved";
+    event.starts_at = std::chrono::system_clock::now();
+    event.ends_at = std::chrono::system_clock::now();
+    event.generator_url = "http://localhost:8080/alerts";
+    
+    // 获取现有告警的标签和注解
+    auto existing_events = getAlarmEventsByFingerprint(fingerprint);
+    if (!existing_events.empty()) {
+        try {
+            nlohmann::json labels_json = nlohmann::json::parse(existing_events[0].labels_json);
+            nlohmann::json annotations_json = nlohmann::json::parse(existing_events[0].annotations_json);
+            
+            for (const auto& [key, value] : labels_json.items()) {
+                event.labels[key] = value.get<std::string>();
+            }
+            
+            for (const auto& [key, value] : annotations_json.items()) {
+                event.annotations[key] = value.get<std::string>();
+            }
+        } catch (const std::exception& e) {
+            logError("Failed to parse existing alarm labels/annotations: " + std::string(e.what()));
+        }
+    }
+    
+    return processAlarmEvent(event);
+}

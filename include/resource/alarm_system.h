@@ -18,6 +18,7 @@ class HttpServer;
 class MulticastSender;
 class NodeStorage;
 class ResourceManager;
+class NodeStatusMonitor;
 struct AlarmEvent;
 
 /**
@@ -191,6 +192,7 @@ private:
     std::shared_ptr<MulticastSender> multicast_sender_;
     std::shared_ptr<NodeStorage> node_storage_;
     std::shared_ptr<ResourceManager> resource_manager_;
+    std::shared_ptr<NodeStatusMonitor> node_status_monitor_;
     
     
     // 时间记录

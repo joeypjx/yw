@@ -4,6 +4,7 @@
 #include "node_storage.h"
 #include "log_manager.h"
 #include "resource_storage.h"
+#include "node_status_monitor.h"
 #include "resource_manager.h"
 #include "alarm_rule_storage.h"
 #include "alarm_rule_engine.h"
@@ -81,6 +82,9 @@ void AlarmSystem::stop() {
     
     
     // 停止服务
+    if (node_status_monitor_) {
+        node_status_monitor_->stop();
+    }
     if (multicast_sender_) {
         multicast_sender_->stop();
     }
@@ -335,6 +339,12 @@ bool AlarmSystem::initializeServices() {
             return false;
         }
         LogManager::getLogger()->info("✅ 告警规则引擎启动成功");
+        
+        // 7. 初始化节点状态监控器
+        LogManager::getLogger()->info("👁️ 初始化节点状态监控器...");
+        node_status_monitor_ = std::make_shared<NodeStatusMonitor>(node_storage_, alarm_manager_);
+        node_status_monitor_->start();
+        LogManager::getLogger()->info("✅ 节点状态监控器启动成功");
         
         return true;
     } catch (const std::exception& e) {
