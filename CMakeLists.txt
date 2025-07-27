@@ -7,6 +7,7 @@ set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 include_directories(include)
+include_directories(include/resource)
 
 # Use local nlohmann/json header file
 # json.hpp is included in the include/ directory
@@ -70,8 +71,8 @@ else()
     message(FATAL_ERROR "UUID library not found. Please install UUID library.")
 endif()
 
-file(GLOB_RECURSE SOURCES "src/*.cpp")
-file(GLOB_RECURSE HEADERS "include/*.h")
+file(GLOB_RECURSE SOURCES "src/*.cpp" "src/resource/*.cpp")
+file(GLOB_RECURSE HEADERS "include/*.h" "include/resource/*.h")
 
 add_executable(${PROJECT_NAME} ${SOURCES} ${HEADERS})
 

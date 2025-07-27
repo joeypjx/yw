@@ -2,9 +2,7 @@
 #include <iostream>
 
 int main(int argc, char* argv[]) {
-    // 解析命令行参数
-    AlarmSystemConfig config;
-    
+
     for (int i = 1; i < argc; ++i) {
         if (std::string(argv[i]) == "--help") {
             std::cout << "告警系统使用说明：\n"
@@ -14,5 +12,5 @@ int main(int argc, char* argv[]) {
     }
     
     // 运行告警系统
-    return runAlarmSystem(config);
+    return runAlarmSystem();
 }

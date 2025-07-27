@@ -356,9 +356,9 @@ void AlarmSystem::signalHandler(int signal) {
 }
 
 // 便利函数实现
-int runAlarmSystem(const AlarmSystemConfig& config) {
+int runAlarmSystem() {
     try {
-        AlarmSystem system(config);
+        AlarmSystem system;
         system.run();
         return 0;
     } catch (const std::exception& e) {

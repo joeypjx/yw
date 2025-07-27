@@ -206,4 +206,4 @@ private:
  * @param config 可选的配置参数
  * @return 退出码
  */
-int runAlarmSystem(const AlarmSystemConfig& config = AlarmSystemConfig{}); 
+int runAlarmSystem(); 
