@@ -18,7 +18,6 @@ struct QueryResult {
 // 节点资源数据结构
 struct NodeResourceData {
     std::string host_ip;
-    std::chrono::system_clock::time_point timestamp;
     
     // CPU数据
     struct {
@@ -32,6 +31,7 @@ struct NodeResourceData {
         double voltage = 0.0;
         double current = 0.0;
         double power = 0.0;
+        std::chrono::system_clock::time_point timestamp;
         bool has_data = false;
     } cpu;
     
@@ -41,6 +41,7 @@ struct NodeResourceData {
         int64_t used = 0;
         int64_t free = 0;
         double usage_percent = 0.0;
+        std::chrono::system_clock::time_point timestamp;
         bool has_data = false;
     } memory;
     
@@ -52,6 +53,7 @@ struct NodeResourceData {
         int64_t used = 0;
         int64_t free = 0;
         double usage_percent = 0.0;
+        std::chrono::system_clock::time_point timestamp;
     };
     std::vector<DiskData> disks;
     
@@ -66,6 +68,7 @@ struct NodeResourceData {
         int tx_errors = 0;
         int64_t rx_rate = 0;
         int64_t tx_rate = 0;
+        std::chrono::system_clock::time_point timestamp;
     };
     std::vector<NetworkData> networks;
     
@@ -79,6 +82,7 @@ struct NodeResourceData {
         int64_t mem_total = 0;
         double temperature = 0.0;
         double power = 0.0;
+        std::chrono::system_clock::time_point timestamp;
     };
     std::vector<GpuData> gpus;
     

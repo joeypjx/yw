@@ -232,7 +232,7 @@ NodeMetricsResponse ResourceManager::getCurrentMetrics() {
                 {"power", resourceData.cpu.power},
                 {"temperature", resourceData.cpu.temperature},
                 {"timestamp", resourceData.cpu.has_data ? 
-                    std::chrono::duration_cast<std::chrono::seconds>(resourceData.timestamp.time_since_epoch()).count() : current_timestamp},
+                    std::chrono::duration_cast<std::chrono::seconds>(resourceData.cpu.timestamp.time_since_epoch()).count() : current_timestamp},
                 {"usage_percent", resourceData.cpu.usage_percent},
                 {"voltage", resourceData.cpu.voltage}
             };
@@ -241,7 +241,7 @@ NodeMetricsResponse ResourceManager::getCurrentMetrics() {
             json latest_memory_metrics = {
                 {"free", resourceData.memory.free},
                 {"timestamp", resourceData.memory.has_data ? 
-                    std::chrono::duration_cast<std::chrono::seconds>(resourceData.timestamp.time_since_epoch()).count() : current_timestamp},
+                    std::chrono::duration_cast<std::chrono::seconds>(resourceData.memory.timestamp.time_since_epoch()).count() : current_timestamp},
                 {"total", resourceData.memory.total},
                 {"usage_percent", resourceData.memory.usage_percent},
                 {"used", resourceData.memory.used}
@@ -249,6 +249,10 @@ NodeMetricsResponse ResourceManager::getCurrentMetrics() {
             
             // 构建Disk指标
             json disks = json::array();
+            long long disk_timestamp = current_timestamp;
+            if (!resourceData.disks.empty() && resourceData.disks[0].timestamp.time_since_epoch().count() > 0) {
+                disk_timestamp = std::chrono::duration_cast<std::chrono::seconds>(resourceData.disks[0].timestamp.time_since_epoch()).count();
+            }
             for (const auto& disk : resourceData.disks) {
                 disks.push_back({
                     {"device", disk.device},
@@ -256,17 +260,22 @@ NodeMetricsResponse ResourceManager::getCurrentMetrics() {
                     {"mount_point", disk.mount_point},
                     {"total", disk.total},
                     {"usage_percent", disk.usage_percent},
-                    {"used", disk.used}
+                    {"used", disk.used},
+                    {"timestamp", std::chrono::duration_cast<std::chrono::seconds>(disk.timestamp.time_since_epoch()).count()}
                 });
             }
             json latest_disk_metrics = {
                 {"disk_count", static_cast<int>(resourceData.disks.size())},
                 {"disks", disks},
-                {"timestamp", current_timestamp}
+                {"timestamp", disk_timestamp}
             };
             
             // 构建Network指标
             json networks = json::array();
+            long long network_timestamp = current_timestamp;
+            if (!resourceData.networks.empty() && resourceData.networks[0].timestamp.time_since_epoch().count() > 0) {
+                network_timestamp = std::chrono::duration_cast<std::chrono::seconds>(resourceData.networks[0].timestamp.time_since_epoch()).count();
+            }
             for (const auto& network : resourceData.networks) {
                 networks.push_back({
                     {"interface", network.interface},
@@ -277,17 +286,22 @@ NodeMetricsResponse ResourceManager::getCurrentMetrics() {
                     {"tx_errors", network.tx_errors},
                     {"tx_packets", network.tx_packets},
                     {"tx_rate", network.tx_rate},
-                    {"rx_rate", network.rx_rate}
+                    {"rx_rate", network.rx_rate},
+                    {"timestamp", std::chrono::duration_cast<std::chrono::seconds>(network.timestamp.time_since_epoch()).count()}
                 });
             }
             json latest_network_metrics = {
                 {"network_count", static_cast<int>(resourceData.networks.size())},
                 {"networks", networks},
-                {"timestamp", current_timestamp}
+                {"timestamp", network_timestamp}
             };
             
             // 构建GPU指标
             json gpus = json::array();
+            long long gpu_timestamp = current_timestamp;
+            if (!resourceData.gpus.empty() && resourceData.gpus[0].timestamp.time_since_epoch().count() > 0) {
+                gpu_timestamp = std::chrono::duration_cast<std::chrono::seconds>(resourceData.gpus[0].timestamp.time_since_epoch()).count();
+            }
             for (const auto& gpu : resourceData.gpus) {
                 gpus.push_back({
                     {"compute_usage", gpu.compute_usage},
@@ -299,13 +313,14 @@ NodeMetricsResponse ResourceManager::getCurrentMetrics() {
                     {"name", gpu.name},
                     {"power", gpu.power},
                     {"temperature", gpu.temperature},
-                    {"voltage", 0.0} // Not available in current schema
+                    {"voltage", 0.0}, // Not available in current schema
+                    {"timestamp", std::chrono::duration_cast<std::chrono::seconds>(gpu.timestamp.time_since_epoch()).count()}
                 });
             }
             json latest_gpu_metrics = {
                 {"gpu_count", static_cast<int>(resourceData.gpus.size())},
                 {"gpus", gpus},
-                {"timestamp", current_timestamp}
+                {"timestamp", gpu_timestamp}
             };
             
             // Docker指标 (暂时使用默认值，因为当前没有docker表)
@@ -318,6 +333,11 @@ NodeMetricsResponse ResourceManager::getCurrentMetrics() {
                 {"timestamp", current_timestamp}
             };
             
+            // 计算节点状态：如果updated_at与当前时间差距大于5秒，则判断为离线
+            auto node_updated_at = std::chrono::duration_cast<std::chrono::seconds>(node->last_heartbeat.time_since_epoch()).count();
+            auto time_diff = current_timestamp - node_updated_at;
+            std::string node_status = (time_diff <= 5) ? "online" : "offline";
+            
             // 构建节点数据
             json node_data = {
                 {"board_type", node->board_type},
@@ -326,7 +346,7 @@ NodeMetricsResponse ResourceManager::getCurrentMetrics() {
                 {"cpu_arch", node->cpu_arch},
                 {"cpu_id", node->cpu_id},
                 {"cpu_type", node->cpu_type},
-                {"created_at", std::chrono::duration_cast<std::chrono::seconds>(node->last_heartbeat.time_since_epoch()).count()},
+                {"updated_at", node_updated_at},
                 {"gpu", node->gpu},
                 {"host_ip", node->host_ip},
                 {"hostname", node->hostname},
@@ -342,8 +362,7 @@ NodeMetricsResponse ResourceManager::getCurrentMetrics() {
                 {"service_port", node->service_port},
                 {"slot_id", node->slot_id},
                 {"srio_id", node->srio_id},
-                {"status", "online"},
-                {"updated_at", current_timestamp}
+                {"status", node_status}
             };
             
             nodes_metrics.push_back(node_data);
@@ -434,7 +453,7 @@ PaginatedNodeMetricsResponse ResourceManager::getPaginatedCurrentMetrics(int pag
                 {"power", resourceData.cpu.power},
                 {"temperature", resourceData.cpu.temperature},
                 {"timestamp", resourceData.cpu.has_data ? 
-                    std::chrono::duration_cast<std::chrono::seconds>(resourceData.timestamp.time_since_epoch()).count() : current_timestamp},
+                    std::chrono::duration_cast<std::chrono::seconds>(resourceData.cpu.timestamp.time_since_epoch()).count() : current_timestamp},
                 {"usage_percent", resourceData.cpu.usage_percent},
                 {"voltage", resourceData.cpu.voltage}
             };
@@ -443,7 +462,7 @@ PaginatedNodeMetricsResponse ResourceManager::getPaginatedCurrentMetrics(int pag
             json latest_memory_metrics = {
                 {"free", resourceData.memory.free},
                 {"timestamp", resourceData.memory.has_data ? 
-                    std::chrono::duration_cast<std::chrono::seconds>(resourceData.timestamp.time_since_epoch()).count() : current_timestamp},
+                    std::chrono::duration_cast<std::chrono::seconds>(resourceData.memory.timestamp.time_since_epoch()).count() : current_timestamp},
                 {"total", resourceData.memory.total},
                 {"usage_percent", resourceData.memory.usage_percent},
                 {"used", resourceData.memory.used}
@@ -451,6 +470,10 @@ PaginatedNodeMetricsResponse ResourceManager::getPaginatedCurrentMetrics(int pag
             
             // 构建Disk指标
             json disks = json::array();
+            long long disk_timestamp = current_timestamp;
+            if (!resourceData.disks.empty() && resourceData.disks[0].timestamp.time_since_epoch().count() > 0) {
+                disk_timestamp = std::chrono::duration_cast<std::chrono::seconds>(resourceData.disks[0].timestamp.time_since_epoch()).count();
+            }
             for (const auto& disk : resourceData.disks) {
                 disks.push_back({
                     {"device", disk.device},
@@ -458,17 +481,22 @@ PaginatedNodeMetricsResponse ResourceManager::getPaginatedCurrentMetrics(int pag
                     {"mount_point", disk.mount_point},
                     {"total", disk.total},
                     {"usage_percent", disk.usage_percent},
-                    {"used", disk.used}
+                    {"used", disk.used},
+                    {"timestamp", std::chrono::duration_cast<std::chrono::seconds>(disk.timestamp.time_since_epoch()).count()}
                 });
             }
             json latest_disk_metrics = {
                 {"disk_count", static_cast<int>(resourceData.disks.size())},
                 {"disks", disks},
-                {"timestamp", current_timestamp}
+                {"timestamp", disk_timestamp}
             };
             
             // 构建Network指标
             json networks = json::array();
+            long long network_timestamp = current_timestamp;
+            if (!resourceData.networks.empty() && resourceData.networks[0].timestamp.time_since_epoch().count() > 0) {
+                network_timestamp = std::chrono::duration_cast<std::chrono::seconds>(resourceData.networks[0].timestamp.time_since_epoch()).count();
+            }
             for (const auto& network : resourceData.networks) {
                 networks.push_back({
                     {"interface", network.interface},
@@ -479,17 +507,22 @@ PaginatedNodeMetricsResponse ResourceManager::getPaginatedCurrentMetrics(int pag
                     {"tx_errors", network.tx_errors},
                     {"tx_packets", network.tx_packets},
                     {"tx_rate", network.tx_rate},
-                    {"rx_rate", network.rx_rate}
+                    {"rx_rate", network.rx_rate},
+                    {"timestamp", std::chrono::duration_cast<std::chrono::seconds>(network.timestamp.time_since_epoch()).count()}
                 });
             }
             json latest_network_metrics = {
                 {"network_count", static_cast<int>(resourceData.networks.size())},
                 {"networks", networks},
-                {"timestamp", current_timestamp}
+                {"timestamp", network_timestamp}
             };
             
             // 构建GPU指标
             json gpus = json::array();
+            long long gpu_timestamp = current_timestamp;
+            if (!resourceData.gpus.empty() && resourceData.gpus[0].timestamp.time_since_epoch().count() > 0) {
+                gpu_timestamp = std::chrono::duration_cast<std::chrono::seconds>(resourceData.gpus[0].timestamp.time_since_epoch()).count();
+            }
             for (const auto& gpu : resourceData.gpus) {
                 gpus.push_back({
                     {"compute_usage", gpu.compute_usage},
@@ -501,13 +534,14 @@ PaginatedNodeMetricsResponse ResourceManager::getPaginatedCurrentMetrics(int pag
                     {"name", gpu.name},
                     {"power", gpu.power},
                     {"temperature", gpu.temperature},
-                    {"voltage", 0.0} // Not available in current schema
+                    {"voltage", 0.0}, // Not available in current schema
+                    {"timestamp", std::chrono::duration_cast<std::chrono::seconds>(gpu.timestamp.time_since_epoch()).count()}
                 });
             }
             json latest_gpu_metrics = {
                 {"gpu_count", static_cast<int>(resourceData.gpus.size())},
                 {"gpus", gpus},
-                {"timestamp", current_timestamp}
+                {"timestamp", gpu_timestamp}
             };
             
             // Docker指标 (暂时使用默认值，因为当前没有docker表)
@@ -520,6 +554,11 @@ PaginatedNodeMetricsResponse ResourceManager::getPaginatedCurrentMetrics(int pag
                 {"timestamp", current_timestamp}
             };
             
+            // 计算节点状态：如果updated_at与当前时间差距大于5秒，则判断为离线
+            auto node_updated_at = std::chrono::duration_cast<std::chrono::seconds>(node->last_heartbeat.time_since_epoch()).count();
+            auto time_diff = current_timestamp - node_updated_at;
+            std::string node_status = (time_diff <= 5) ? "online" : "offline";
+            
             // 构建节点数据
             json node_data = {
                 {"board_type", node->board_type},
@@ -528,7 +567,7 @@ PaginatedNodeMetricsResponse ResourceManager::getPaginatedCurrentMetrics(int pag
                 {"cpu_arch", node->cpu_arch},
                 {"cpu_id", node->cpu_id},
                 {"cpu_type", node->cpu_type},
-                {"created_at", std::chrono::duration_cast<std::chrono::seconds>(node->last_heartbeat.time_since_epoch()).count()},
+                {"updated_at", node_updated_at},
                 {"gpu", node->gpu},
                 {"host_ip", node->host_ip},
                 {"hostname", node->hostname},
@@ -544,8 +583,7 @@ PaginatedNodeMetricsResponse ResourceManager::getPaginatedCurrentMetrics(int pag
                 {"service_port", node->service_port},
                 {"slot_id", node->slot_id},
                 {"srio_id", node->srio_id},
-                {"status", "online"},
-                {"updated_at", current_timestamp}
+                {"status", node_status}
             };
             
             nodes_metrics.push_back(node_data);
@@ -585,6 +623,9 @@ NodesListResponse ResourceManager::getNodesList() {
             auto now = std::chrono::system_clock::now();
             auto duration = std::chrono::duration_cast<std::chrono::seconds>(now - node->last_heartbeat);
             
+            // 计算节点状态：如果updated_at与当前时间差距大于5秒，则判断为离线
+            std::string node_status = (duration.count() <= 5) ? "online" : "offline";
+            
             json node_json = {
                 {"api_version", node->api_version},
                 {"data", {
@@ -605,7 +646,8 @@ NodesListResponse ResourceManager::getNodesList() {
                 }},
                 {"last_heartbeat", std::chrono::duration_cast<std::chrono::milliseconds>(
                     node->last_heartbeat.time_since_epoch()).count()},
-                {"seconds_since_last_heartbeat", duration.count()}
+                {"seconds_since_last_heartbeat", duration.count()},
+                {"status", node_status}
             };
             nodes_json.push_back(node_json);
         }

@@ -171,6 +171,8 @@ bool ResourceStorage::insertResourceData(const std::string& hostIp, const nlohma
 
     bool success = true;
 
+    // LogManager::getLogger()->info("Inserting resource data for host: {}", resourceData.dump(4));
+
     // Insert CPU data
     if (resourceData.contains("cpu")) {
         success &= insertCpuData(hostIp, resourceData["cpu"]);
@@ -502,7 +504,6 @@ std::vector<QueryResult> ResourceStorage::executeQuerySQL(const std::string& sql
 NodeResourceData ResourceStorage::getNodeResourceData(const std::string& hostIp) {
     NodeResourceData nodeData;
     nodeData.host_ip = hostIp;
-    nodeData.timestamp = std::chrono::system_clock::now();
     
     if (!m_connected || !m_taos) {
         LogManager::getLogger()->error("ResourceStorage: Not connected to TDengine");
@@ -529,7 +530,7 @@ NodeResourceData ResourceStorage::getNodeResourceData(const std::string& hostIp)
         
         if (!cpuResults.empty()) {
             nodeData.cpu.has_data = true;
-            nodeData.timestamp = cpuResults[0].timestamp;
+            nodeData.cpu.timestamp = cpuResults[0].timestamp;
             
             // 现在每个 QueryResult 包含所有指标，直接使用第一个结果
             const auto& cpuMetrics = cpuResults[0].metrics;
@@ -552,6 +553,7 @@ NodeResourceData ResourceStorage::getNodeResourceData(const std::string& hostIp)
         
         if (!memoryResults.empty()) {
             nodeData.memory.has_data = true;
+            nodeData.memory.timestamp = memoryResults[0].timestamp;
             
             // 直接使用第一个结果的 metrics
             const auto& memoryMetrics = memoryResults[0].metrics;
@@ -574,6 +576,7 @@ NodeResourceData ResourceStorage::getNodeResourceData(const std::string& hostIp)
             diskData.used = static_cast<int64_t>(result.metrics.count("used") ? result.metrics.at("used") : 0);
             diskData.free = static_cast<int64_t>(result.metrics.count("free") ? result.metrics.at("free") : 0);
             diskData.usage_percent = result.metrics.count("usage_percent") ? result.metrics.at("usage_percent") : 0.0;
+            diskData.timestamp = result.timestamp;
             
             nodeData.disks.push_back(diskData);
         }
@@ -593,6 +596,7 @@ NodeResourceData ResourceStorage::getNodeResourceData(const std::string& hostIp)
             networkData.tx_errors = static_cast<int>(result.metrics.count("tx_errors") ? result.metrics.at("tx_errors") : 0);
             networkData.rx_rate = static_cast<int64_t>(result.metrics.count("rx_rate") ? result.metrics.at("rx_rate") : 0);
             networkData.tx_rate = static_cast<int64_t>(result.metrics.count("tx_rate") ? result.metrics.at("tx_rate") : 0);
+            networkData.timestamp = result.timestamp;
             
             nodeData.networks.push_back(networkData);
         }
@@ -611,6 +615,7 @@ NodeResourceData ResourceStorage::getNodeResourceData(const std::string& hostIp)
             gpuData.mem_total = static_cast<int64_t>(result.metrics.count("mem_total") ? result.metrics.at("mem_total") : 0);
             gpuData.temperature = result.metrics.count("temperature") ? result.metrics.at("temperature") : 0.0;
             gpuData.power = result.metrics.count("power") ? result.metrics.at("power") : 0.0;
+            gpuData.timestamp = result.timestamp;
             
             nodeData.gpus.push_back(gpuData);
         }
@@ -631,7 +636,6 @@ nlohmann::json NodeResourceData::to_json() const {
     nlohmann::json j;
     
     j["host_ip"] = host_ip;
-    j["timestamp"] = std::chrono::duration_cast<std::chrono::milliseconds>(timestamp.time_since_epoch()).count();
     
     // CPU data
     j["cpu"]["usage_percent"] = cpu.usage_percent;
@@ -645,6 +649,9 @@ nlohmann::json NodeResourceData::to_json() const {
     j["cpu"]["current"] = cpu.current;
     j["cpu"]["power"] = cpu.power;
     j["cpu"]["has_data"] = cpu.has_data;
+    if (cpu.has_data) {
+        j["cpu"]["timestamp"] = std::chrono::duration_cast<std::chrono::milliseconds>(cpu.timestamp.time_since_epoch()).count();
+    }
     
     // Memory data
     j["memory"]["total"] = memory.total;
@@ -652,6 +659,9 @@ nlohmann::json NodeResourceData::to_json() const {
     j["memory"]["free"] = memory.free;
     j["memory"]["usage_percent"] = memory.usage_percent;
     j["memory"]["has_data"] = memory.has_data;
+    if (memory.has_data) {
+        j["memory"]["timestamp"] = std::chrono::duration_cast<std::chrono::milliseconds>(memory.timestamp.time_since_epoch()).count();
+    }
     
     // Disk data
     j["disk"] = nlohmann::json::array();
@@ -663,6 +673,7 @@ nlohmann::json NodeResourceData::to_json() const {
         diskJson["used"] = disk.used;
         diskJson["free"] = disk.free;
         diskJson["usage_percent"] = disk.usage_percent;
+        diskJson["timestamp"] = std::chrono::duration_cast<std::chrono::milliseconds>(disk.timestamp.time_since_epoch()).count();
         j["disk"].push_back(diskJson);
     }
     
@@ -679,6 +690,7 @@ nlohmann::json NodeResourceData::to_json() const {
         networkJson["tx_errors"] = network.tx_errors;
         networkJson["rx_rate"] = network.rx_rate;
         networkJson["tx_rate"] = network.tx_rate;
+        networkJson["timestamp"] = std::chrono::duration_cast<std::chrono::milliseconds>(network.timestamp.time_since_epoch()).count();
         j["network"].push_back(networkJson);
     }
     
@@ -694,6 +706,7 @@ nlohmann::json NodeResourceData::to_json() const {
         gpuJson["mem_total"] = gpu.mem_total;
         gpuJson["temperature"] = gpu.temperature;
         gpuJson["power"] = gpu.power;
+        gpuJson["timestamp"] = std::chrono::duration_cast<std::chrono::milliseconds>(gpu.timestamp.time_since_epoch()).count();
         j["gpu"].push_back(gpuJson);
     }
     

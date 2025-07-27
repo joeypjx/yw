@@ -164,7 +164,7 @@ generate_disk_data() {
     usage_percent2=$((usage_percent / 2))
     
     cat <<EOF
-        "disks": [
+        "disk": [
             {
                 "device": "/dev/sda1",
                 "mount_point": "/",
@@ -215,7 +215,7 @@ generate_network_data() {
     tx_rate2=$((tx_rate / 4))
     
     cat <<EOF
-        "networks": [
+        "network": [
             {
                 "interface": "eth0",
                 "rx_bytes": $rx_bytes,
@@ -288,7 +288,7 @@ generate_gpu_data() {
     fi
     
     cat <<EOF
-        "gpus": [
+        "gpu": [
             {
                 "index": 0,
                 "name": "NVIDIA RTX 4090",
