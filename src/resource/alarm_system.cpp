@@ -9,6 +9,8 @@
 #include "alarm_rule_storage.h"
 #include "alarm_rule_engine.h"
 #include "alarm_manager.h"
+#include "bmc_listener.h"
+#include "bmc_storage.h"
 #include "json.hpp"
 
 #include <iostream>
@@ -94,6 +96,10 @@ void AlarmSystem::stop() {
     if (alarm_rule_engine_) {
         alarm_rule_engine_->stop();
     }
+    
+    // 停止BMC监听器
+    bmc_listener_stop();
+    bmc_listener_cleanup();
     
     
     status_ = AlarmSystemStatus::STOPPED;
@@ -274,6 +280,25 @@ bool AlarmSystem::initializeDatabase() {
         
         LogManager::getLogger()->info("✅ 告警管理器初始化成功");
         
+        // 4. 初始化BMC存储
+        LogManager::getLogger()->info("🗄️ 初始化BMC存储...");
+        bmc_storage_ = std::make_shared<BMCStorage>(
+            config_.tdengine_host, config_.db_user, config_.db_password, config_.resource_db);
+        
+        if (!bmc_storage_->connect()) {
+            std::lock_guard<std::mutex> lock(error_mutex_);
+            last_error_ = "BMC存储连接失败: " + bmc_storage_->getLastError();
+            return false;
+        }
+        
+        if (!bmc_storage_->createBMCTables()) {
+            std::lock_guard<std::mutex> lock(error_mutex_);
+            last_error_ = "创建BMC表失败: " + bmc_storage_->getLastError();
+            return false;
+        }
+        
+        LogManager::getLogger()->info("✅ BMC存储初始化成功");
+        
         return true;
     } catch (const std::exception& e) {
         std::lock_guard<std::mutex> lock(error_mutex_);
@@ -297,12 +322,12 @@ bool AlarmSystem::initializeServices() {
         LogManager::getLogger()->info("✅ 节点存储初始化成功");
         
         LogManager::getLogger()->info("📊 初始化资源管理器...");
-        resource_manager_ = std::make_shared<ResourceManager>(resource_storage_, node_storage_);
+        resource_manager_ = std::make_shared<ResourceManager>(resource_storage_, node_storage_, bmc_storage_);
         LogManager::getLogger()->info("✅ 资源管理器初始化成功");
         
         // 3. 启动HTTP服务器
         LogManager::getLogger()->info("🌐 启动HTTP服务器...");
-        http_server_ = std::make_shared<HttpServer>(resource_storage_, alarm_rule_storage_, alarm_manager_, node_storage_, resource_manager_);
+        http_server_ = std::make_shared<HttpServer>(resource_storage_, alarm_rule_storage_, alarm_manager_, node_storage_, resource_manager_, bmc_storage_);
         if (!http_server_->start()) {
             std::lock_guard<std::mutex> lock(error_mutex_);
             last_error_ = "HTTP服务器启动失败";
@@ -345,6 +370,29 @@ bool AlarmSystem::initializeServices() {
         node_status_monitor_ = std::make_shared<NodeStatusMonitor>(node_storage_, alarm_manager_);
         node_status_monitor_->start();
         LogManager::getLogger()->info("✅ 节点状态监控器启动成功");
+        
+        // 6. 启动BMC监听器
+        LogManager::getLogger()->info("🔊 初始化BMC监听器...");
+        if (bmc_listener_init(config_.bmc_multicast_ip.c_str(), config_.bmc_multicast_port) != 0) {
+            std::lock_guard<std::mutex> lock(error_mutex_);
+            last_error_ = "BMC监听器初始化失败";
+            return false;
+        }
+        
+        // 设置BMC数据回调函数
+        bmc_listener_set_callback([this](const std::string& json_data) {
+            LogManager::getLogger()->debug("收到BMC数据");
+            
+            // 存储到数据库
+            if (bmc_storage_) {
+                if (!bmc_storage_->storeBMCDataFromJson(json_data)) {
+                    LogManager::getLogger()->warn("BMC数据存储失败: {}", bmc_storage_->getLastError());
+                }
+            }
+        });
+        
+        bmc_listener_start();
+        LogManager::getLogger()->info("✅ BMC监听器启动成功");
         
         return true;
     } catch (const std::exception& e) {

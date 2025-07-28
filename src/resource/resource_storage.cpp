@@ -802,6 +802,16 @@ NodeResourceRangeData ResourceStorage::getNodeResourceRangeData(const std::strin
                                 " AND ts > NOW() - " + time_range + 
                                 " ORDER BY ts ASC";
                 timeSeriesData.data_points = executeQuerySQL(sql);
+            } else if (metric == "fan") {
+                std::string sql = "SELECT * FROM bmc_fan_super WHERE host_ip = '" + hostIp + "'" +
+                                " AND ts > NOW() - " + time_range + 
+                                " ORDER BY ts ASC";
+                timeSeriesData.data_points = executeQuerySQL(sql);
+            } else if (metric == "sensor") {
+                std::string sql = "SELECT * FROM bmc_sensor_super WHERE host_ip = '" + hostIp + "'" +
+                                " AND ts > NOW() - " + time_range + 
+                                " ORDER BY ts ASC";
+                timeSeriesData.data_points = executeQuerySQL(sql);
             }
             
             if (!timeSeriesData.data_points.empty()) {

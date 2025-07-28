@@ -769,10 +769,12 @@ HttpServer::HttpServer(std::shared_ptr<ResourceStorage> resource_storage,
                        std::shared_ptr<AlarmManager> alarm_manager,
                        std::shared_ptr<NodeStorage> node_storage,
                        std::shared_ptr<ResourceManager> resource_manager,
+                       std::shared_ptr<BMCStorage> bmc_storage,
                        const std::string& host, int port)
     : m_resource_storage(resource_storage), m_alarm_rule_storage(alarm_rule_storage), 
       m_alarm_manager(alarm_manager), m_node_storage(node_storage), 
-      m_resource_manager(resource_manager), m_host(host), m_port(port) {
+      m_resource_manager(resource_manager), m_bmc_storage(bmc_storage),
+      m_host(host), m_port(port) {
     setup_routes();
 }
 
@@ -845,6 +847,10 @@ void HttpServer::setup_routes() {
     // 节点历史指标查询路由
     m_server.Get("/node/historical-metrics", [this](const httplib::Request& req, httplib::Response& res) {
         this->handle_node_historical_metrics(req, res);
+    });
+
+    m_server.Get("/node/historical-bmc", [this](const httplib::Request& req, httplib::Response& res) {
+        this->handle_node_historical_bmc(req, res);
     });
 
     // 告警规则相关路由
@@ -1596,5 +1602,47 @@ void HttpServer::handle_node_historical_metrics(const httplib::Request& req, htt
         res.set_content("{\"error\":\"Failed to retrieve historical metrics\"}", "application/json");
         res.status = 500;
         LogManager::getLogger()->error("Exception in handle_node_historical_metrics: {}", e.what());
+    }
+}
+
+void HttpServer::handle_node_historical_bmc(const httplib::Request& req, httplib::Response& res) {
+    try {
+        if (!m_resource_manager) {
+            res.set_content("{\"error\":\"Resource manager not available\"}", "application/json");
+            res.status = 500;
+            LogManager::getLogger()->error("Resource manager not available for historical bmc request");
+            return;
+        }
+
+        // 构建请求对象
+        HistoricalBMCRequest request;
+        request.box_id = std::stoi(req.get_param_value("box_id"));
+        request.time_range = req.get_param_value("time_range");
+        if (request.time_range.empty()) {
+            request.time_range = "1h"; // 默认1小时
+        }
+
+        // 解析metrics参数
+        std::string metrics_param = req.get_param_value("metrics");
+        request.metrics = m_resource_manager->parseMetricsParam(metrics_param);
+
+        // 调用ResourceManager获取历史数据
+        auto response_data = m_resource_manager->getHistoricalBMC(request);
+        
+        // 格式化响应
+        auto json_response = response_data.data.to_json();
+        
+        if (response_data.success) {
+            res.set_content(json_response.dump(2), "application/json");
+            res.status = 200;
+        } else {
+            res.set_content(json_response.dump(2), "application/json");
+            res.status = 400;
+        }
+
+    } catch (const std::exception& e) {
+        res.set_content("{\"error\":\"Failed to retrieve historical bmc\"}", "application/json");
+        res.status = 500;
+        LogManager::getLogger()->error("Exception in handle_node_historical_bmc: {}", e.what());
     }
 }

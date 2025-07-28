@@ -581,13 +581,13 @@ bool AlarmManager::createOrUpdateAlarm(const std::string& fingerprint, const nlo
     event.generator_url = "http://localhost:8080/alerts";
     
     // 转换JSON标签为map
-    for (const auto& [key, value] : labels.items()) {
-        event.labels[key] = value.get<std::string>();
+    for (const auto& item : labels.items()) {
+        event.labels[item.key()] = item.value().get<std::string>();
     }
     
     // 转换JSON注解为map
-    for (const auto& [key, value] : annotations.items()) {
-        event.annotations[key] = value.get<std::string>();
+    for (const auto& item : annotations.items()) {
+        event.annotations[item.key()] = item.value().get<std::string>();
     }
     
     return processAlarmEvent(event);
@@ -615,12 +615,12 @@ bool AlarmManager::resolveAlarm(const std::string& fingerprint) {
             nlohmann::json labels_json = nlohmann::json::parse(existing_events[0].labels_json);
             nlohmann::json annotations_json = nlohmann::json::parse(existing_events[0].annotations_json);
             
-            for (const auto& [key, value] : labels_json.items()) {
-                event.labels[key] = value.get<std::string>();
+            for (const auto& item : labels_json.items()) {
+                event.labels[item.key()] = item.value().get<std::string>();
             }
             
-            for (const auto& [key, value] : annotations_json.items()) {
-                event.annotations[key] = value.get<std::string>();
+            for (const auto& item : annotations_json.items()) {
+                event.annotations[item.key()] = item.value().get<std::string>();
             }
         } catch (const std::exception& e) {
             logError("Failed to parse existing alarm labels/annotations: " + std::string(e.what()));

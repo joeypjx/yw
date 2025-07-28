@@ -19,6 +19,8 @@ class MulticastSender;
 class NodeStorage;
 class ResourceManager;
 class NodeStatusMonitor;
+class BMCListener;
+class BMCStorage;
 struct AlarmEvent;
 
 /**
@@ -40,6 +42,10 @@ struct AlarmSystemConfig {
     // 组播配置
     std::string multicast_ip = "239.192.168.80";
     int multicast_port = 3980;
+    
+    // BMC监听配置
+    std::string bmc_multicast_ip = "224.100.200.15";
+    int bmc_multicast_port = 5715;
     
     // 监控配置
     std::chrono::seconds evaluation_interval = std::chrono::seconds(3);
@@ -193,6 +199,8 @@ private:
     std::shared_ptr<NodeStorage> node_storage_;
     std::shared_ptr<ResourceManager> resource_manager_;
     std::shared_ptr<NodeStatusMonitor> node_status_monitor_;
+    std::shared_ptr<BMCListener> bmc_listener_;
+    std::shared_ptr<BMCStorage> bmc_storage_;
     
     
     // 时间记录

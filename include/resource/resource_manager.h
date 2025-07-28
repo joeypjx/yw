@@ -2,6 +2,7 @@
 
 #include "resource_storage.h"
 #include "node_storage.h"
+#include "bmc_storage.h"
 #include "json.hpp"
 #include <string>
 #include <vector>
@@ -53,7 +54,8 @@ struct NodeResponse {
 class ResourceManager {
 public:
     ResourceManager(std::shared_ptr<ResourceStorage> resource_storage, 
-                   std::shared_ptr<NodeStorage> node_storage);
+                   std::shared_ptr<NodeStorage> node_storage,
+                   std::shared_ptr<BMCStorage> bmc_storage);
     ~ResourceManager() = default;
 
     /**
@@ -62,6 +64,13 @@ public:
      * @return 历史指标响应
      */
     HistoricalMetricsResponse getHistoricalMetrics(const HistoricalMetricsRequest& request);
+
+    /**
+     * @brief 获取节点历史BMC数据
+     * @param request 请求参数
+     * @return 历史BMC响应
+     */
+    HistoricalBMCResponse getHistoricalBMC(const HistoricalBMCRequest& request);
 
     /**
      * @brief 获取所有节点的当前指标数据
@@ -114,4 +123,5 @@ public:
 private:
     std::shared_ptr<ResourceStorage> m_resource_storage;
     std::shared_ptr<NodeStorage> m_node_storage;
+    std::shared_ptr<BMCStorage> m_bmc_storage;
 };

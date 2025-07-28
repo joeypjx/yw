@@ -6,8 +6,9 @@
 using json = nlohmann::json;
 
 ResourceManager::ResourceManager(std::shared_ptr<ResourceStorage> resource_storage, 
-                                 std::shared_ptr<NodeStorage> node_storage)
-    : m_resource_storage(resource_storage), m_node_storage(node_storage) {
+                                 std::shared_ptr<NodeStorage> node_storage,
+                                 std::shared_ptr<BMCStorage> bmc_storage)
+    : m_resource_storage(resource_storage), m_node_storage(node_storage), m_bmc_storage(bmc_storage) {
 }
 
 HistoricalMetricsResponse ResourceManager::getHistoricalMetrics(const HistoricalMetricsRequest& request) {
@@ -125,6 +126,37 @@ HistoricalMetricsResponse ResourceManager::getHistoricalMetrics(const Historical
         response.success = false;
         response.error_message = "Failed to retrieve historical metrics: " + std::string(e.what());
         LogManager::getLogger()->error("ResourceManager: Exception in getHistoricalMetrics: {}", e.what());
+    }
+    
+    return response;
+}
+
+HistoricalBMCResponse ResourceManager::getHistoricalBMC(const HistoricalBMCRequest& request) {
+    HistoricalBMCResponse response;
+    
+    if (!m_bmc_storage || !m_node_storage) {
+        response.success = false;
+        response.error_message = "Storage components not available";
+        LogManager::getLogger()->error("ResourceManager: Storage components not available");
+        return response;
+    }
+
+    try {
+        auto rangeData = m_bmc_storage->getBMCRangeData(
+            request.box_id, 
+            request.time_range, 
+            request.metrics
+        );
+
+        response.data = rangeData;
+        response.success = true;
+
+        LogManager::getLogger()->debug("ResourceManager: Successfully retrieved historical bmc for box_id: {}", request.box_id);
+
+    } catch (const std::exception& e) {
+        response.success = false;
+        response.error_message = "Failed to retrieve historical bmc: " + std::string(e.what());
+        LogManager::getLogger()->error("ResourceManager: Exception in getHistoricalBMC: {}", e.what());
     }
     
     return response;
