@@ -833,7 +833,7 @@ void HttpServer::setup_routes() {
     });
     
     // 节点数据查询路由
-    m_server.Get("/nodes", [this](const httplib::Request& req, httplib::Response& res) {
+    m_server.Get("/node", [this](const httplib::Request& req, httplib::Response& res) {
         this->handle_nodes_list(req, res);
     });
     
@@ -871,6 +871,10 @@ void HttpServer::setup_routes() {
     // 告警事件相关路由
     m_server.Get("/alarm/events", [this](const httplib::Request& req, httplib::Response& res) {
         this->handle_alarm_events_list(req, res);
+    });
+    
+    m_server.Get("/alarm/events/count", [this](const httplib::Request& req, httplib::Response& res) {
+        this->handle_alarm_events_count(req, res);
     });
 }
 
@@ -1334,6 +1338,47 @@ void HttpServer::handle_alarm_events_list(const httplib::Request& req, httplib::
     }
 }
 
+void HttpServer::handle_alarm_events_count(const httplib::Request& req, httplib::Response& res) {
+    try {
+        if (!m_alarm_manager) {
+            res.set_content("{\"error\":\"Alarm manager not available\"}", "application/json");
+            res.status = 500;
+            LogManager::getLogger()->error("Alarm manager not available");
+            return;
+        }
+        
+        // 获取查询参数
+        std::string status = req.get_param_value("status");
+        
+        int count = 0;
+        if (status == "active" || status == "firing") {
+            // 获取活跃告警数量
+            count = m_alarm_manager->getActiveAlarmCount();
+            LogManager::getLogger()->debug("Successfully retrieved active alarm events count: {}", count);
+        } else {
+            // 获取告警事件总数量
+            count = m_alarm_manager->getTotalAlarmCount();
+            LogManager::getLogger()->debug("Successfully retrieved total alarm events count: {}", count);
+        }
+        
+        json response = {
+            {"api_version", 1},
+            {"status", "success"},
+            {"data", {
+                {"count", count}
+            }}
+        };
+        
+        res.set_content(response.dump(2), "application/json");
+        res.status = 200;
+        
+    } catch (const std::exception& e) {
+        res.set_content("{\"error\":\"Failed to retrieve alarm events count\"}", "application/json");
+        res.status = 500;
+        LogManager::getLogger()->error("Exception in handle_alarm_events_count: {}", e.what());
+    }
+}
+
 void HttpServer::handle_heart(const httplib::Request& req, httplib::Response& res) {
     try {
         json body = json::parse(req.body);
@@ -1398,17 +1443,40 @@ void HttpServer::handle_nodes_list(const httplib::Request& req, httplib::Respons
             return;
         }
 
-        // 使用ResourceManager获取节点列表数据
-        auto nodes_response = m_resource_manager->getNodesList();
+        // 检查是否有host_ip参数，如果有则获取单个节点数据
+        std::string host_ip = req.get_param_value("host_ip");
         
-        if (nodes_response.success) {
-            res.set_content(nodes_response.data.dump(2), "application/json");
-            res.status = 200;
-            LogManager::getLogger()->debug("Successfully retrieved nodes list using ResourceManager");
+        if (!host_ip.empty()) {
+            // 使用ResourceManager获取单个节点数据
+            auto node_response = m_resource_manager->getNode(host_ip);
+            
+            if (node_response.success) {
+                res.set_content(node_response.data.dump(2), "application/json");
+                res.status = 200;
+                LogManager::getLogger()->debug("Successfully retrieved node data for host_ip: {} using ResourceManager", host_ip);
+            } else {
+                if (node_response.error_message == "Node not found") {
+                    res.set_content("{\"error\":\"" + node_response.error_message + "\"}", "application/json");
+                    res.status = 404;
+                } else {
+                    res.set_content("{\"error\":\"" + node_response.error_message + "\"}", "application/json");
+                    res.status = 500;
+                }
+                LogManager::getLogger()->error("ResourceManager failed to retrieve node data for host_ip: {}: {}", host_ip, node_response.error_message);
+            }
         } else {
-            res.set_content("{\"error\":\"" + nodes_response.error_message + "\"}", "application/json");
-            res.status = 500;
-            LogManager::getLogger()->error("ResourceManager failed to retrieve nodes list: {}", nodes_response.error_message);
+            // 使用ResourceManager获取节点列表数据
+            auto nodes_response = m_resource_manager->getNodesList();
+            
+            if (nodes_response.success) {
+                res.set_content(nodes_response.data.dump(2), "application/json");
+                res.status = 200;
+                LogManager::getLogger()->debug("Successfully retrieved nodes list using ResourceManager");
+            } else {
+                res.set_content("{\"error\":\"" + nodes_response.error_message + "\"}", "application/json");
+                res.status = 500;
+                LogManager::getLogger()->error("ResourceManager failed to retrieve nodes list: {}", nodes_response.error_message);
+            }
         }
         
     } catch (const std::exception& e) {

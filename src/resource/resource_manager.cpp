@@ -626,35 +626,39 @@ NodesListResponse ResourceManager::getNodesList() {
             // 计算节点状态：如果updated_at与当前时间差距大于5秒，则判断为离线
             std::string node_status = (duration.count() <= 5) ? "online" : "offline";
             
+            // 获取时间戳（秒）
+            auto heartbeat_timestamp = std::chrono::duration_cast<std::chrono::seconds>(
+                node->last_heartbeat.time_since_epoch()).count();
+            
             json node_json = {
-                {"api_version", node->api_version},
-                {"data", {
-                    {"box_id", node->box_id},
-                    {"slot_id", node->slot_id},
-                    {"cpu_id", node->cpu_id},
-                    {"srio_id", node->srio_id},
-                    {"host_ip", node->host_ip},
-                    {"hostname", node->hostname},
-                    {"service_port", node->service_port},
-                    {"box_type", node->box_type},
-                    {"board_type", node->board_type},
-                    {"cpu_type", node->cpu_type},
-                    {"os_type", node->os_type},
-                    {"resource_type", node->resource_type},
-                    {"cpu_arch", node->cpu_arch},
-                    {"gpu", node->gpu}
-                }},
-                {"last_heartbeat", std::chrono::duration_cast<std::chrono::milliseconds>(
-                    node->last_heartbeat.time_since_epoch()).count()},
-                {"seconds_since_last_heartbeat", duration.count()},
-                {"status", node_status}
+                {"board_type", node->board_type},
+                {"box_id", node->box_id},
+                {"box_type", node->box_type},
+                {"cpu_arch", node->cpu_arch},
+                {"cpu_id", node->cpu_id},
+                {"cpu_type", node->cpu_type},
+                {"created_at", heartbeat_timestamp}, // 使用心跳时间作为创建时间
+                {"gpu", node->gpu},
+                {"host_ip", node->host_ip},
+                {"hostname", node->hostname},
+                {"id", node->box_id}, // 使用box_id作为id
+                {"os_type", node->os_type},
+                {"resource_type", node->resource_type},
+                {"service_port", node->service_port},
+                {"slot_id", node->slot_id},
+                {"srio_id", node->srio_id},
+                {"status", node_status},
+                {"updated_at", heartbeat_timestamp} // 使用心跳时间作为更新时间
             };
             nodes_json.push_back(node_json);
         }
         
         response.data = {
-            {"total_nodes", nodes.size()},
-            {"nodes", nodes_json}
+            {"api_version", 1},
+            {"data", {
+                {"nodes", nodes_json}
+            }},
+            {"status", "success"}
         };
         
         response.success = true;
@@ -665,6 +669,84 @@ NodesListResponse ResourceManager::getNodesList() {
         response.success = false;
         response.error_message = "Failed to retrieve nodes data: " + std::string(e.what());
         LogManager::getLogger()->error("ResourceManager: Exception in getNodesList: {}", e.what());
+    }
+    
+    return response;
+}
+
+NodeResponse ResourceManager::getNode(const std::string& host_ip) {
+    NodeResponse response;
+    
+    if (!m_node_storage) {
+        response.success = false;
+        response.error_message = "Node storage not available";
+        LogManager::getLogger()->error("ResourceManager: Node storage not available for getNode request");
+        return response;
+    }
+    
+    if (host_ip.empty()) {
+        response.success = false;
+        response.error_message = "host_ip parameter is required";
+        LogManager::getLogger()->warn("ResourceManager: Empty host_ip provided to getNode");
+        return response;
+    }
+    
+    try {
+        auto node = m_node_storage->getNodeData(host_ip);
+        
+        if (!node) {
+            response.success = false;
+            response.error_message = "Node not found";
+            LogManager::getLogger()->warn("ResourceManager: Node not found for host_ip: {}", host_ip);
+            return response;
+        }
+
+        // Calculate time since last heartbeat
+        auto now = std::chrono::system_clock::now();
+        auto duration = std::chrono::duration_cast<std::chrono::seconds>(now - node->last_heartbeat);
+        
+        // 计算节点状态：如果updated_at与当前时间差距大于5秒，则判断为离线
+        std::string node_status = (duration.count() <= 5) ? "online" : "offline";
+        
+        // 获取时间戳（秒）
+        auto heartbeat_timestamp = std::chrono::duration_cast<std::chrono::seconds>(
+            node->last_heartbeat.time_since_epoch()).count();
+        
+        // 构建节点数据
+        json node_data = {
+            {"box_id", node->box_id},
+            {"slot_id", node->slot_id},
+            {"cpu_id", node->cpu_id},
+            {"srio_id", node->srio_id},
+            {"host_ip", node->host_ip},
+            {"hostname", node->hostname},
+            {"service_port", node->service_port},
+            {"box_type", node->box_type},
+            {"board_type", node->board_type},
+            {"cpu_type", node->cpu_type},
+            {"os_type", node->os_type},
+            {"resource_type", node->resource_type},
+            {"cpu_arch", node->cpu_arch},
+            {"gpu", node->gpu},
+            {"status", node_status},
+            {"updated_at", heartbeat_timestamp}
+        };
+        
+        // 构建符合要求的响应格式
+        response.data = {
+            {"api_version", 1},
+            {"data", node_data},
+            {"status", "success"}
+        };
+        
+        response.success = true;
+        
+        LogManager::getLogger()->debug("ResourceManager: Successfully retrieved node data for host_ip: {}", host_ip);
+        
+    } catch (const std::exception& e) {
+        response.success = false;
+        response.error_message = "Failed to retrieve node data: " + std::string(e.what());
+        LogManager::getLogger()->error("ResourceManager: Exception in getNode: {}", e.what());
     }
     
     return response;

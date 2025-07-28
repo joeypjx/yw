@@ -44,6 +44,12 @@ struct NodesListResponse {
     nlohmann::json data;
 };
 
+struct NodeResponse {
+    bool success = false;
+    std::string error_message;
+    nlohmann::json data;
+};
+
 class ResourceManager {
 public:
     ResourceManager(std::shared_ptr<ResourceStorage> resource_storage, 
@@ -76,6 +82,13 @@ public:
      * @return 节点列表响应
      */
     NodesListResponse getNodesList();
+
+    /**
+     * @brief 获取指定节点的数据
+     * @param host_ip 节点的IP地址
+     * @return 节点响应
+     */
+    NodeResponse getNode(const std::string& host_ip);
 
     /**
      * @brief 解析metrics参数字符串为vector

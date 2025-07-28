@@ -216,11 +216,14 @@
 
 #### 2.3 获取节点列表
 
-**GET** `/nodes`
+**GET** `/node`
 
-获取所有已注册节点的信息。
+获取所有已注册节点的信息，或根据host_ip参数获取特定节点信息。
 
-**响应:**
+**查询参数:**
+- `host_ip` (可选, 字符串): 特定节点的IP地址，如果提供则返回该节点的详细信息
+
+**响应 (获取所有节点):**
 ```json
 {
   "api_version": 1,
@@ -256,6 +259,52 @@
   "status": "success"
 }
 ```
+
+**响应 (获取特定节点，使用host_ip参数):**
+```json
+{
+  "api_version": 1,
+  "data": {
+    "board_type": "GPU",
+    "box_id": 1,
+    "box_type": "计算I型",
+    "cpu_arch": "aarch64",
+    "cpu_id": 1,
+    "cpu_type": " Phytium,D2000/8",
+    "created_at": 1750038100,
+    "gpu": [
+      {
+        "index": 0,
+        "name": " Iluvatar MR-V50A"
+      }
+    ],
+    "host_ip": "192.168.10.58",
+    "hostname": "localhost.localdomain",
+    "id": 1,
+    "os_type": "Kylin Linux Advanced Server V10",
+    "resource_type": "GPU I",
+    "service_port": 23980,
+    "slot_id": 1,
+    "srio_id": 5,
+    "status": "online",
+    "updated_at": 1750122059
+  },
+  "status": "success"
+}
+```
+
+**使用示例:**
+```bash
+# 获取所有节点列表
+curl "http://localhost:8080/node"
+
+# 获取特定节点信息
+curl "http://localhost:8080/node?host_ip=192.168.10.58"
+```
+
+**错误响应:**
+- `404`: 指定的节点未找到（使用host_ip参数时）
+- `500`: ResourceManager不可用或服务器内部错误
 
 ---
 
@@ -1050,6 +1099,50 @@ curl "http://localhost:8080/alarm/events?page=1&page_size=20"
 
 **兼容响应** (无分页):
 相同的数组格式，但没有响应头。
+
+#### 5.2 获取告警事件数量
+
+**GET** `/alarm/events/count`
+
+获取告警事件数量，支持按状态过滤。可以获取所有告警事件的总数量，或仅获取当前活跃告警的数量。
+
+**查询参数:**
+- `status` (可选, 字符串): 告警状态过滤条件
+  - `active` 或 `firing`: 只返回当前处于"触发中"状态的告警数量
+  - 不提供此参数或其他值: 返回所有告警事件的总数量（包括已触发和已解决的）
+
+**响应:**
+```json
+{
+  "api_version": 1,
+  "status": "success", 
+  "data": {
+    "count": 156
+  }
+}
+```
+
+**响应字段说明:**
+| 字段名 | 类型 | 说明 |
+|-------|------|------|
+| `api_version` | Integer | API版本号，固定为1 |
+| `status` | String | 响应状态，固定为"success" |
+| `data.count` | Integer | 告警事件数量，根据status参数返回对应的统计结果 |
+
+**使用示例:**
+```bash
+# 获取所有告警事件总数量（包括已解决的）
+curl "http://localhost:8080/alarm/events/count"
+
+# 获取当前活跃告警数量（仅firing状态）
+curl "http://localhost:8080/alarm/events/count?status=active"
+
+# 获取当前触发中的告警数量（仅firing状态）
+curl "http://localhost:8080/alarm/events/count?status=firing"
+```
+
+**错误响应:**
+- `500`: AlarmManager不可用或服务器内部错误
 
 ---
 

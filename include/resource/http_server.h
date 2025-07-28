@@ -99,6 +99,13 @@ private:
     void handle_alarm_events_list(const httplib::Request& req, httplib::Response& res);
 
     /**
+     * @brief 处理 /alarm/events/count 的GET请求 (获取告警事件总数量).
+     * @param req HTTP请求.
+     * @param res HTTP响应.
+     */
+    void handle_alarm_events_count(const httplib::Request& req, httplib::Response& res);
+
+    /**
      * @brief 处理 /heart 的POST请求 (节点心跳).
      * @param req HTTP请求.
      * @param res HTTP响应.
