@@ -1073,9 +1073,150 @@ curl "http://localhost:8080/node/metrics"
 
 ---
 
-### 5. 告警事件API
+### 5. 机箱控制API
 
-#### 5.1 获取告警事件列表
+机箱控制API提供对机箱板卡的电源管理功能，支持对指定槽位的板卡进行复位、下电和上电操作。这些操作通过TCP协议与机箱控制器通信，遵循特定的通信协议规范。
+
+#### 5.1 复位机箱板卡
+
+**POST** `/chassis/reset`
+
+对指定槽位的机箱板卡执行复位操作。支持单个槽位或多个槽位的批量操作。
+
+**请求体:**
+
+单槽位操作:
+```json
+{
+  "target_ip": "192.168.1.180",
+  "slot_number": 3,
+  "request_id": 1001
+}
+```
+
+多槽位操作:
+```json
+{
+  "target_ip": "192.168.1.180", 
+  "slot_numbers": [1, 2, 4],
+  "request_id": 1002
+}
+```
+
+**请求参数详细说明:**
+| 字段名 | 类型 | 必需 | 说明 |
+|-------|------|------|------|
+| `target_ip` | String | ✅ | 机箱控制器的IP地址 |
+| `slot_number` | Integer | ❌ | 单个槽位号 (1-12)，与slot_numbers二选一 |
+| `slot_numbers` | Array[Integer] | ❌ | 多个槽位号数组，与slot_number二选一 |
+| `request_id` | Integer | ❌ | 请求序列号，用于请求跟踪 (默认: 0) |
+
+**响应:**
+```json
+{
+  "status": "success",
+  "message": "Reset operation completed successfully",
+  "operation_result": "SUCCESS",
+  "slot_results": [
+    {
+      "slot_number": 3,
+      "status": "SUCCESS",
+      "message": "Slot 3 reset successful"
+    }
+  ],
+  "raw_response": "4554485357420000..."
+}
+```
+
+**响应字段说明:**
+| 字段名 | 类型 | 说明 |
+|-------|------|------|
+| `status` | String | HTTP操作状态 ("success"/"error") |
+| `message` | String | 操作结果描述信息 |
+| `operation_result` | String | 操作结果类型 (SUCCESS/PARTIAL_SUCCESS/NETWORK_ERROR/TIMEOUT_ERROR/INVALID_RESPONSE) |
+| `slot_results` | Array | 各槽位的操作结果详情 |
+| `slot_results[].slot_number` | Integer | 槽位号 |
+| `slot_results[].status` | String | 槽位操作状态 (SUCCESS/FAILED/REQUEST_OPERATION/NO_OPERATION) |
+| `slot_results[].message` | String | 槽位操作结果描述 |
+| `raw_response` | String | 原始响应数据的十六进制表示，用于调试 |
+
+**错误响应:**
+- `400`: 请求参数无效 (缺少target_ip、槽位号无效等)
+- `500`: 机箱控制器通信失败或内部错误
+
+#### 5.2 下电机箱板卡
+
+**POST** `/chassis/power-off`
+
+对指定槽位的机箱板卡执行下电操作。支持单个槽位或多个槽位的批量操作。
+
+**请求体:** 与复位操作相同
+
+**响应:** 与复位操作相同，但operation字段为"power-off"
+
+#### 5.3 上电机箱板卡
+
+**POST** `/chassis/power-on`
+
+对指定槽位的机箱板卡执行上电操作。支持单个槽位或多个槽位的批量操作。
+
+**请求体:** 与复位操作相同
+
+**响应:** 与复位操作相同，但operation字段为"power-on"
+
+#### 机箱控制协议说明
+
+**槽位编号规则:**
+- 支持的槽位号范围: 1-12
+- 槽位号与内部数组索引的映射: 槽位1对应索引0，槽位12对应索引11
+
+**操作状态说明:**
+- `NO_OPERATION` (0): 该槽位无操作
+- `REQUEST_OPERATION` (1): 请求操作该槽位
+- `SUCCESS` (2): 操作成功
+- `FAILED` (-1): 操作失败
+
+**通信协议:**
+- 通信端口: 33000 (TCP)
+- 协议标识: "ETHSWB"
+- 支持的命令: "RESET", "PWOFF", "PWON"
+- 数据格式: 二进制结构体，包含标识符、目标IP、命令、槽位数组和请求ID
+
+**使用示例:**
+```bash
+# 复位单个槽位
+curl -X POST "http://localhost:8080/chassis/reset" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "target_ip": "192.168.1.180",
+    "slot_number": 3,
+    "request_id": 1001
+  }'
+
+# 下电多个槽位
+curl -X POST "http://localhost:8080/chassis/power-off" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "target_ip": "192.168.1.180",
+    "slot_numbers": [1, 2, 4],
+    "request_id": 1002
+  }'
+
+# 上电指定槽位
+curl -X POST "http://localhost:8080/chassis/power-on" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "target_ip": "192.168.1.180",
+    "slot_number": 1,
+    "request_id": 1003
+  }'
+```
+
+---
+
+### 6. 告警事件API
+
+#### 6.1 获取告警事件列表
 
 **GET** `/alarm/events`
 
@@ -1159,7 +1300,7 @@ curl "http://localhost:8080/alarm/events?page=1&page_size=20"
 **兼容响应** (无分页):
 相同的数组格式，但没有响应头。
 
-#### 5.2 获取告警事件数量
+#### 6.2 获取告警事件数量
 
 **GET** `/alarm/events/count`
 
