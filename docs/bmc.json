@@ -1,0 +1,438 @@
+{
+    "header": {
+      "head": "0xA55A",
+      "message_length": 1096,
+      "sequence_number": 405,
+      "message_type": "0x2",
+      "timestamp": 0,
+      "box_name": 1,
+      "box_id": 33,
+      "tail": "0xA55A"
+    },
+    "fans": [
+      {
+        "sequence": 1,
+        "mode": {
+          "alarm_type": 0,
+          "work_mode": 0
+        },
+        "speed": 4065
+      },
+      {
+        "sequence": 0,
+        "mode": {
+          "alarm_type": 0,
+          "work_mode": 0
+        },
+        "speed": 0
+      }
+    ],
+    "boards": [
+      {
+        "ipmb_address": 0,
+        "module_type": 0,
+        "bmc_company": 0,
+        "bmc_version": "unknown",
+        "sensor_count": 0,
+        "sensors": [
+        ]
+      },
+      {
+        "ipmb_address": 0,
+        "module_type": 0,
+        "bmc_company": 0,
+        "bmc_version": "unknown",
+        "sensor_count": 0,
+        "sensors": [
+        ]
+      },
+      {
+        "ipmb_address": 56,
+        "module_type": 2310,
+        "bmc_company": 1813,
+        "bmc_version": "V2.0.0",
+        "sensor_count": 5,
+        "sensors": [
+          {
+            "sequence": 1,
+            "type": 1,
+            "name": "t_D300",
+            "value": 9497,
+            "alarm_type": 0
+          },
+          {
+            "sequence": 2,
+            "type": 1,
+            "name": "t_GPU",
+            "value": 9497,
+            "alarm_type": 0
+          },
+          {
+            "sequence": 3,
+            "type": 2,
+            "name": "v_12V",
+            "value": 2901,
+            "alarm_type": 0
+          },
+          {
+            "sequence": 4,
+            "type": 2,
+            "name": "v_3V3",
+            "value": 789,
+            "alarm_type": 0
+          },
+          {
+            "sequence": 5,
+            "type": 3,
+            "name": "c_12V",
+            "value": 1818,
+            "alarm_type": 0
+          }
+        ]
+      },
+      {
+        "ipmb_address": 118,
+        "module_type": 2309,
+        "bmc_company": 1813,
+        "bmc_version": "V2.0.3",
+        "sensor_count": 5,
+        "sensors": [
+          {
+            "sequence": 1,
+            "type": 1,
+            "name": "t_D300",
+            "value": 9472,
+            "alarm_type": 0
+          },
+          {
+            "sequence": 2,
+            "type": 1,
+            "name": "t_GPU",
+            "value": 9472,
+            "alarm_type": 0
+          },
+          {
+            "sequence": 3,
+            "type": 2,
+            "name": "v_12V",
+            "value": 2836,
+            "alarm_type": 4
+          },
+          {
+            "sequence": 4,
+            "type": 2,
+            "name": "v_3V3",
+            "value": 786,
+            "alarm_type": 0
+          },
+          {
+            "sequence": 5,
+            "type": 3,
+            "name": "c_12V",
+            "value": 1115,
+            "alarm_type": 0
+          }
+        ]
+      },
+      {
+        "ipmb_address": 52,
+        "module_type": 0,
+        "bmc_company": 0,
+        "bmc_version": "unknown",
+        "sensor_count": 0,
+        "sensors": [
+        ]
+      },
+      {
+        "ipmb_address": 50,
+        "module_type": 2306,
+        "bmc_company": 1813,
+        "bmc_version": "V2.01",
+        "sensor_count": 5,
+        "sensors": [
+          {
+            "sequence": 4,
+            "type": 1,
+            "name": "t_PPU",
+            "value": 7761,
+            "alarm_type": 0
+          },
+          {
+            "sequence": 5,
+            "type": 1,
+            "name": "t_fanI",
+            "value": 9790,
+            "alarm_type": 0
+          },
+          {
+            "sequence": 7,
+            "type": 2,
+            "name": "v_3V3",
+            "value": 799,
+            "alarm_type": 0
+          },
+          {
+            "sequence": 8,
+            "type": 2,
+            "name": "v_12V",
+            "value": 2913,
+            "alarm_type": 0
+          },
+          {
+            "sequence": 1,
+            "type": 3,
+            "name": "c_C3V3",
+            "value": 584,
+            "alarm_type": 0
+          }
+        ]
+      },
+      {
+        "ipmb_address": 112,
+        "module_type": 2305,
+        "bmc_company": 1813,
+        "bmc_version": "V2.0.0",
+        "sensor_count": 5,
+        "sensors": [
+          {
+            "sequence": 5,
+            "type": 1,
+            "name": "t_PPU",
+            "value": 8966,
+            "alarm_type": 0
+          },
+          {
+            "sequence": 6,
+            "type": 1,
+            "name": "t_fanI",
+            "value": 9016,
+            "alarm_type": 0
+          },
+          {
+            "sequence": 8,
+            "type": 2,
+            "name": "v_3V3",
+            "value": 785,
+            "alarm_type": 0
+          },
+          {
+            "sequence": 9,
+            "type": 2,
+            "name": "v_12V",
+            "value": 2908,
+            "alarm_type": 0
+          },
+          {
+            "sequence": 1,
+            "type": 3,
+            "name": "c_3V3",
+            "value": 69,
+            "alarm_type": 0
+          }
+        ]
+      },
+      {
+        "ipmb_address": 110,
+        "module_type": 0,
+        "bmc_company": 0,
+        "bmc_version": "unknown",
+        "sensor_count": 0,
+        "sensors": [
+        ]
+      },
+      {
+        "ipmb_address": 0,
+        "module_type": 2322,
+        "bmc_company": 1813,
+        "bmc_version": "V1.0",
+        "sensor_count": 5,
+        "sensors": [
+          {
+            "sequence": 1,
+            "type": 1,
+            "name": "t_CPU",
+            "value": 13190,
+            "alarm_type": 0
+          },
+          {
+            "sequence": 2,
+            "type": 1,
+            "name": "t_pcb",
+            "value": 13149,
+            "alarm_type": 0
+          },
+          {
+            "sequence": 3,
+            "type": 2,
+            "name": "v_12V",
+            "value": 3081,
+            "alarm_type": 0
+          },
+          {
+            "sequence": 4,
+            "type": 2,
+            "name": "v_3V3",
+            "value": 804,
+            "alarm_type": 0
+          },
+          {
+            "sequence": 5,
+            "type": 3,
+            "name": "c_12V",
+            "value": 2560,
+            "alarm_type": 0
+          }
+        ]
+      },
+      {
+        "ipmb_address": 42,
+        "module_type": 2329,
+        "bmc_company": 1813,
+        "bmc_version": "V2.0.0",
+        "sensor_count": 5,
+        "sensors": [
+          {
+            "sequence": 1,
+            "type": 1,
+            "name": "t_CPU",
+            "value": 11351,
+            "alarm_type": 0
+          },
+          {
+            "sequence": 2,
+            "type": 1,
+            "name": "t_GPU",
+            "value": 11339,
+            "alarm_type": 0
+          },
+          {
+            "sequence": 3,
+            "type": 2,
+            "name": "v_12V",
+            "value": 3089,
+            "alarm_type": 0
+          },
+          {
+            "sequence": 4,
+            "type": 2,
+            "name": "v_3V3",
+            "value": 802,
+            "alarm_type": 0
+          },
+          {
+            "sequence": 5,
+            "type": 3,
+            "name": "c_12V",
+            "value": 2142,
+            "alarm_type": 0
+          }
+        ]
+      },
+      {
+        "ipmb_address": 0,
+        "module_type": 0,
+        "bmc_company": 0,
+        "bmc_version": "unknown",
+        "sensor_count": 0,
+        "sensors": [
+        ]
+      },
+      {
+        "ipmb_address": 38,
+        "module_type": 2310,
+        "bmc_company": 1813,
+        "bmc_version": "V1.0",
+        "sensor_count": 5,
+        "sensors": [
+          {
+            "sequence": 1,
+            "type": 1,
+            "name": "t_CPU",
+            "value": 9472,
+            "alarm_type": 0
+          },
+          {
+            "sequence": 2,
+            "type": 1,
+            "name": "t_PCB",
+            "value": 9216,
+            "alarm_type": 0
+          },
+          {
+            "sequence": 3,
+            "type": 2,
+            "name": "v_12V",
+            "value": 3088,
+            "alarm_type": 0
+          },
+          {
+            "sequence": 4,
+            "type": 2,
+            "name": "v_3V3",
+            "value": 803,
+            "alarm_type": 0
+          },
+          {
+            "sequence": 5,
+            "type": 3,
+            "name": "c_12V",
+            "value": 1813,
+            "alarm_type": 0
+          }
+        ]
+      },
+      {
+        "ipmb_address": 0,
+        "module_type": 0,
+        "bmc_company": 0,
+        "bmc_version": "unknown",
+        "sensor_count": 0,
+        "sensors": [
+        ]
+      },
+      {
+        "ipmb_address": 4,
+        "module_type": 41219,
+        "bmc_company": 1813,
+        "bmc_version": "V1.0",
+        "sensor_count": 5,
+        "sensors": [
+          {
+            "sequence": 1,
+            "type": 1,
+            "name": "T_cpu",
+            "value": 11264,
+            "alarm_type": 2
+          },
+          {
+            "sequence": 2,
+            "type": 2,
+            "name": "V_12V",
+            "value": 3076,
+            "alarm_type": 3
+          },
+          {
+            "sequence": 3,
+            "type": 2,
+            "name": "V_3V3",
+            "value": 793,
+            "alarm_type": 4
+          },
+          {
+            "sequence": 4,
+            "type": 3,
+            "name": "C_12V",
+            "value": 21090,
+            "alarm_type": 5
+          },
+          {
+            "sequence": 5,
+            "type": 3,
+            "name": "C_3V3",
+            "value": 35,
+            "alarm_type": 33
+          }
+        ]
+      }
+    ]
+  } 
