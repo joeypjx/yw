@@ -26,7 +26,7 @@ private:
     int sockfd_;
     atomic<bool> running_;
     thread listener_thread_;
-    function<void(const string&)> data_callback_;
+    function<void(const UdpInfo&)> data_callback_;
     
 public:
     BMCListener(const string& group_ip, uint16_t port) 
@@ -100,7 +100,7 @@ public:
         LogManager::getLogger()->info("🔇 BMC监听器已停止");
     }
     
-    void setDataCallback(const function<void(const string&)>& callback) {
+    void setDataCallback(const function<void(const UdpInfo&)>& callback) {
         data_callback_ = callback;
     }
     
@@ -113,9 +113,8 @@ private:
             if (result > 0) {
                 LogManager::getLogger()->debug("收到BMC数据 ({} bytes)", result);
                 
-                string json_data = dataToJson(&data);
-                if (!json_data.empty() && data_callback_) {
-                    data_callback_(json_data);
+                if (data_callback_) {
+                    data_callback_(data);
                 }
             } else if (result < 0) {
                 LogManager::getLogger()->error("BMC数据接收错误");
@@ -268,7 +267,7 @@ void bmc_listener_stop() {
     }
 }
 
-void bmc_listener_set_callback(const function<void(const string&)>& callback) {
+void bmc_listener_set_callback(const function<void(const UdpInfo&)>& callback) {
     if (g_bmc_listener) {
         g_bmc_listener->setDataCallback(callback);
     }

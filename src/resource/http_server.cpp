@@ -1,4 +1,5 @@
 #include "http_server.h"
+#include "node_model.h"
 #include "log_manager.h"
 #include "json.hpp"
 #include <iostream>
@@ -764,17 +765,20 @@ const char* get_web_page_html() {
 )HTML";
 }
 
+
+
 HttpServer::HttpServer(std::shared_ptr<ResourceStorage> resource_storage,
                        std::shared_ptr<AlarmRuleStorage> alarm_rule_storage,
                        std::shared_ptr<AlarmManager> alarm_manager,
                        std::shared_ptr<NodeStorage> node_storage,
                        std::shared_ptr<ResourceManager> resource_manager,
                        std::shared_ptr<BMCStorage> bmc_storage,
+                       std::shared_ptr<ChassisController> chassis_controller,
                        const std::string& host, int port)
     : m_resource_storage(resource_storage), m_alarm_rule_storage(alarm_rule_storage), 
       m_alarm_manager(alarm_manager), m_node_storage(node_storage), 
       m_resource_manager(resource_manager), m_bmc_storage(bmc_storage),
-      m_host(host), m_port(port) {
+      m_chassis_controller(chassis_controller), m_host(host), m_port(port) {
     setup_routes();
 }
 
@@ -881,6 +885,19 @@ void HttpServer::setup_routes() {
     
     m_server.Get("/alarm/events/count", [this](const httplib::Request& req, httplib::Response& res) {
         this->handle_alarm_events_count(req, res);
+    });
+    
+    // 机箱控制相关路由
+    m_server.Post("/chassis/reset", [this](const httplib::Request& req, httplib::Response& res) {
+        this->handle_chassis_reset(req, res);
+    });
+    
+    m_server.Post("/chassis/power-off", [this](const httplib::Request& req, httplib::Response& res) {
+        this->handle_chassis_power_off(req, res);
+    });
+    
+    m_server.Post("/chassis/power-on", [this](const httplib::Request& req, httplib::Response& res) {
+        this->handle_chassis_power_on(req, res);
     });
 }
 
@@ -1188,16 +1205,17 @@ void HttpServer::handle_resource(const httplib::Request& req, httplib::Response&
             res.status = 400;
             return;
         }
-        std::string host_ip = data["host_ip"];
 
         if (!data.contains("resource") || !data["resource"].is_object()) {
             res.set_content("{\"error\":\"'resource' field is missing or not an object\"}", "application/json");
             res.status = 400;
             return;
         }
-        const auto& resource = data["resource"];
 
-        if (m_resource_storage->insertResourceData(host_ip, resource)) {
+        // 将JSON数据反序列化为ResourceInfo结构体
+        node::ResourceInfo resource_info = body.get<node::ResourceInfo>();
+
+        if (m_resource_storage->insertResourceData(resource_info)) {
             json response = {
                 {"api_version", 1},
                 {"status", "success"},
@@ -1206,16 +1224,17 @@ void HttpServer::handle_resource(const httplib::Request& req, httplib::Response&
             
             res.set_content(response.dump(2), "application/json");
             res.status = 200;
-            LogManager::getLogger()->debug("Successfully processed resource data for host: {}", host_ip);
+            LogManager::getLogger()->debug("Successfully processed resource data for host: {}", resource_info.host_ip);
         } else {
             res.set_content("{\"error\":\"Failed to store resource data\"}", "application/json");
             res.status = 500;
-            LogManager::getLogger()->error("Failed to store resource data for host: {}", host_ip);
+            LogManager::getLogger()->error("Failed to store resource data for host: {}", resource_info.host_ip);
         }
 
     } catch (const json::parse_error& e) {
         res.set_content("{\"error\":\"Invalid JSON format\"}", "application/json");
         res.status = 400;
+        LogManager::getLogger()->error("JSON parse error in handle_resource: {}", e.what());
     } catch (const std::exception& e) {
         res.set_content("{\"error\":\"An unexpected error occurred\"}", "application/json");
         res.status = 500;
@@ -1396,16 +1415,9 @@ void HttpServer::handle_heart(const httplib::Request& req, httplib::Response& re
             return;
         }
 
-        const auto& data = body["data"];
-        if (!data.contains("host_ip") || !data["host_ip"].is_string()) {
-            res.set_content("{\"error\":\"'host_ip' is missing or not a string\"}", "application/json");
-            res.status = 400;
-            LogManager::getLogger()->warn("Heart request missing 'host_ip' field");
-            return;
-        }
-
-        std::string host_ip = data["host_ip"];
-
+        // 尝试反序列化为 node::BoxInfo
+        node::BoxInfo node_info = body["data"].get<node::BoxInfo>();
+        
         if (!m_node_storage) {
             res.set_content("{\"error\":\"Node storage not available\"}", "application/json");
             res.status = 500;
@@ -1413,7 +1425,7 @@ void HttpServer::handle_heart(const httplib::Request& req, httplib::Response& re
             return;
         }
 
-        if (m_node_storage->storeNodeData(host_ip, body)) {
+        if (m_node_storage->storeBoxInfo(node_info)) {
             json response = {
                 {"api_version", 1},
                 {"status", "success"},
@@ -1422,11 +1434,11 @@ void HttpServer::handle_heart(const httplib::Request& req, httplib::Response& re
             
             res.set_content(response.dump(2), "application/json");
             res.status = 200;
-            LogManager::getLogger()->debug("Successfully processed heart data for node: {}", host_ip);
+            LogManager::getLogger()->debug("Successfully processed heart data for node: {}", node_info.host_ip);
         } else {
             res.set_content("{\"error\":\"Failed to store node data\"}", "application/json");
             res.status = 500;
-            LogManager::getLogger()->error("Failed to store heart data for node: {}", host_ip);
+            LogManager::getLogger()->error("Failed to store heart data for node: {}", node_info.host_ip);
         }
 
     } catch (const json::parse_error& e) {
@@ -1644,5 +1656,353 @@ void HttpServer::handle_node_historical_bmc(const httplib::Request& req, httplib
         res.set_content("{\"error\":\"Failed to retrieve historical bmc\"}", "application/json");
         res.status = 500;
         LogManager::getLogger()->error("Exception in handle_node_historical_bmc: {}", e.what());
+    }
+}
+
+void HttpServer::handle_chassis_reset(const httplib::Request& req, httplib::Response& res) {
+    try {
+        if (!m_chassis_controller) {
+            res.set_content("{\"error\":\"Chassis controller not available\"}", "application/json");
+            res.status = 500;
+            LogManager::getLogger()->error("Chassis controller not available for reset request");
+            return;
+        }
+
+        json body = json::parse(req.body);
+
+        // 验证必需的字段
+        if (!body.contains("target_ip") || !body["target_ip"].is_string()) {
+            res.set_content("{\"error\":\"'target_ip' field is required and must be a string\"}", "application/json");
+            res.status = 400;
+            return;
+        }
+
+        std::string target_ip = body["target_ip"].get<std::string>();
+        int req_id = body.value("request_id", 0);
+
+        ChassisController::OperationResponse result;
+        
+        if (body.contains("slots") && body["slots"].is_array()) {
+            // 多槽位操作
+            std::vector<int> slot_numbers;
+            for (const auto& slot : body["slots"]) {
+                if (slot.is_number_integer()) {
+                    slot_numbers.push_back(slot.get<int>());
+                }
+            }
+            
+            if (slot_numbers.empty()) {
+                res.set_content("{\"error\":\"No valid slot numbers provided\"}", "application/json");
+                res.status = 400;
+                return;
+            }
+            
+            result = m_chassis_controller->resetChassisBoards(target_ip, slot_numbers, req_id);
+        } else if (body.contains("slot") && body["slot"].is_number_integer()) {
+            // 单槽位操作
+            int slot_number = body["slot"].get<int>();
+            result = m_chassis_controller->resetChassisBoard(target_ip, slot_number, req_id);
+        } else {
+            res.set_content("{\"error\":\"Either 'slot' (integer) or 'slots' (array) field is required\"}", "application/json");
+            res.status = 400;
+            return;
+        }
+
+        // 构建响应
+        json slot_results = json::array();
+        for (const auto& slot_result : result.slot_results) {
+            json slot_json = {
+                {"slot_number", slot_result.slot_number},
+                {"status", static_cast<int>(slot_result.status)},
+                {"status_text", [&]() {
+                    switch (slot_result.status) {
+                        case ChassisController::SlotStatus::SUCCESS:
+                            return "success";
+                        case ChassisController::SlotStatus::FAILED:
+                            return "failed";
+                        case ChassisController::SlotStatus::REQUEST_OPERATION:
+                            return "requested";
+                        default:
+                            return "no_operation";
+                    }
+                }()}
+            };
+            slot_results.push_back(slot_json);
+        }
+
+        json response = {
+            {"api_version", 1},
+            {"status", "success"},
+            {"data", {
+                {"operation", "reset"},
+                {"target_ip", target_ip},
+                {"request_id", req_id},
+                {"result", static_cast<int>(result.result)},
+                {"result_text", [&]() {
+                    switch (result.result) {
+                        case ChassisController::OperationResult::SUCCESS:
+                            return "success";
+                        case ChassisController::OperationResult::PARTIAL_SUCCESS:
+                            return "partial_success";
+                        case ChassisController::OperationResult::NETWORK_ERROR:
+                            return "network_error";
+                        case ChassisController::OperationResult::TIMEOUT_ERROR:
+                            return "timeout_error";
+                        case ChassisController::OperationResult::INVALID_RESPONSE:
+                            return "invalid_response";
+                        default:
+                            return "unknown_error";
+                    }
+                }()},
+                {"message", result.message},
+                {"slot_results", slot_results},
+                {"raw_response_hex", TcpClient::binaryToHex(result.raw_response)}
+            }}
+        };
+
+        res.set_content(response.dump(2), "application/json");
+        res.status = 200;
+        LogManager::getLogger()->info("Successfully processed chassis reset request for target_ip: {}", target_ip);
+
+    } catch (const json::parse_error& e) {
+        res.set_content("{\"error\":\"Invalid JSON format\"}", "application/json");
+        res.status = 400;
+        LogManager::getLogger()->error("JSON parse error in handle_chassis_reset: {}", e.what());
+    } catch (const std::exception& e) {
+        res.set_content("{\"error\":\"Failed to execute chassis reset\"}", "application/json");
+        res.status = 500;
+        LogManager::getLogger()->error("Exception in handle_chassis_reset: {}", e.what());
+    }
+}
+
+void HttpServer::handle_chassis_power_off(const httplib::Request& req, httplib::Response& res) {
+    try {
+        if (!m_chassis_controller) {
+            res.set_content("{\"error\":\"Chassis controller not available\"}", "application/json");
+            res.status = 500;
+            LogManager::getLogger()->error("Chassis controller not available for power-off request");
+            return;
+        }
+
+        json body = json::parse(req.body);
+
+        // 验证必需的字段
+        if (!body.contains("target_ip") || !body["target_ip"].is_string()) {
+            res.set_content("{\"error\":\"'target_ip' field is required and must be a string\"}", "application/json");
+            res.status = 400;
+            return;
+        }
+
+        std::string target_ip = body["target_ip"].get<std::string>();
+        int req_id = body.value("request_id", 0);
+
+        ChassisController::OperationResponse result;
+        
+        if (body.contains("slots") && body["slots"].is_array()) {
+            // 多槽位操作
+            std::vector<int> slot_numbers;
+            for (const auto& slot : body["slots"]) {
+                if (slot.is_number_integer()) {
+                    slot_numbers.push_back(slot.get<int>());
+                }
+            }
+            
+            if (slot_numbers.empty()) {
+                res.set_content("{\"error\":\"No valid slot numbers provided\"}", "application/json");
+                res.status = 400;
+                return;
+            }
+            
+            result = m_chassis_controller->powerOffChassisBoards(target_ip, slot_numbers, req_id);
+        } else if (body.contains("slot") && body["slot"].is_number_integer()) {
+            // 单槽位操作
+            int slot_number = body["slot"].get<int>();
+            result = m_chassis_controller->powerOffChassisBoard(target_ip, slot_number, req_id);
+        } else {
+            res.set_content("{\"error\":\"Either 'slot' (integer) or 'slots' (array) field is required\"}", "application/json");
+            res.status = 400;
+            return;
+        }
+
+        // 构建响应（复用reset的响应格式）
+        json slot_results = json::array();
+        for (const auto& slot_result : result.slot_results) {
+            json slot_json = {
+                {"slot_number", slot_result.slot_number},
+                {"status", static_cast<int>(slot_result.status)},
+                {"status_text", [&]() {
+                    switch (slot_result.status) {
+                        case ChassisController::SlotStatus::SUCCESS:
+                            return "success";
+                        case ChassisController::SlotStatus::FAILED:
+                            return "failed";
+                        case ChassisController::SlotStatus::REQUEST_OPERATION:
+                            return "requested";
+                        default:
+                            return "no_operation";
+                    }
+                }()}
+            };
+            slot_results.push_back(slot_json);
+        }
+
+        json response = {
+            {"api_version", 1},
+            {"status", "success"},
+            {"data", {
+                {"operation", "power_off"},
+                {"target_ip", target_ip},
+                {"request_id", req_id},
+                {"result", static_cast<int>(result.result)},
+                {"result_text", [&]() {
+                    switch (result.result) {
+                        case ChassisController::OperationResult::SUCCESS:
+                            return "success";
+                        case ChassisController::OperationResult::PARTIAL_SUCCESS:
+                            return "partial_success";
+                        case ChassisController::OperationResult::NETWORK_ERROR:
+                            return "network_error";
+                        case ChassisController::OperationResult::TIMEOUT_ERROR:
+                            return "timeout_error";
+                        case ChassisController::OperationResult::INVALID_RESPONSE:
+                            return "invalid_response";
+                        default:
+                            return "unknown_error";
+                    }
+                }()},
+                {"message", result.message},
+                {"slot_results", slot_results},
+                {"raw_response_hex", TcpClient::binaryToHex(result.raw_response)}
+            }}
+        };
+
+        res.set_content(response.dump(2), "application/json");
+        res.status = 200;
+        LogManager::getLogger()->info("Successfully processed chassis power-off request for target_ip: {}", target_ip);
+
+    } catch (const json::parse_error& e) {
+        res.set_content("{\"error\":\"Invalid JSON format\"}", "application/json");
+        res.status = 400;
+        LogManager::getLogger()->error("JSON parse error in handle_chassis_power_off: {}", e.what());
+    } catch (const std::exception& e) {
+        res.set_content("{\"error\":\"Failed to execute chassis power-off\"}", "application/json");
+        res.status = 500;
+        LogManager::getLogger()->error("Exception in handle_chassis_power_off: {}", e.what());
+    }
+}
+
+void HttpServer::handle_chassis_power_on(const httplib::Request& req, httplib::Response& res) {
+    try {
+        if (!m_chassis_controller) {
+            res.set_content("{\"error\":\"Chassis controller not available\"}", "application/json");
+            res.status = 500;
+            LogManager::getLogger()->error("Chassis controller not available for power-on request");
+            return;
+        }
+
+        json body = json::parse(req.body);
+
+        // 验证必需的字段
+        if (!body.contains("target_ip") || !body["target_ip"].is_string()) {
+            res.set_content("{\"error\":\"'target_ip' field is required and must be a string\"}", "application/json");
+            res.status = 400;
+            return;
+        }
+
+        std::string target_ip = body["target_ip"].get<std::string>();
+        int req_id = body.value("request_id", 0);
+
+        ChassisController::OperationResponse result;
+        
+        if (body.contains("slots") && body["slots"].is_array()) {
+            // 多槽位操作
+            std::vector<int> slot_numbers;
+            for (const auto& slot : body["slots"]) {
+                if (slot.is_number_integer()) {
+                    slot_numbers.push_back(slot.get<int>());
+                }
+            }
+            
+            if (slot_numbers.empty()) {
+                res.set_content("{\"error\":\"No valid slot numbers provided\"}", "application/json");
+                res.status = 400;
+                return;
+            }
+            
+            result = m_chassis_controller->powerOnChassisBoards(target_ip, slot_numbers, req_id);
+        } else if (body.contains("slot") && body["slot"].is_number_integer()) {
+            // 单槽位操作
+            int slot_number = body["slot"].get<int>();
+            result = m_chassis_controller->powerOnChassisBoard(target_ip, slot_number, req_id);
+        } else {
+            res.set_content("{\"error\":\"Either 'slot' (integer) or 'slots' (array) field is required\"}", "application/json");
+            res.status = 400;
+            return;
+        }
+
+        // 构建响应（复用reset的响应格式）
+        json slot_results = json::array();
+        for (const auto& slot_result : result.slot_results) {
+            json slot_json = {
+                {"slot_number", slot_result.slot_number},
+                {"status", static_cast<int>(slot_result.status)},
+                {"status_text", [&]() {
+                    switch (slot_result.status) {
+                        case ChassisController::SlotStatus::SUCCESS:
+                            return "success";
+                        case ChassisController::SlotStatus::FAILED:
+                            return "failed";
+                        case ChassisController::SlotStatus::REQUEST_OPERATION:
+                            return "requested";
+                        default:
+                            return "no_operation";
+                    }
+                }()}
+            };
+            slot_results.push_back(slot_json);
+        }
+
+        json response = {
+            {"api_version", 1},
+            {"status", "success"},
+            {"data", {
+                {"operation", "power_on"},
+                {"target_ip", target_ip},
+                {"request_id", req_id},
+                {"result", static_cast<int>(result.result)},
+                {"result_text", [&]() {
+                    switch (result.result) {
+                        case ChassisController::OperationResult::SUCCESS:
+                            return "success";
+                        case ChassisController::OperationResult::PARTIAL_SUCCESS:
+                            return "partial_success";
+                        case ChassisController::OperationResult::NETWORK_ERROR:
+                            return "network_error";
+                        case ChassisController::OperationResult::TIMEOUT_ERROR:
+                            return "timeout_error";
+                        case ChassisController::OperationResult::INVALID_RESPONSE:
+                            return "invalid_response";
+                        default:
+                            return "unknown_error";
+                    }
+                }()},
+                {"message", result.message},
+                {"slot_results", slot_results},
+                {"raw_response_hex", TcpClient::binaryToHex(result.raw_response)}
+            }}
+        };
+
+        res.set_content(response.dump(2), "application/json");
+        res.status = 200;
+        LogManager::getLogger()->info("Successfully processed chassis power-on request for target_ip: {}", target_ip);
+
+    } catch (const json::parse_error& e) {
+        res.set_content("{\"error\":\"Invalid JSON format\"}", "application/json");
+        res.status = 400;
+        LogManager::getLogger()->error("JSON parse error in handle_chassis_power_on: {}", e.what());
+    } catch (const std::exception& e) {
+        res.set_content("{\"error\":\"Failed to execute chassis power-on\"}", "application/json");
+        res.status = 500;
+        LogManager::getLogger()->error("Exception in handle_chassis_power_on: {}", e.what());
     }
 }

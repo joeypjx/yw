@@ -52,76 +52,41 @@ struct NodeResponse {
 };
 
 class ResourceManager {
-public:
-    ResourceManager(std::shared_ptr<ResourceStorage> resource_storage, 
-                   std::shared_ptr<NodeStorage> node_storage,
-                   std::shared_ptr<BMCStorage> bmc_storage);
-    ~ResourceManager() = default;
-
-    /**
-     * @brief 获取节点历史指标数据
-     * @param request 请求参数
-     * @return 历史指标响应
-     */
-    HistoricalMetricsResponse getHistoricalMetrics(const HistoricalMetricsRequest& request);
-
-    /**
-     * @brief 获取节点历史BMC数据
-     * @param request 请求参数
-     * @return 历史BMC响应
-     */
-    HistoricalBMCResponse getHistoricalBMC(const HistoricalBMCRequest& request);
-
-    /**
-     * @brief 获取所有节点的当前指标数据
-     * @return 节点指标响应
-     */
-    NodeMetricsResponse getCurrentMetrics();
-    
-    /**
-     * @brief 获取分页的节点指标数据
-     * @param page 页码 (从1开始)
-     * @param page_size 每页大小
-     * @return 分页节点指标响应
-     */
-    PaginatedNodeMetricsResponse getPaginatedCurrentMetrics(int page = 1, int page_size = 20);
-
-    /**
-     * @brief 获取所有节点列表数据
-     * @return 节点列表响应
-     */
-    NodesListResponse getNodesList();
-
-    /**
-     * @brief 获取指定节点的数据
-     * @param host_ip 节点的IP地址
-     * @return 节点响应
-     */
-    NodeResponse getNode(const std::string& host_ip);
-
-    /**
-     * @brief 解析metrics参数字符串为vector
-     * @param metrics_param 逗号分隔的指标类型字符串
-     * @return 指标类型vector
-     */
-    std::vector<std::string> parseMetricsParam(const std::string& metrics_param);
-
-    /**
-     * @brief 验证请求参数
-     * @param request 请求参数
-     * @return 验证结果，如果失败返回错误消息
-     */
-    std::pair<bool, std::string> validateRequest(const HistoricalMetricsRequest& request);
-
-    /**
-     * @brief 将历史数据转换为JSON响应格式
-     * @param response 历史指标响应
-     * @return JSON格式的响应
-     */
-    nlohmann::json formatResponse(const HistoricalMetricsResponse& response);
-
 private:
     std::shared_ptr<ResourceStorage> m_resource_storage;
     std::shared_ptr<NodeStorage> m_node_storage;
     std::shared_ptr<BMCStorage> m_bmc_storage;
+
+    // 私有方法
+    std::pair<bool, std::string> validateRequest(const HistoricalMetricsRequest& request);
+    nlohmann::json convertNodeToJson(const std::shared_ptr<NodeData>& node);
+
+public:
+    ResourceManager(std::shared_ptr<ResourceStorage> resource_storage, 
+                   std::shared_ptr<NodeStorage> node_storage,
+                   std::shared_ptr<BMCStorage> bmc_storage);
+    
+    // 历史指标查询
+    HistoricalMetricsResponse getHistoricalMetrics(const HistoricalMetricsRequest& request);
+    
+    // 历史BMC数据查询
+    HistoricalBMCResponse getHistoricalBMC(const HistoricalBMCRequest& request);
+    
+    // 指标参数解析
+    std::vector<std::string> parseMetricsParam(const std::string& metrics_param);
+    
+    // 当前指标查询
+    NodeMetricsResponse getCurrentMetrics();
+    
+    // 分页当前指标查询
+    PaginatedNodeMetricsResponse getPaginatedCurrentMetrics(int page, int page_size);
+    
+    // 节点列表查询
+    NodesListResponse getNodesList();
+    
+    // 单个节点查询
+    NodeResponse getNode(const std::string& host_ip);
+    
+    // 将历史数据转换为JSON响应格式
+    nlohmann::json formatResponse(const HistoricalMetricsResponse& response);
 };

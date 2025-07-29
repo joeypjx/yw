@@ -6,11 +6,23 @@ find_package(Threads REQUIRED)
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# 添加调试信息
+set(CMAKE_BUILD_TYPE Debug)
+set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -g -O0")
+
 include_directories(include)
 include_directories(include/resource)
+include_directories(include/asio/asio/include)
+include_directories(include/websocketpp)
 
 # Use local nlohmann/json header file
 # json.hpp is included in the include/ directory
+
+# Use local websocketpp library
+# websocketpp is header-only and included in the include/websocketpp directory
+
+# Use local Asio library (standalone version)
+# Asio headers are in include/asio/asio/include/
 
 # Find TDengine library
 find_library(TAOS_LIBRARY 
@@ -81,6 +93,9 @@ add_executable(${PROJECT_NAME} ${SOURCES} ${HEADERS})
 # Link libraries
 target_link_libraries(${PROJECT_NAME} ${TAOS_LIBRARY} ${MYSQL_LIBRARY} ${UUID_LIBRARY} Threads::Threads)
 target_include_directories(${PROJECT_NAME} PRIVATE ${TAOS_INCLUDE_DIR} ${MYSQL_INCLUDE_DIR})
+
+# Define ASIO_STANDALONE for websocketpp to use standalone Asio
+target_compile_definitions(${PROJECT_NAME} PRIVATE ASIO_STANDALONE)
 
 
 

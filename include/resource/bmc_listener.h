@@ -53,7 +53,7 @@ typedef struct __attribute__((packed))
 int bmc_listener_init(const char* group_ip, uint16_t port);
 void bmc_listener_start();
 void bmc_listener_stop();
-void bmc_listener_set_callback(const std::function<void(const std::string&)>& callback);
+void bmc_listener_set_callback(const std::function<void(const UdpInfo&)>& callback);
 void bmc_listener_cleanup();
 
 #endif // BMC_LISTENER_H

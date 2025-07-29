@@ -17,8 +17,12 @@
         "gpu": [
             {
                 "index": "int，gpu设备序号",
-                "name": "string，gpu设备名称",
+                "name": "string，gpu设备名称"
             }
-        ]
+        ],
+        "ipmb_address": "56，int，ipmb地址",
+        "module_type": "2310，int，模块类型",
+        "bmc_company": "1813，int，bmc公司",
+        "bmc_version": "V2.0.0，string，bmc版本"
     }
 }

@@ -163,48 +163,39 @@ bool ResourceStorage::executeQuery(const std::string& sql) {
     return true;
 }
 
-bool ResourceStorage::insertResourceData(const std::string& hostIp, const nlohmann::json& resourceData) {
+bool ResourceStorage::insertResourceData(const node::ResourceInfo& resourceData) {
     if (!m_connected) {
         LogManager::getLogger()->error("Not connected to TDengine");
         return false;
     }
 
+    std::string hostIp = resourceData.host_ip;
     bool success = true;
 
-    // LogManager::getLogger()->info("Inserting resource data for host: {}", resourceData.dump(4));
+    // LogManager::getLogger()->info("Inserting resource data for host: {}", hostIp);
 
     // Insert CPU data
-    if (resourceData.contains("cpu")) {
-        success &= insertCpuData(hostIp, resourceData["cpu"]);
-    }
+    success &= insertCpuData(hostIp, resourceData.resource.cpu);
 
     // Insert Memory data
-    if (resourceData.contains("memory")) {
-        success &= insertMemoryData(hostIp, resourceData["memory"]);
-    }
+    success &= insertMemoryData(hostIp, resourceData.resource.memory);
 
     // Insert Network data
-    if (resourceData.contains("network")) {
-        success &= insertNetworkData(hostIp, resourceData["network"]);
-    }
+    success &= insertNetworkData(hostIp, resourceData.resource.network);
 
     // Insert Disk data
-    if (resourceData.contains("disk")) {
-        success &= insertDiskData(hostIp, resourceData["disk"]);
-    }
+    success &= insertDiskData(hostIp, resourceData.resource.disk);
 
     // Insert GPU data
-    if (resourceData.contains("gpu")) {
-        success &= insertGpuData(hostIp, resourceData["gpu"]);
-    }
+    success &= insertGpuData(hostIp, resourceData.resource.gpu);
 
     // Insert Node data
-    success &= insertNodeData(hostIp, resourceData);
+    success &= insertNodeData(hostIp, resourceData.resource);
 
     return success;
 }
 
-bool ResourceStorage::insertCpuData(const std::string& hostIp, const nlohmann::json& cpuData) {
+bool ResourceStorage::insertCpuData(const std::string& hostIp, const node::CpuInfo& cpuData) {
     // Create table if not exists (clean host IP for valid table names)
     std::string tableName = cleanForTableName(hostIp);
     std::string createTableSQL = "CREATE TABLE IF NOT EXISTS cpu_" + tableName + " USING cpu TAGS ('" + hostIp + "')";
@@ -219,21 +210,21 @@ bool ResourceStorage::insertCpuData(const std::string& hostIp, const nlohmann::j
     std::ostringstream oss;
     oss << "INSERT INTO cpu_" << tableName << " VALUES ("
         << timestamp << ", "
-        << cpuData.value("usage_percent", 0.0) << ", "
-        << cpuData.value("load_avg_1m", 0.0) << ", "
-        << cpuData.value("load_avg_5m", 0.0) << ", "
-        << cpuData.value("load_avg_15m", 0.0) << ", "
-        << cpuData.value("core_count", 0) << ", "
-        << cpuData.value("core_allocated", 0) << ", "
-        << cpuData.value("temperature", 0.0) << ", "
-        << cpuData.value("voltage", 0.0) << ", "
-        << cpuData.value("current", 0.0) << ", "
-        << cpuData.value("power", 0.0) << ")";
+        << cpuData.usage_percent << ", "
+        << cpuData.load_avg_1m << ", "
+        << cpuData.load_avg_5m << ", "
+        << cpuData.load_avg_15m << ", "
+        << cpuData.core_count << ", "
+        << cpuData.core_allocated << ", "
+        << cpuData.temperature << ", "
+        << cpuData.voltage << ", "
+        << cpuData.current << ", "
+        << cpuData.power << ")";
 
     return executeQuery(oss.str());
 }
 
-bool ResourceStorage::insertMemoryData(const std::string& hostIp, const nlohmann::json& memoryData) {
+bool ResourceStorage::insertMemoryData(const std::string& hostIp, const node::MemoryInfo& memoryData) {
     // Create table if not exists (clean host IP for valid table names)
     std::string tableName = cleanForTableName(hostIp);
     std::string createTableSQL = "CREATE TABLE IF NOT EXISTS memory_" + tableName + " USING memory TAGS ('" + hostIp + "')";
@@ -248,23 +239,18 @@ bool ResourceStorage::insertMemoryData(const std::string& hostIp, const nlohmann
     std::ostringstream oss;
     oss << "INSERT INTO memory_" << tableName << " VALUES ("
         << timestamp << ", "
-        << memoryData.value("total", static_cast<int64_t>(0)) << ", "
-        << memoryData.value("used", static_cast<int64_t>(0)) << ", "
-        << memoryData.value("free", static_cast<int64_t>(0)) << ", "
-        << memoryData.value("usage_percent", 0.0) << ")";
+        << memoryData.total << ", "
+        << memoryData.used << ", "
+        << memoryData.free << ", "
+        << memoryData.usage_percent << ")";
 
     return executeQuery(oss.str());
 }
 
-bool ResourceStorage::insertNetworkData(const std::string& hostIp, const nlohmann::json& networkData) {
-    if (!networkData.is_array()) {
-        LogManager::getLogger()->error("Network data should be an array");
-        return false;
-    }
-
+bool ResourceStorage::insertNetworkData(const std::string& hostIp, const std::vector<node::NetworkInfo>& networkData) {
     bool success = true;
     for (const auto& interface : networkData) {
-        std::string interfaceName = interface.value("interface", "unknown");
+        std::string interfaceName = interface.interface;
         std::string hostTableName = cleanForTableName(hostIp);
         std::string interfaceTableName = cleanForTableName(interfaceName);
         std::string tableName = "network_" + hostTableName + "_" + interfaceTableName;
@@ -283,14 +269,14 @@ bool ResourceStorage::insertNetworkData(const std::string& hostIp, const nlohman
         std::ostringstream oss;
         oss << "INSERT INTO " << tableName << " VALUES ("
             << timestamp << ", "
-            << interface.value("rx_bytes", static_cast<int64_t>(0)) << ", "
-            << interface.value("tx_bytes", static_cast<int64_t>(0)) << ", "
-            << interface.value("rx_packets", static_cast<int64_t>(0)) << ", "
-            << interface.value("tx_packets", static_cast<int64_t>(0)) << ", "
-            << interface.value("rx_errors", static_cast<int64_t>(0)) << ", "
-            << interface.value("tx_errors", static_cast<int64_t>(0)) << ", "
-            << interface.value("rx_rate", static_cast<int64_t>(0)) << ", "
-            << interface.value("tx_rate", static_cast<int64_t>(0)) << ")";
+            << interface.rx_bytes << ", "
+            << interface.tx_bytes << ", "
+            << interface.rx_packets << ", "
+            << interface.tx_packets << ", "
+            << interface.rx_errors << ", "
+            << interface.tx_errors << ", "
+            << interface.rx_rate << ", "
+            << interface.tx_rate << ")";
 
         if (!executeQuery(oss.str())) {
             success = false;
@@ -300,16 +286,11 @@ bool ResourceStorage::insertNetworkData(const std::string& hostIp, const nlohman
     return success;
 }
 
-bool ResourceStorage::insertDiskData(const std::string& hostIp, const nlohmann::json& diskData) {
-    if (!diskData.is_array()) {
-        LogManager::getLogger()->error("Disk data should be an array");
-        return false;
-    }
-
+bool ResourceStorage::insertDiskData(const std::string& hostIp, const std::vector<node::DiskInfo>& diskData) {
     bool success = true;
     for (const auto& disk : diskData) {
-        std::string device = disk.value("device", "unknown");
-        std::string mountPoint = disk.value("mount_point", "unknown");
+        std::string device = disk.device;
+        std::string mountPoint = disk.mount_point;
         std::string hostTableName = cleanForTableName(hostIp);
         std::string deviceTableName = cleanForTableName(device);
         std::string tableName = "disk_" + hostTableName + "_" + deviceTableName;
@@ -328,10 +309,10 @@ bool ResourceStorage::insertDiskData(const std::string& hostIp, const nlohmann::
         std::ostringstream oss;
         oss << "INSERT INTO " << tableName << " VALUES ("
             << timestamp << ", "
-            << disk.value("total", static_cast<int64_t>(0)) << ", "
-            << disk.value("used", static_cast<int64_t>(0)) << ", "
-            << disk.value("free", static_cast<int64_t>(0)) << ", "
-            << disk.value("usage_percent", 0.0) << ")";
+            << disk.total << ", "
+            << disk.used << ", "
+            << disk.free << ", "
+            << disk.usage_percent << ")";
 
         if (!executeQuery(oss.str())) {
             success = false;
@@ -341,16 +322,11 @@ bool ResourceStorage::insertDiskData(const std::string& hostIp, const nlohmann::
     return success;
 }
 
-bool ResourceStorage::insertGpuData(const std::string& hostIp, const nlohmann::json& gpuData) {
-    if (!gpuData.is_array()) {
-        LogManager::getLogger()->error("GPU data should be an array");
-        return false;
-    }
-
+bool ResourceStorage::insertGpuData(const std::string& hostIp, const std::vector<node::GpuResourceInfo>& gpuData) {
     bool success = true;
     for (const auto& gpu : gpuData) {
-        int gpuIndex = gpu.value("index", 0);
-        std::string gpuName = gpu.value("name", "unknown");
+        int gpuIndex = gpu.index;
+        std::string gpuName = gpu.name;
         std::string hostTableName = cleanForTableName(hostIp);
         std::string tableName = "gpu_" + hostTableName + "_" + std::to_string(gpuIndex);
         
@@ -368,12 +344,12 @@ bool ResourceStorage::insertGpuData(const std::string& hostIp, const nlohmann::j
         std::ostringstream oss;
         oss << "INSERT INTO " << tableName << " VALUES ("
             << timestamp << ", "
-            << gpu.value("compute_usage", 0.0) << ", "
-            << gpu.value("mem_usage", 0.0) << ", "
-            << gpu.value("mem_used", static_cast<int64_t>(0)) << ", "
-            << gpu.value("mem_total", static_cast<int64_t>(0)) << ", "
-            << gpu.value("temperature", 0.0) << ", "
-            << gpu.value("power", 0.0) << ")";
+            << gpu.compute_usage << ", "
+            << gpu.mem_usage << ", "
+            << gpu.mem_used << ", "
+            << gpu.mem_total << ", "
+            << gpu.temperature << ", "
+            << gpu.power << ")";
 
         if (!executeQuery(oss.str())) {
             success = false;
@@ -383,7 +359,7 @@ bool ResourceStorage::insertGpuData(const std::string& hostIp, const nlohmann::j
     return success;
 }
 
-bool ResourceStorage::insertNodeData(const std::string& hostIp, const nlohmann::json& resourceData) {
+bool ResourceStorage::insertNodeData(const std::string& hostIp, const node::ResourceData& resourceData) {
     // Create table if not exists (clean host IP for valid table names)
     std::string tableName = cleanForTableName(hostIp);
     std::string createTableSQL = "CREATE TABLE IF NOT EXISTS node_" + tableName + " USING node TAGS ('" + hostIp + "')";
@@ -398,8 +374,8 @@ bool ResourceStorage::insertNodeData(const std::string& hostIp, const nlohmann::
     std::ostringstream oss;
     oss << "INSERT INTO node_" << tableName << " VALUES ("
         << timestamp << ", "
-        << resourceData.value("gpu_allocated", 0) << ", "
-        << resourceData.value("gpu_num", 0) << ")";
+        << resourceData.gpu_allocated << ", "
+        << resourceData.gpu_num << ")";
 
     return executeQuery(oss.str());
 }
@@ -619,6 +595,22 @@ NodeResourceData ResourceStorage::getNodeResourceData(const std::string& hostIp)
             
             nodeData.gpus.push_back(gpuData);
         }
+
+        // 获取Sensor数据 - 使用LAST_ROW和GROUP BY优化
+        std::string sensorSql = "SELECT LAST_ROW(ts) as ts, LAST_ROW(value) as value, LAST_ROW(alarm_type) as alarm_type, sequence, type, name FROM sensor WHERE host_ip = '" + hostIp + "' GROUP BY sequence, type, name";
+        auto sensorResults = executeQuerySQL(sensorSql);
+        
+        for (const auto& result : sensorResults) {
+            NodeResourceData::SensorData sensorData;
+            sensorData.sequence = result.labels.count("sequence") ? std::stoi(result.labels.at("sequence")) : 0;
+            sensorData.type = result.labels.count("type") ? std::stoi(result.labels.at("type")) : 0;
+            sensorData.name = result.labels.count("name") ? result.labels.at("name") : "Unknown Sensor";
+            sensorData.value = result.metrics.count("value") ? result.metrics.at("value") : 0.0;
+            sensorData.alarm_type = result.metrics.count("alarm_type") ? result.metrics.at("alarm_type") : 0;
+            sensorData.timestamp = result.timestamp;
+            
+            nodeData.sensors.push_back(sensorData);
+        }
         
         LogManager::getLogger()->debug("ResourceStorage: Retrieved resource data for node {}: CPU={}, Memory={}, Disks={}, Networks={}, GPUs={}", 
                                      hostIp, nodeData.cpu.has_data, nodeData.memory.has_data, 
@@ -708,6 +700,19 @@ nlohmann::json NodeResourceData::to_json() const {
         gpuJson["power"] = gpu.power;
         gpuJson["timestamp"] = std::chrono::duration_cast<std::chrono::milliseconds>(gpu.timestamp.time_since_epoch()).count();
         j["gpu"].push_back(gpuJson);
+    }
+    
+    // Sensor data
+    j["sensor"] = nlohmann::json::array();
+    for (const auto& sensor : sensors) {
+        nlohmann::json sensorJson;
+        sensorJson["sequence"] = sensor.sequence;
+        sensorJson["type"] = sensor.type;
+        sensorJson["name"] = sensor.name;
+        sensorJson["value"] = sensor.value;
+        sensorJson["alarm_type"] = sensor.alarm_type;
+        sensorJson["timestamp"] = std::chrono::duration_cast<std::chrono::milliseconds>(sensor.timestamp.time_since_epoch()).count();
+        j["sensor"].push_back(sensorJson);
     }
     
     return j;

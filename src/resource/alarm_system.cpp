@@ -11,6 +11,7 @@
 #include "alarm_manager.h"
 #include "bmc_listener.h"
 #include "bmc_storage.h"
+#include "websocket_server.h"
 #include "json.hpp"
 
 #include <iostream>
@@ -95,6 +96,9 @@ void AlarmSystem::stop() {
     }
     if (alarm_rule_engine_) {
         alarm_rule_engine_->stop();
+    }
+    if (websocket_server_) {
+        websocket_server_->stop();
     }
     
     // 停止BMC监听器
@@ -347,6 +351,32 @@ bool AlarmSystem::initializeServices() {
                 alarm_manager_->processAlarmEvent(event);
             }
             
+            // 通过WebSocket广播告警事件
+            if (websocket_server_) {
+                try {
+                    // 将告警事件转换为JSON格式
+                    nlohmann::json alarm_json = {
+                        {"type", "alarm_event"},
+                        {"fingerprint", event.fingerprint},
+                        {"status", event.status},
+                        {"starts_at", AlarmRuleEngine::formatTimestamp(event.starts_at)},
+                        {"ends_at", event.status == "resolved" ? AlarmRuleEngine::formatTimestamp(event.ends_at) : ""},
+                        {"generator_url", event.generator_url},
+                        {"labels", event.labels},
+                        {"annotations", event.annotations}
+                    };
+                    
+                    // 广播告警事件
+                    websocket_server_->broadcast(alarm_json.dump());
+                    
+                    // 从labels中获取告警名称用于日志
+                    std::string alert_name = event.labels.count("alertname") ? event.labels.at("alertname") : "unknown";
+                    LogManager::getLogger()->debug("告警事件已通过WebSocket广播: {}", alert_name);
+                } catch (const std::exception& e) {
+                    LogManager::getLogger()->error("WebSocket广播告警失败: {}", e.what());
+                }
+            }
+            
             // 调用用户设置的回调函数
             std::lock_guard<std::mutex> lock(callback_mutex_);
             if (alarm_event_callback_) {
@@ -380,19 +410,32 @@ bool AlarmSystem::initializeServices() {
         }
         
         // 设置BMC数据回调函数
-        bmc_listener_set_callback([this](const std::string& json_data) {
+        bmc_listener_set_callback([this](const UdpInfo& data) {
             LogManager::getLogger()->debug("收到BMC数据");
             
-            // 存储到数据库
+            // 直接存储BMC数据到数据库
             if (bmc_storage_) {
-                if (!bmc_storage_->storeBMCDataFromJson(json_data)) {
-                    LogManager::getLogger()->warn("BMC数据存储失败: {}", bmc_storage_->getLastError());
+                if (!bmc_storage_->storeBMCData(data)) {
+                    LogManager::getLogger()->warn("BMC数据存储失败");
+                }
+            }
+
+            // 存储到节点存储
+            if (node_storage_) {
+                if (!node_storage_->storeUDPInfo(data)) {
+                    LogManager::getLogger()->warn("节点存储失败");
                 }
             }
         });
         
         bmc_listener_start();
         LogManager::getLogger()->info("✅ BMC监听器启动成功");
+        
+        // 8. 初始化WebSocket服务器
+        LogManager::getLogger()->info("🔌 初始化WebSocket服务器...");
+        websocket_server_ = std::make_shared<WebSocketServer>();
+        websocket_server_->start(config_.websocket_port);
+        LogManager::getLogger()->info("✅ WebSocket服务器启动成功，端口: {}", config_.websocket_port);
         
         return true;
     } catch (const std::exception& e) {

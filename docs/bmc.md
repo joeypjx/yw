@@ -57,27 +57,8 @@ UdpBoardInfo board[14];//电源1/2，负载1-12
 uint16_t tail;//0xA55A
 }UdpInfo;
 
-#define AIR 0
-#if  AIR
-#define IPMBADDR(x) x*2             //用于计算本板ipmb地址公式
-#define BOARD_S1 0x52               //S1-S12 D1(S13) D2(S14) ipmb地址    
-#define BOARD_S2 0x54
-#define BOARD_S3 0x16
-#define BOARD_S4 0x58
-#define BOARD_S5 0x1a
-#define BOARD_S6 0x1c
-#define BOARD_S7 0x20
-#define BOARD_S8 0x5e
-#define BOARD_S9 0x62
-#define BOARD_S10 0x64
-#define BOARD_S11 0x26
-#define BOARD_S12 0x68
-#define BOARD_S13 0x2               //D1
-#define BOARD_S14 0x4               //D2
-#define FANBMC_ADDR 0x6
-#else
-#define IPMBADDR(x) x*2             //用于计算本板ipmb地址公式
-#define BOARD_S1 0x7c               //S1-S12 D1(S13) D2(S14) ipmb地址    
+ipmbaddr -> slotid
+#define BOARD_S1 0x7c               //slotid 1   
 #define BOARD_S2 0x7a
 #define BOARD_S3 0x38
 #define BOARD_S4 0x76
@@ -89,8 +70,5 @@ uint16_t tail;//0xA55A
 #define BOARD_S10 0x2a
 #define BOARD_S11 0x68
 #define BOARD_S12 0x26
-#define BOARD_S13 0x2               //D1
-#define BOARD_S14 0x4               //D2
-#define FANBMC_ADDR 0x6
-#endif
-#endif
+#define BOARD_S13 0x2               //D1 slotid 13
+#define BOARD_S14 0x4               //D2 slotid 14

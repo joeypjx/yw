@@ -21,6 +21,7 @@ class ResourceManager;
 class NodeStatusMonitor;
 class BMCListener;
 class BMCStorage;
+class WebSocketServer;
 struct AlarmEvent;
 
 /**
@@ -46,6 +47,9 @@ struct AlarmSystemConfig {
     // BMC监听配置
     std::string bmc_multicast_ip = "224.100.200.15";
     int bmc_multicast_port = 5715;
+    
+    // WebSocket服务器配置
+    int websocket_port = 8081;
     
     // 监控配置
     std::chrono::seconds evaluation_interval = std::chrono::seconds(3);
@@ -201,6 +205,7 @@ private:
     std::shared_ptr<NodeStatusMonitor> node_status_monitor_;
     std::shared_ptr<BMCListener> bmc_listener_;
     std::shared_ptr<BMCStorage> bmc_storage_;
+    std::shared_ptr<WebSocketServer> websocket_server_;
     
     
     // 时间记录

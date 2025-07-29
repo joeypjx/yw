@@ -7,6 +7,7 @@
 #include <chrono>
 #include <taos.h>
 #include "json.hpp"
+#include "node_model.h"
 
 // 查询结果结构
 struct QueryResult {
@@ -85,6 +86,17 @@ struct NodeResourceData {
         std::chrono::system_clock::time_point timestamp;
     };
     std::vector<GpuData> gpus;
+
+    // Sensor数据
+    struct SensorData {
+        int sequence = 0;
+        int type = 0;
+        std::string name;
+        double value = 0.0;
+        int alarm_type = 0;
+        std::chrono::system_clock::time_point timestamp;
+    };
+    std::vector<SensorData> sensors;
     
     nlohmann::json to_json() const;
 };
@@ -116,7 +128,8 @@ public:
     void disconnect();
     bool createDatabase(const std::string& dbName);
     bool createResourceTable();
-    bool insertResourceData(const std::string& hostIp, const nlohmann::json& resourceData);
+    // 插入资源数据
+    bool insertResourceData(const node::ResourceInfo& resourceData);
     
     // 查询接口
     std::vector<QueryResult> executeQuerySQL(const std::string& sql);
@@ -138,10 +151,10 @@ private:
 
     bool executeQuery(const std::string& sql);
     
-    bool insertCpuData(const std::string& hostIp, const nlohmann::json& cpuData);
-    bool insertMemoryData(const std::string& hostIp, const nlohmann::json& memoryData);
-    bool insertNetworkData(const std::string& hostIp, const nlohmann::json& networkData);
-    bool insertDiskData(const std::string& hostIp, const nlohmann::json& diskData);
-    bool insertGpuData(const std::string& hostIp, const nlohmann::json& gpuData);
-    bool insertNodeData(const std::string& hostIp, const nlohmann::json& resourceData);
+    bool insertCpuData(const std::string& hostIp, const node::CpuInfo& cpuData);
+    bool insertMemoryData(const std::string& hostIp, const node::MemoryInfo& memoryData);
+    bool insertNetworkData(const std::string& hostIp, const std::vector<node::NetworkInfo>& networkData);
+    bool insertDiskData(const std::string& hostIp, const std::vector<node::DiskInfo>& diskData);
+    bool insertGpuData(const std::string& hostIp, const std::vector<node::GpuResourceInfo>& gpuData);
+    bool insertNodeData(const std::string& hostIp, const node::ResourceData& resourceData);
 };

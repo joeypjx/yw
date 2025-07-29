@@ -28,8 +28,10 @@
                     "tx_bytes": "uint64_t，发送字节",
                     "rx_packets": "uint64_t，接收报文",
                     "tx_packets": "uint64_t，发送报文",
-                    "rx_errors": "int，接收错误",
-                    "tx_errors": "int，发送错误"
+                    "rx_errors": "uint64_t，接收错误",
+                    "tx_errors": "uint64_t，发送错误",
+                    "rx_rate": "uint64_t，接收速率，字节/秒",
+                    "tx_rate": "uint64_t，发送速率，字节/秒"
                 }
             ],
             "disk":[
@@ -51,11 +53,11 @@
                     "mem_used": "uint64_t,显存已使用大小，字节",
                     "mem_total": "uint64_t，显存总大小，字节",
                     "temperature": "double, 温度, 摄氏度",
-                    "voltage": "double，电压，伏特",
-                    "current": "double，电流，安培",
                     "power": "double 功耗，瓦特"
                 }
-            ]
+            ],
+            "gpu_allocated": "int，已分配gpu数量",
+            "gpu_num": "int，gpu数量"
         },
         "component": [
             {

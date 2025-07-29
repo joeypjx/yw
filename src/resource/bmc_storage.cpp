@@ -1,5 +1,6 @@
 #include "../../include/resource/bmc_storage.h"
 #include "../../include/resource/log_manager.h"
+#include "../../include/resource/utils.h"
 #include "../../include/json.hpp"
 #include <taos.h>
 #include <sstream>
@@ -105,7 +106,8 @@ bool BMCStorage::createSensorSuperTable() {
             slot_id SMALLINT,
             sensor_seq SMALLINT,
             sensor_name NCHAR(16),
-            sensor_type SMALLINT
+            sensor_type SMALLINT,
+            host_ip NCHAR(16)
         )
     )";
     
@@ -178,7 +180,10 @@ bool BMCStorage::storeSensorData(const UdpInfo& udp_info) {
         
         for (int i = 0; i < 14; i++) {
             const auto& board = udp_info.board[i];
-            uint8_t slot_id = board.ipmbaddr;
+            uint8_t slot_id = Utils::ipmbaddrToSlotId(board.ipmbaddr);
+            
+            // 计算host_ip
+            std::string host_ip = Utils::calculateHostIP(static_cast<int>(udp_info.boxid), static_cast<int>(slot_id));
             
             int sensor_count = board.sensornum < 5 ? board.sensornum : 5;
             for (int j = 0; j < sensor_count; j++) {
@@ -199,7 +204,8 @@ bool BMCStorage::storeSensorData(const UdpInfo& udp_info) {
                           << static_cast<int>(slot_id) << ", "
                           << static_cast<int>(sensor.sensorseq) << ", "
                           << "'" << sensor_name << "', "
-                          << static_cast<int>(sensor.sensortype) << ")";
+                          << static_cast<int>(sensor.sensortype) << ", "
+                          << "'" << host_ip << "')";
                 
                 if (!executeSql(create_sql.str())) {
                     continue;
@@ -295,8 +301,11 @@ bool BMCStorage::storeBMCDataFromJson(const string& json_data) {
         // 存储传感器数据
         auto boards = j["boards"];
         for (const auto& board : boards) {
-            uint8_t slot_id = board["ipmb_address"];
+            uint8_t slot_id =  Utils::ipmbaddrToSlotId(board["ipmb_address"]);
             auto sensors = board["sensors"];
+            
+            // 计算host_ip
+            std::string host_ip = Utils::calculateHostIP(static_cast<int>(box_id), static_cast<int>(slot_id));
             
             for (const auto& sensor : sensors) {
                 uint8_t sensor_seq = sensor["sequence"];
@@ -316,7 +325,8 @@ bool BMCStorage::storeBMCDataFromJson(const string& json_data) {
                           << static_cast<int>(slot_id) << ", "
                           << static_cast<int>(sensor_seq) << ", "
                           << "'" << sensor_name << "', "
-                          << static_cast<int>(sensor_type) << ")";
+                          << static_cast<int>(sensor_type) << ", "
+                          << "'" << host_ip << "')";
                 
                 if (executeSql(create_sql.str())) {
                     // 插入数据

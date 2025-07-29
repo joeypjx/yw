@@ -252,7 +252,11 @@
         "slot_id": 1,
         "srio_id": 5,
         "status": "online",
-        "updated_at": 1750122059
+        "updated_at": 1750122059,
+        "ipmb_address": 124,
+        "module_type": 1,
+        "bmc_company": 1,
+        "bmc_version": "1.0.0"
       }
     ]
   },
@@ -287,11 +291,57 @@
     "slot_id": 1,
     "srio_id": 5,
     "status": "online",
-    "updated_at": 1750122059
+    "updated_at": 1750122059,
+    "ipmb_address": 124,
+    "module_type": 1,
+    "bmc_company": 1,
+    "bmc_version": "1.0.0"
   },
   "status": "success"
 }
 ```
+
+**字段详细说明:**
+
+##### 基础节点信息
+| 字段名 | 类型 | 说明 |
+|-------|------|------|
+| `host_ip` | String | 节点IP地址，唯一标识节点 |
+| `hostname` | String | 节点主机名 |
+| `box_id` | Integer | 机箱号，用于标识物理机箱 |
+| `slot_id` | Integer | 槽位号，标识节点在机箱中的位置 |
+| `cpu_id` | Integer | CPU号，标识CPU单元 |
+| `srio_id` | Integer | SRIO号，用于高速互连 |
+| `service_port` | Integer | 服务端口号 |
+| `box_type` | String | 机箱类型（如：计算I型） |
+| `board_type` | String | 板卡类型（如：GPU） |
+| `cpu_type` | String | CPU型号和规格 |
+| `cpu_arch` | String | CPU架构（如：aarch64, x86_64） |
+| `os_type` | String | 操作系统类型和版本 |
+| `resource_type` | String | 资源类型（如：GPU I） |
+| `status` | String | 节点在线状态（online/offline） |
+| `created_at` | Integer | 节点创建时间戳（Unix时间戳） |
+| `updated_at` | Integer | 最后更新时间戳（Unix时间戳） |
+| `id` | Integer | 节点ID，与box_id相同 |
+
+##### BMC管理信息
+| 字段名 | 类型 | 说明 |
+|-------|------|------|
+| `ipmb_address` | Integer | IPMB地址，用于BMC通信 |
+| `module_type` | Integer | 模块类型，标识硬件模块类型 |
+| `bmc_company` | Integer | BMC厂商代码 |
+| `bmc_version` | String | BMC固件版本号 |
+
+##### GPU硬件信息
+| 字段名 | 类型 | 说明 |
+|-------|------|------|
+| `gpu` | Array | GPU设备列表 |
+| `gpu[].index` | Integer | GPU设备索引号 |
+| `gpu[].name` | String | GPU设备名称和型号 |
+
+**状态说明:**
+- `online`: 节点在线，最后心跳时间在5秒内
+- `offline`: 节点离线，最后心跳时间超过5秒
 
 **使用示例:**
 ```bash
@@ -333,123 +383,132 @@ curl "http://localhost:8080/node?host_ip=192.168.10.58"
   "data": {
     "nodes_metrics": [
       {
-        "board_type": "standard",
+        "board_type": "GPU",
         "box_id": 1,
-        "box_type": "compute",
-    "cpu_arch": "x86_64",
-    "cpu_id": 1,
-    "cpu_type": "x86_64",
-    "created_at": 1640995200,
-    "gpu": true,
-    "host_ip": "192.168.1.100",
-    "hostname": "node-01",
-    "id": 1,
-    "latest_cpu_metrics": {
-      "core_allocated": 4,
-      "core_count": 8,
-      "current": 2.5,
-      "load_avg_15m": 1.0,
-      "load_avg_1m": 1.2,
-      "load_avg_5m": 1.1,
-      "power": 65.0,
-      "temperature": 55.0,
-      "timestamp": 1640995200,
-      "usage_percent": 75.5,
-      "voltage": 1.2
-    },
-    "latest_memory_metrics": {
-      "free": 8589934592,
-      "timestamp": 1640995200,
-      "total": 17179869184,
-      "usage_percent": 50.0,
-      "used": 8589934592
-    },
-    "latest_disk_metrics": {
-      "disk_count": 1,
-      "disks": [
-        {
-          "device": "/dev/sda1",
-          "free": 549755813888,
-          "mount_point": "/",
-          "total": 1099511627776,
+        "box_type": "计算I型",
+        "cpu_arch": "aarch64",
+        "cpu_id": 1,
+        "cpu_type": "Phytium,D2000/8",
+        "created_at": 1640995200,
+        "gpu": [
+          {
+            "index": 0,
+            "name": "Iluvatar MR-V50A"
+          }
+        ],
+        "host_ip": "192.168.1.100",
+        "hostname": "node-01",
+        "id": 1,
+        "ipmb_address": 124,
+        "module_type": 1,
+        "bmc_company": 1,
+        "bmc_version": "1.0.0",
+        "latest_cpu_metrics": {
+          "core_allocated": 4,
+          "core_count": 8,
+          "current": 2.5,
+          "load_avg_15m": 1.0,
+          "load_avg_1m": 1.2,
+          "load_avg_5m": 1.1,
+          "power": 65.0,
+          "temperature": 55.0,
+          "timestamp": 1640995200,
+          "usage_percent": 75.5,
+          "voltage": 1.2
+        },
+        "latest_memory_metrics": {
+          "free": 8589934592,
+          "timestamp": 1640995200,
+          "total": 17179869184,
           "usage_percent": 50.0,
-          "used": 549755813888
-        }
-      ],
-      "timestamp": 1640995200
-    },
-    "latest_network_metrics": {
-      "network_count": 1,
-      "networks": [
-        {
-          "interface": "eth0",
-          "rx_bytes": 1024000,
-          "rx_errors": 0,
-          "rx_packets": 1000,
-          "tx_bytes": 512000,
-          "tx_errors": 0,
-          "tx_packets": 500,
-          "rx_rate": 1024.0,
-          "tx_rate": 512.0
-        }
-      ],
-      "timestamp": 1640995200
-    },
-    "latest_gpu_metrics": {
-      "gpu_count": 1,
-      "gpus": [
-        {
-          "compute_usage": 85.0,
-          "current": 0.0,
-          "index": 0,
-          "mem_total": 25769803776,
-          "mem_usage": 50.0,
-          "mem_used": 12884901888,
-          "name": "NVIDIA RTX 4090",
-          "power": 350.0,
-          "temperature": 72.0,
-          "voltage": 0.0
-        }
-      ],
-      "timestamp": 1640995200
-    },
-    "latest_container_metrics": {
-      "component": [
-        {
-          "component_index": 1,
-          "container_id": "4c34877129713614d7a5eb89a00d117a72ffcc1e560bd7ea57962cb2e26b0000",
-          "container_name": "192.168.10.58:5000/sleep3:latest",
-          "instance_id": "874811e8-9e53-41ea-a543-275a4bff3864",
-          "resource": {
-            "cpu": {
-              "load": 0.0
-            },
-            "memory": {
-              "mem_limit": 15647768576,
-              "mem_used": 524288,
-              "usage_percent": 0.0033505608001139194
-            },
-            "network": {
-              "rx": 0,
-              "tx": 0
+          "used": 8589934592
+        },
+        "latest_disk_metrics": {
+          "disk_count": 1,
+          "disks": [
+            {
+              "device": "/dev/sda1",
+              "free": 549755813888,
+              "mount_point": "/",
+              "total": 1099511627776,
+              "usage_percent": 50.0,
+              "used": 549755813888
             }
-          },
-          "status": "RUNNING",
-          "timestamp": 1752713939,
-          "uuid": "1233211234569"
-        }
-      ],
-      "container_count": 40,
-      "paused_count": 0,
-      "running_count": 0,
-      "stopped_count": 0,
-      "timestamp": 1752713939
-    },
-    "os_type": "linux",
-    "resource_type": "compute",
-    "service_port": 8080,
-    "slot_id": 0,
-    "srio_id": 0,
+          ],
+          "timestamp": 1640995200
+        },
+        "latest_network_metrics": {
+          "network_count": 1,
+          "networks": [
+            {
+              "interface": "eth0",
+              "rx_bytes": 1024000,
+              "rx_errors": 0,
+              "rx_packets": 1000,
+              "tx_bytes": 512000,
+              "tx_errors": 0,
+              "tx_packets": 500,
+              "rx_rate": 1024.0,
+              "tx_rate": 512.0
+            }
+          ],
+          "timestamp": 1640995200
+        },
+        "latest_gpu_metrics": {
+          "gpu_count": 1,
+          "gpus": [
+            {
+              "compute_usage": 85.0,
+              "current": 0.0,
+              "index": 0,
+              "mem_total": 25769803776,
+              "mem_usage": 50.0,
+              "mem_used": 12884901888,
+              "name": "Iluvatar MR-V50A",
+              "power": 350.0,
+              "temperature": 72.0,
+              "voltage": 0.0
+            }
+          ],
+          "timestamp": 1640995200
+        },
+        "latest_docker_metrics": {
+          "component": [
+            {
+              "component_index": 1,
+              "container_id": "4c34877129713614d7a5eb89a00d117a72ffcc1e560bd7ea57962cb2e26b0000",
+              "container_name": "192.168.10.58:5000/sleep3:latest",
+              "instance_id": "874811e8-9e53-41ea-a543-275a4bff3864",
+              "resource": {
+                "cpu": {
+                  "load": 0.0
+                },
+                "memory": {
+                  "mem_limit": 15647768576,
+                  "mem_used": 524288,
+                  "usage_percent": 0.0033505608001139194
+                },
+                "network": {
+                  "rx": 0,
+                  "tx": 0
+                }
+              },
+              "status": "RUNNING",
+              "timestamp": 1752713939,
+              "uuid": "1233211234569"
+            }
+          ],
+          "container_count": 40,
+          "paused_count": 0,
+          "running_count": 0,
+          "stopped_count": 0,
+          "timestamp": 1752713939
+        },
+        "os_type": "Kylin Linux Advanced Server V10",
+        "resource_type": "GPU I",
+        "service_port": 23980,
+        "slot_id": 1,
+        "srio_id": 5,
         "status": "online",
         "updated_at": 1640995200
       }
@@ -572,7 +631,7 @@ curl "http://localhost:8080/node?host_ip=192.168.10.58"
 | `gpus[].current` | Float | A | GPU电流（某些指标可能为0） |
 | `timestamp` | Integer | - | 数据采集时间戳 |
 
-##### 容器指标 (latest_container_metrics)
+##### 容器指标 (latest_docker_metrics)
 | 字段名 | 类型 | 单位 | 说明 |
 |-------|------|------|------|
 | `container_count` | Integer | 个 | 容器总数 |

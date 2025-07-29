@@ -75,7 +75,7 @@ HistoricalMetricsResponse ResourceManager::getHistoricalMetrics(const Historical
                     newPoint.metrics["timestamp"] = static_cast<double>(timestamp_seconds);
                     newTS.data_points.push_back(newPoint);
                 }
-            } else if (ts.metric_type == "disk" || ts.metric_type == "network" || ts.metric_type == "gpu") {
+            } else if (ts.metric_type == "disk" || ts.metric_type == "network" || ts.metric_type == "gpu" || ts.metric_type == "sensor") {
                 // 这些资源类型需要按设备/接口分组
                 std::map<std::string, std::vector<QueryResult>> grouped_data;
                 
@@ -91,6 +91,8 @@ HistoricalMetricsResponse ResourceManager::getHistoricalMetrics(const Historical
                         key = point.labels.count("interface") ? point.labels.at("interface") : "unknown";
                     } else if (ts.metric_type == "gpu") {
                         key = "gpu_" + (point.labels.count("gpu_index") ? point.labels.at("gpu_index") : "0");
+                    } else if (ts.metric_type == "sensor") {
+                        key = "sensor_" + (point.labels.count("name") ? point.labels.at("name") : "unknown");
                     }
                     
                     QueryResult newPoint = point;
@@ -365,6 +367,28 @@ NodeMetricsResponse ResourceManager::getCurrentMetrics() {
                 {"timestamp", current_timestamp}
             };
             
+            // Sensor指标
+            long long sensor_timestamp = current_timestamp;
+            if (!resourceData.sensors.empty() && resourceData.sensors[0].timestamp.time_since_epoch().count() > 0) {
+                sensor_timestamp = std::chrono::duration_cast<std::chrono::seconds>(resourceData.sensors[0].timestamp.time_since_epoch()).count();
+            }
+            json sensors = json::array();
+            for (const auto& sensor : resourceData.sensors) {
+                sensors.push_back({
+                    {"sequence", sensor.sequence},
+                    {"type", sensor.type},
+                    {"name", sensor.name},
+                    {"value", sensor.value},
+                    {"alarm_type", sensor.alarm_type},
+                    {"timestamp", std::chrono::duration_cast<std::chrono::seconds>(sensor.timestamp.time_since_epoch()).count()}
+                });
+            }
+            json latest_sensor_metrics = {
+                {"sensor_count", static_cast<int>(resourceData.sensors.size())},
+                {"sensors", sensors},
+                {"timestamp", sensor_timestamp}
+            };
+
             // 计算节点状态：如果updated_at与当前时间差距大于5秒，则判断为离线
             auto node_updated_at = std::chrono::duration_cast<std::chrono::seconds>(node->last_heartbeat.time_since_epoch()).count();
             auto time_diff = current_timestamp - node_updated_at;
@@ -379,7 +403,6 @@ NodeMetricsResponse ResourceManager::getCurrentMetrics() {
                 {"cpu_id", node->cpu_id},
                 {"cpu_type", node->cpu_type},
                 {"updated_at", node_updated_at},
-                {"gpu", node->gpu},
                 {"host_ip", node->host_ip},
                 {"hostname", node->hostname},
                 {"id", node->box_id},
@@ -389,6 +412,7 @@ NodeMetricsResponse ResourceManager::getCurrentMetrics() {
                 {"latest_gpu_metrics", latest_gpu_metrics},
                 {"latest_memory_metrics", latest_memory_metrics},
                 {"latest_network_metrics", latest_network_metrics},
+                {"latest_sensor_metrics", latest_sensor_metrics},
                 {"os_type", node->os_type},
                 {"resource_type", node->resource_type},
                 {"service_port", node->service_port},
@@ -585,7 +609,28 @@ PaginatedNodeMetricsResponse ResourceManager::getPaginatedCurrentMetrics(int pag
                 {"stopped_count", 0},
                 {"timestamp", current_timestamp}
             };
-            
+            // Sensor指标
+            long long sensor_timestamp = current_timestamp;
+            if (!resourceData.sensors.empty() && resourceData.sensors[0].timestamp.time_since_epoch().count() > 0) {
+                sensor_timestamp = std::chrono::duration_cast<std::chrono::seconds>(resourceData.sensors[0].timestamp.time_since_epoch()).count();
+            }
+            json sensors = json::array();
+            for (const auto& sensor : resourceData.sensors) {
+                sensors.push_back({
+                    {"sequence", sensor.sequence},
+                    {"type", sensor.type},
+                    {"name", sensor.name},
+                    {"value", sensor.value},
+                    {"alarm_type", sensor.alarm_type},
+                    {"timestamp", std::chrono::duration_cast<std::chrono::seconds>(sensor.timestamp.time_since_epoch()).count()}
+                });
+            }  
+            json latest_sensor_metrics = {
+                {"sensor_count", static_cast<int>(resourceData.sensors.size())},
+                {"sensors", sensors},
+                {"timestamp", sensor_timestamp}
+            };
+
             // 计算节点状态：如果updated_at与当前时间差距大于5秒，则判断为离线
             auto node_updated_at = std::chrono::duration_cast<std::chrono::seconds>(node->last_heartbeat.time_since_epoch()).count();
             auto time_diff = current_timestamp - node_updated_at;
@@ -600,7 +645,6 @@ PaginatedNodeMetricsResponse ResourceManager::getPaginatedCurrentMetrics(int pag
                 {"cpu_id", node->cpu_id},
                 {"cpu_type", node->cpu_type},
                 {"updated_at", node_updated_at},
-                {"gpu", node->gpu},
                 {"host_ip", node->host_ip},
                 {"hostname", node->hostname},
                 {"id", node->box_id},
@@ -610,6 +654,7 @@ PaginatedNodeMetricsResponse ResourceManager::getPaginatedCurrentMetrics(int pag
                 {"latest_gpu_metrics", latest_gpu_metrics},
                 {"latest_memory_metrics", latest_memory_metrics},
                 {"latest_network_metrics", latest_network_metrics},
+                {"latest_sensor_metrics", latest_sensor_metrics},
                 {"os_type", node->os_type},
                 {"resource_type", node->resource_type},
                 {"service_port", node->service_port},
@@ -651,37 +696,8 @@ NodesListResponse ResourceManager::getNodesList() {
         
         json nodes_json = json::array();
         for (const auto& node : nodes) {
-            // Calculate time since last heartbeat
-            auto now = std::chrono::system_clock::now();
-            auto duration = std::chrono::duration_cast<std::chrono::seconds>(now - node->last_heartbeat);
-            
-            // 计算节点状态：如果updated_at与当前时间差距大于5秒，则判断为离线
-            std::string node_status = (duration.count() <= 5) ? "online" : "offline";
-            
-            // 获取时间戳（秒）
-            auto heartbeat_timestamp = std::chrono::duration_cast<std::chrono::seconds>(
-                node->last_heartbeat.time_since_epoch()).count();
-            
-            json node_json = {
-                {"board_type", node->board_type},
-                {"box_id", node->box_id},
-                {"box_type", node->box_type},
-                {"cpu_arch", node->cpu_arch},
-                {"cpu_id", node->cpu_id},
-                {"cpu_type", node->cpu_type},
-                {"created_at", heartbeat_timestamp}, // 使用心跳时间作为创建时间
-                {"gpu", node->gpu},
-                {"host_ip", node->host_ip},
-                {"hostname", node->hostname},
-                {"id", node->box_id}, // 使用box_id作为id
-                {"os_type", node->os_type},
-                {"resource_type", node->resource_type},
-                {"service_port", node->service_port},
-                {"slot_id", node->slot_id},
-                {"srio_id", node->srio_id},
-                {"status", node_status},
-                {"updated_at", heartbeat_timestamp} // 使用心跳时间作为更新时间
-            };
+            // 使用公共方法转换节点数据
+            json node_json = convertNodeToJson(node);
             nodes_json.push_back(node_json);
         }
         
@@ -733,36 +749,8 @@ NodeResponse ResourceManager::getNode(const std::string& host_ip) {
             return response;
         }
 
-        // Calculate time since last heartbeat
-        auto now = std::chrono::system_clock::now();
-        auto duration = std::chrono::duration_cast<std::chrono::seconds>(now - node->last_heartbeat);
-        
-        // 计算节点状态：如果updated_at与当前时间差距大于5秒，则判断为离线
-        std::string node_status = (duration.count() <= 5) ? "online" : "offline";
-        
-        // 获取时间戳（秒）
-        auto heartbeat_timestamp = std::chrono::duration_cast<std::chrono::seconds>(
-            node->last_heartbeat.time_since_epoch()).count();
-        
-        // 构建节点数据
-        json node_data = {
-            {"box_id", node->box_id},
-            {"slot_id", node->slot_id},
-            {"cpu_id", node->cpu_id},
-            {"srio_id", node->srio_id},
-            {"host_ip", node->host_ip},
-            {"hostname", node->hostname},
-            {"service_port", node->service_port},
-            {"box_type", node->box_type},
-            {"board_type", node->board_type},
-            {"cpu_type", node->cpu_type},
-            {"os_type", node->os_type},
-            {"resource_type", node->resource_type},
-            {"cpu_arch", node->cpu_arch},
-            {"gpu", node->gpu},
-            {"status", node_status},
-            {"updated_at", heartbeat_timestamp}
-        };
+        // 使用公共方法转换节点数据
+        json node_data = convertNodeToJson(node);
         
         // 构建符合要求的响应格式
         response.data = {
@@ -782,4 +770,58 @@ NodeResponse ResourceManager::getNode(const std::string& host_ip) {
     }
     
     return response;
+}
+
+nlohmann::json ResourceManager::convertNodeToJson(const std::shared_ptr<NodeData>& node) {
+    // Calculate time since last heartbeat
+    auto now = std::chrono::system_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::seconds>(now - node->last_heartbeat);
+    
+    // 计算节点状态：如果updated_at与当前时间差距大于5秒，则判断为离线
+    std::string node_status = (duration.count() <= 5) ? "online" : "offline";
+    
+    // 获取时间戳（秒）
+    auto heartbeat_timestamp = std::chrono::duration_cast<std::chrono::seconds>(
+        node->last_heartbeat.time_since_epoch()).count();
+    
+    // 转换GPU信息
+    json gpu_array = json::array();
+    for (const auto& gpu : node->gpu) {
+        gpu_array.push_back({
+            {"index", gpu.index},
+            {"name", gpu.name}
+        });
+    }
+    
+    // 构建节点数据，包含所有字段
+    json node_json = {
+        {"board_type", node->board_type},
+        {"box_id", node->box_id},
+        {"box_type", node->box_type},
+        {"cpu_arch", node->cpu_arch},
+        {"cpu_id", node->cpu_id},
+        {"cpu_type", node->cpu_type},
+        {"created_at", heartbeat_timestamp}, // 使用心跳时间作为创建时间
+        {"host_ip", node->host_ip},
+        {"hostname", node->hostname},
+        {"id", node->box_id}, // 使用box_id作为id
+        {"os_type", node->os_type},
+        {"resource_type", node->resource_type},
+        {"service_port", node->service_port},
+        {"slot_id", node->slot_id},
+        {"srio_id", node->srio_id},
+        {"status", node_status},
+        {"updated_at", heartbeat_timestamp}, // 使用心跳时间作为更新时间
+        
+        // BMC相关信息
+        {"ipmb_address", node->ipmb_address},
+        {"module_type", node->module_type},
+        {"bmc_company", node->bmc_company},
+        {"bmc_version", node->bmc_version},
+        
+        // GPU信息
+        {"gpu", gpu_array}
+    };
+    
+    return node_json;
 }

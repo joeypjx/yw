@@ -8,6 +8,7 @@
 #include "node_storage.h"
 #include "resource_manager.h"
 #include "bmc_storage.h"
+#include "chassis_controller.h"
 #include "json.hpp"
 #include <string>
 #include <thread>
@@ -30,6 +31,7 @@ public:
                std::shared_ptr<NodeStorage> node_storage,
                std::shared_ptr<ResourceManager> resource_manager,
                std::shared_ptr<BMCStorage> bmc_storage,
+               std::shared_ptr<ChassisController> chassis_controller = nullptr,
                const std::string& host = "0.0.0.0", int port = 8080);
 
     ~HttpServer();
@@ -142,12 +144,34 @@ private:
      */
     void handle_node_historical_bmc(const httplib::Request& req, httplib::Response& res);
 
+    /**
+     * @brief 处理 /chassis/reset 的POST请求 (复位机箱板卡).
+     * @param req HTTP请求.
+     * @param res HTTP响应.
+     */
+    void handle_chassis_reset(const httplib::Request& req, httplib::Response& res);
+
+    /**
+     * @brief 处理 /chassis/power-off 的POST请求 (下电机箱板卡).
+     * @param req HTTP请求.
+     * @param res HTTP响应.
+     */
+    void handle_chassis_power_off(const httplib::Request& req, httplib::Response& res);
+
+    /**
+     * @brief 处理 /chassis/power-on 的POST请求 (上电机箱板卡).
+     * @param req HTTP请求.
+     * @param res HTTP响应.
+     */
+    void handle_chassis_power_on(const httplib::Request& req, httplib::Response& res);
+
     std::shared_ptr<ResourceStorage> m_resource_storage;
     std::shared_ptr<AlarmRuleStorage> m_alarm_rule_storage;
     std::shared_ptr<AlarmManager> m_alarm_manager;
     std::shared_ptr<NodeStorage> m_node_storage;
     std::shared_ptr<ResourceManager> m_resource_manager;
     std::shared_ptr<BMCStorage> m_bmc_storage;
+    std::shared_ptr<ChassisController> m_chassis_controller;
     httplib::Server m_server;
     std::string m_host;
     int m_port;
