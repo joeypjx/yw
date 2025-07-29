@@ -57,7 +57,7 @@ bool ResourceStorage::createDatabase(const std::string& dbName) {
         return false;
     }
 
-    std::string sql = "CREATE DATABASE IF NOT EXISTS " + dbName;
+    std::string sql = "CREATE DATABASE IF NOT EXISTS " + dbName + " KEEP 1";
     if (!executeQuery(sql)) {
         return false;
     }
