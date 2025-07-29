@@ -44,7 +44,7 @@ uint8_t resv[2];//0
 
 typedef struct __attribute__((packed))
 {
-uint16_t head;//0x5AA5
+uint16_t head;//0xA55A
 uint16_t msglenth;//报文长度
 uint16_t seqnum;//1-65535循环
 uint16_t msgtype;//表征报文种类，信号处理取0x0002
@@ -54,5 +54,5 @@ uint8_t boxname;//固定1
 uint8_t boxid;
 UdpFanInfo fan[2];
 UdpBoardInfo board[14];//电源1/2，负载1-12
-uint16_t tail;//0x5AA5
+uint16_t tail;//0xA55A
 }UdpInfo;

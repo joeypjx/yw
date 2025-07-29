@@ -105,8 +105,8 @@ bool ResourceStorage::createResourceTable() {
         "tx_bytes BIGINT, "
         "rx_packets BIGINT, "
         "tx_packets BIGINT, "
-        "rx_errors INT, "
-        "tx_errors INT, "
+        "rx_errors BIGINT, "
+        "tx_errors BIGINT, "
         "rx_rate BIGINT, "
         "tx_rate BIGINT"
         ") TAGS (host_ip NCHAR(16), interface NCHAR(32))";
@@ -248,9 +248,9 @@ bool ResourceStorage::insertMemoryData(const std::string& hostIp, const nlohmann
     std::ostringstream oss;
     oss << "INSERT INTO memory_" << tableName << " VALUES ("
         << timestamp << ", "
-        << memoryData.value("total", 0) << ", "
-        << memoryData.value("used", 0) << ", "
-        << memoryData.value("free", 0) << ", "
+        << memoryData.value("total", static_cast<int64_t>(0)) << ", "
+        << memoryData.value("used", static_cast<int64_t>(0)) << ", "
+        << memoryData.value("free", static_cast<int64_t>(0)) << ", "
         << memoryData.value("usage_percent", 0.0) << ")";
 
     return executeQuery(oss.str());
@@ -283,14 +283,14 @@ bool ResourceStorage::insertNetworkData(const std::string& hostIp, const nlohman
         std::ostringstream oss;
         oss << "INSERT INTO " << tableName << " VALUES ("
             << timestamp << ", "
-            << interface.value("rx_bytes", 0) << ", "
-            << interface.value("tx_bytes", 0) << ", "
-            << interface.value("rx_packets", 0) << ", "
-            << interface.value("tx_packets", 0) << ", "
-            << interface.value("rx_errors", 0) << ", "
-            << interface.value("tx_errors", 0) << ", "
-            << interface.value("rx_rate", 0) << ", "
-            << interface.value("tx_rate", 0) << ")";
+            << interface.value("rx_bytes", static_cast<int64_t>(0)) << ", "
+            << interface.value("tx_bytes", static_cast<int64_t>(0)) << ", "
+            << interface.value("rx_packets", static_cast<int64_t>(0)) << ", "
+            << interface.value("tx_packets", static_cast<int64_t>(0)) << ", "
+            << interface.value("rx_errors", static_cast<int64_t>(0)) << ", "
+            << interface.value("tx_errors", static_cast<int64_t>(0)) << ", "
+            << interface.value("rx_rate", static_cast<int64_t>(0)) << ", "
+            << interface.value("tx_rate", static_cast<int64_t>(0)) << ")";
 
         if (!executeQuery(oss.str())) {
             success = false;
@@ -328,9 +328,9 @@ bool ResourceStorage::insertDiskData(const std::string& hostIp, const nlohmann::
         std::ostringstream oss;
         oss << "INSERT INTO " << tableName << " VALUES ("
             << timestamp << ", "
-            << disk.value("total", 0) << ", "
-            << disk.value("used", 0) << ", "
-            << disk.value("free", 0) << ", "
+            << disk.value("total", static_cast<int64_t>(0)) << ", "
+            << disk.value("used", static_cast<int64_t>(0)) << ", "
+            << disk.value("free", static_cast<int64_t>(0)) << ", "
             << disk.value("usage_percent", 0.0) << ")";
 
         if (!executeQuery(oss.str())) {
@@ -370,8 +370,8 @@ bool ResourceStorage::insertGpuData(const std::string& hostIp, const nlohmann::j
             << timestamp << ", "
             << gpu.value("compute_usage", 0.0) << ", "
             << gpu.value("mem_usage", 0.0) << ", "
-            << gpu.value("mem_used", 0) << ", "
-            << gpu.value("mem_total", 0) << ", "
+            << gpu.value("mem_used", static_cast<int64_t>(0)) << ", "
+            << gpu.value("mem_total", static_cast<int64_t>(0)) << ", "
             << gpu.value("temperature", 0.0) << ", "
             << gpu.value("power", 0.0) << ")";
 

@@ -15,6 +15,7 @@
 #include <thread>
 #include <atomic>
 #include <functional>
+#include <cctype>
 
 using namespace std;
 
@@ -157,7 +158,7 @@ private:
             return -1;
         }
         
-        if (data->head != 0x5AA5 || data->tail != 0x5AA5) {
+        if (data->head != 0xA55A || data->tail != 0xA55A) {
             LogManager::getLogger()->warn("BMC数据包头尾无效");
             return -1;
         }
@@ -176,23 +177,23 @@ private:
                     << "  \"header\": {\n"
                     << "    \"head\": \"0x" << hex << uppercase << data->head << "\",\n"
                     << "    \"message_length\": " << dec << data->msglenth << ",\n"
-                    << "    \"sequence_number\": " << data->seqnum << ",\n"
+                    << "    \"sequence_number\": " << dec << data->seqnum << ",\n"
                     << "    \"message_type\": \"0x" << hex << uppercase << data->msgtype << "\",\n"
                     << "    \"timestamp\": " << dec << data->timestamp << ",\n"
-                    << "    \"box_name\": " << static_cast<int>(data->boxname) << ",\n"
-                    << "    \"box_id\": " << static_cast<int>(data->boxid) << ",\n"
+                    << "    \"box_name\": " << dec << static_cast<int>(data->boxname) << ",\n"
+                    << "    \"box_id\": " << dec << static_cast<int>(data->boxid) << ",\n"
                     << "    \"tail\": \"0x" << hex << uppercase << data->tail << "\"\n"
                     << "  },\n"
                     << "  \"fans\": [\n";
         
         for (int i = 0; i < 2; i++) {
             json_stream << "    {\n"
-                        << "      \"sequence\": " << static_cast<int>(data->fan[i].fanseq) << ",\n"
+                        << "      \"sequence\": " << dec << static_cast<int>(data->fan[i].fanseq) << ",\n"
                         << "      \"mode\": {\n"
-                        << "        \"alarm_type\": " << ((data->fan[i].fanmode >> 4) & 0x0F) << ",\n"
-                        << "        \"work_mode\": " << (data->fan[i].fanmode & 0x0F) << "\n"
+                        << "        \"alarm_type\": " << dec << ((data->fan[i].fanmode >> 4) & 0x0F) << ",\n"
+                        << "        \"work_mode\": " << dec << (data->fan[i].fanmode & 0x0F) << "\n"
                         << "      },\n"
-                        << "      \"speed\": " << data->fan[i].fanspeed << "\n"
+                        << "      \"speed\": " << dec << data->fan[i].fanspeed << "\n"
                         << "    }" << (i < 1 ? "," : "") << "\n";
         }
         
@@ -200,11 +201,11 @@ private:
         
         for (int i = 0; i < 14; i++) {
             json_stream << "    {\n"
-                        << "      \"ipmb_address\": " << static_cast<int>(data->board[i].ipmbaddr) << ",\n"
-                        << "      \"module_type\": " << data->board[i].moduletype << ",\n"
-                        << "      \"bmc_company\": " << data->board[i].bmccompany << ",\n"
-                        << "      \"bmc_version\": \"" << string(reinterpret_cast<const char*>(data->board[i].bmcversion), 8) << "\",\n"
-                        << "      \"sensor_count\": " << static_cast<int>(data->board[i].sensornum) << ",\n"
+                        << "      \"ipmb_address\": " << dec << static_cast<int>(data->board[i].ipmbaddr) << ",\n"
+                        << "      \"module_type\": " << dec << data->board[i].moduletype << ",\n"
+                        << "      \"bmc_company\": " << dec << data->board[i].bmccompany << ",\n"
+                        << "      \"bmc_version\": \"" << cleanString(string(reinterpret_cast<const char*>(data->board[i].bmcversion), 8)) << "\",\n"
+                        << "      \"sensor_count\": " << dec << static_cast<int>(data->board[i].sensornum) << ",\n"
                         << "      \"sensors\": [\n";
             
             int sensor_count = data->board[i].sensornum < 5 ? data->board[i].sensornum : 5;
@@ -212,11 +213,11 @@ private:
                 uint16_t sensor_value = (data->board[i].sensor[j].sensorvalue_H << 8) | 
                                         data->board[i].sensor[j].sensorvalue_L;
                 json_stream << "        {\n"
-                            << "          \"sequence\": " << static_cast<int>(data->board[i].sensor[j].sensorseq) << ",\n"
-                            << "          \"type\": " << static_cast<int>(data->board[i].sensor[j].sensortype) << ",\n"
-                            << "          \"name\": \"" << string(reinterpret_cast<const char*>(data->board[i].sensor[j].sensorname), 6) << "\",\n"
-                            << "          \"value\": " << sensor_value << ",\n"
-                            << "          \"alarm_type\": " << static_cast<int>(data->board[i].sensor[j].sensoralmtype) << "\n"
+                            << "          \"sequence\": " << dec << static_cast<int>(data->board[i].sensor[j].sensorseq) << ",\n"
+                            << "          \"type\": " << dec << static_cast<int>(data->board[i].sensor[j].sensortype) << ",\n"
+                            << "          \"name\": \"" << cleanString(string(reinterpret_cast<const char*>(data->board[i].sensor[j].sensorname), 6)) << "\",\n"
+                            << "          \"value\": " << dec << sensor_value << ",\n"
+                            << "          \"alarm_type\": " << dec << static_cast<int>(data->board[i].sensor[j].sensoralmtype) << "\n"
                             << "        }" << (j < sensor_count - 1 ? "," : "") << "\n";
             }
             
@@ -226,6 +227,23 @@ private:
         json_stream << "  ]\n}";
         
         return json_stream.str();
+    }
+    
+private:
+    string cleanString(const string& str) {
+        string result;
+        result.reserve(str.length());
+        
+        for (char c : str) {
+            if (c == '\0') break;  // 遇到null字符就停止
+            if (isalnum(c) || c == '_' || c == '.' || c == '-') {
+                result += c;
+            } else {
+                result += '_';
+            }
+        }
+        
+        return result.empty() ? "unknown" : result;
     }
 };
 

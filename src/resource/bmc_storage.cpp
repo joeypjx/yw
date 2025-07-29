@@ -57,6 +57,9 @@ void BMCStorage::disconnect() {
 bool BMCStorage::createBMCTables() {
     LogManager::getLogger()->info("📊 创建BMC相关超级表...");
     
+    // 先尝试删除可能存在的旧超级表（如果结构不匹配）
+    dropOldBMCTables();
+    
     if (!createFanSuperTable()) {
         return false;
     }
@@ -73,12 +76,12 @@ bool BMCStorage::createFanSuperTable() {
     string sql = R"(
         CREATE TABLE IF NOT EXISTS bmc_fan_super (
             ts TIMESTAMP,
-            alarm_type TINYINT,
-            work_mode TINYINT,
+            alarm_type SMALLINT,
+            work_mode SMALLINT,
             speed INT
         ) TAGS (
-            box_id TINYINT,
-            fan_seq TINYINT
+            box_id SMALLINT,
+            fan_seq SMALLINT
         )
     )";
     
@@ -96,13 +99,13 @@ bool BMCStorage::createSensorSuperTable() {
         CREATE TABLE IF NOT EXISTS bmc_sensor_super (
             ts TIMESTAMP,
             sensor_value INT,
-            alarm_type TINYINT
+            alarm_type SMALLINT
         ) TAGS (
-            box_id TINYINT,
-            slot_id TINYINT,
-            sensor_seq TINYINT,
+            box_id SMALLINT,
+            slot_id SMALLINT,
+            sensor_seq SMALLINT,
             sensor_name NCHAR(16),
-            sensor_type TINYINT
+            sensor_type SMALLINT
         )
     )";
     
@@ -113,6 +116,13 @@ bool BMCStorage::createSensorSuperTable() {
     
     LogManager::getLogger()->debug("✅ 传感器超级表创建成功");
     return true;
+}
+
+void BMCStorage::dropOldBMCTables() {
+    // 静默删除旧的超级表，如果不存在也不会报错
+    executeSql("DROP TABLE IF EXISTS bmc_fan_super");
+    executeSql("DROP TABLE IF EXISTS bmc_sensor_super");
+    LogManager::getLogger()->debug("🗑️ 清理旧BMC超级表");
 }
 
 bool BMCStorage::storeFanData(const UdpInfo& udp_info) {

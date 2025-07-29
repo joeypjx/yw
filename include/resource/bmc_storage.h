@@ -145,6 +145,11 @@ private:
     bool createSensorSuperTable();
     
     /**
+     * 删除旧的BMC超级表（用于结构更新）
+     */
+    void dropOldBMCTables();
+    
+    /**
      * 执行SQL语句
      * @param sql SQL语句
      * @return 成功返回true，失败返回false
