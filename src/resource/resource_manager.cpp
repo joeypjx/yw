@@ -357,14 +357,13 @@ NodeMetricsResponse ResourceManager::getCurrentMetrics() {
                 {"timestamp", gpu_timestamp}
             };
             
-            // Docker指标 (暂时使用默认值，因为当前没有docker表)
-            json latest_docker_metrics = {
-                {"component", json::array()},
-                {"container_count", 0},
-                {"paused_count", 0},
-                {"running_count", 0},
-                {"stopped_count", 0},
-                {"timestamp", current_timestamp}
+            // Container指标 
+            json latest_container_metrics = {
+                {"container_count", resourceData.container.container_count},
+                {"paused_count", resourceData.container.paused_count},
+                {"running_count", resourceData.container.running_count},
+                {"stopped_count", resourceData.container.stopped_count},
+                {"timestamp", std::chrono::duration_cast<std::chrono::seconds>(resourceData.container.timestamp.time_since_epoch()).count()}
             };
             
             // Sensor指标
@@ -408,7 +407,7 @@ NodeMetricsResponse ResourceManager::getCurrentMetrics() {
                 {"id", node->box_id},
                 {"latest_cpu_metrics", latest_cpu_metrics},
                 {"latest_disk_metrics", latest_disk_metrics},
-                {"latest_docker_metrics", latest_docker_metrics},
+                {"latest_container_metrics", latest_container_metrics},
                 {"latest_gpu_metrics", latest_gpu_metrics},
                 {"latest_memory_metrics", latest_memory_metrics},
                 {"latest_network_metrics", latest_network_metrics},
@@ -600,15 +599,15 @@ PaginatedNodeMetricsResponse ResourceManager::getPaginatedCurrentMetrics(int pag
                 {"timestamp", gpu_timestamp}
             };
             
-            // Docker指标 (暂时使用默认值，因为当前没有docker表)
-            json latest_docker_metrics = {
-                {"component", json::array()},
-                {"container_count", 0},
-                {"paused_count", 0},
-                {"running_count", 0},
-                {"stopped_count", 0},
-                {"timestamp", current_timestamp}
+            // Container指标 
+            json latest_container_metrics = {
+                {"container_count", resourceData.container.container_count},
+                {"paused_count", resourceData.container.paused_count},
+                {"running_count", resourceData.container.running_count},
+                {"stopped_count", resourceData.container.stopped_count},
+                {"timestamp", std::chrono::duration_cast<std::chrono::seconds>(resourceData.container.timestamp.time_since_epoch()).count()}
             };
+
             // Sensor指标
             long long sensor_timestamp = current_timestamp;
             if (!resourceData.sensors.empty() && resourceData.sensors[0].timestamp.time_since_epoch().count() > 0) {
@@ -650,7 +649,7 @@ PaginatedNodeMetricsResponse ResourceManager::getPaginatedCurrentMetrics(int pag
                 {"id", node->box_id},
                 {"latest_cpu_metrics", latest_cpu_metrics},
                 {"latest_disk_metrics", latest_disk_metrics},
-                {"latest_docker_metrics", latest_docker_metrics},
+                {"latest_container_metrics", latest_container_metrics},
                 {"latest_gpu_metrics", latest_gpu_metrics},
                 {"latest_memory_metrics", latest_memory_metrics},
                 {"latest_network_metrics", latest_network_metrics},

@@ -142,6 +142,16 @@ bool ResourceStorage::createResourceTable() {
         ") TAGS (host_ip NCHAR(16))";
     if (!executeQuery(sql)) return false;
 
+    // Create Container super table
+    sql = "CREATE STABLE IF NOT EXISTS container ("
+        "ts TIMESTAMP, "
+        "container_count INT, "
+        "paused_count INT, "
+        "running_count INT, "
+        "stopped_count INT"
+        ") TAGS (host_ip NCHAR(16))";
+    if (!executeQuery(sql)) return false;
+
     return true;
 }
 
@@ -190,6 +200,9 @@ bool ResourceStorage::insertResourceData(const std::string& hostIp, const node::
 
     // Insert Node data
     success &= insertNodeData(hostIp, resourceData.resource);
+
+    // Insert Container data
+    success &= insertContainerData(hostIp, resourceData.component);
 
     return success;
 }
@@ -375,6 +388,45 @@ bool ResourceStorage::insertNodeData(const std::string& hostIp, const node::Reso
         << timestamp << ", "
         << resourceData.gpu_allocated << ", "
         << resourceData.gpu_num << ")";
+
+    return executeQuery(oss.str());
+}
+
+bool ResourceStorage::insertContainerData(const std::string& hostIp, const std::vector<node::ComponentInfo>& containerData) {
+    // Create table if not exists (clean host IP for valid table names)
+    std::string tableName = cleanForTableName(hostIp);
+    std::string createTableSQL = "CREATE TABLE IF NOT EXISTS container_" + tableName + " USING container TAGS ('" + hostIp + "')";
+    if (!executeQuery(createTableSQL)) {
+        return false;
+    }
+
+    // Calculate container statistics
+    int container_count = containerData.size();
+    int paused_count = 0;
+    int running_count = 0;
+    int stopped_count = 0;
+
+    for (const auto& container : containerData) {
+        if (container.state == "RUNNING") {
+            running_count++;
+        } else if (container.state == "PAUSED") {
+            paused_count++;
+        } else if (container.state == "STOPPED") {
+            stopped_count++;
+        }
+    }
+
+    // Get current timestamp
+    auto now = std::chrono::system_clock::now();
+    auto timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
+
+    std::ostringstream oss;
+    oss << "INSERT INTO container_" << tableName << " VALUES ("
+        << timestamp << ", "
+        << container_count << ", "
+        << paused_count << ", "
+        << running_count << ", "
+        << stopped_count << ")";
 
     return executeQuery(oss.str());
 }
@@ -595,6 +647,22 @@ NodeResourceData ResourceStorage::getNodeResourceData(const std::string& hostIp)
             nodeData.gpus.push_back(gpuData);
         }
 
+        // 获取Container数据 - 使用LAST_ROW和GROUP BY优化
+        std::string containerSql = "SELECT LAST_ROW(ts) as ts, LAST_ROW(container_count) as container_count, LAST_ROW(paused_count) as paused_count, LAST_ROW(running_count) as running_count, LAST_ROW(stopped_count) as stopped_count FROM container WHERE host_ip = '" + hostIp + "'";
+        auto containerResults = executeQuerySQL(containerSql);
+        
+        if (!containerResults.empty()) {
+            nodeData.container.timestamp = containerResults[0].timestamp;
+            
+            // 直接使用第一个结果的 metrics
+            const auto& containerMetrics = containerResults[0].metrics;
+            
+            nodeData.container.container_count = static_cast<int>(containerMetrics.count("container_count") ? containerMetrics.at("container_count") : 0);
+            nodeData.container.paused_count = static_cast<int>(containerMetrics.count("paused_count") ? containerMetrics.at("paused_count") : 0);
+            nodeData.container.running_count = static_cast<int>(containerMetrics.count("running_count") ? containerMetrics.at("running_count") : 0);
+            nodeData.container.stopped_count = static_cast<int>(containerMetrics.count("stopped_count") ? containerMetrics.at("stopped_count") : 0);
+        }
+
         // 获取Sensor数据 - 使用LAST_ROW和GROUP BY优化
         std::string sensorSql = "SELECT LAST_ROW(ts) as ts, LAST_ROW(sensor_value) as sensor_value, LAST_ROW(alarm_type) as alarm_type, sensor_seq as sequence, sensor_type as type, sensor_name as name FROM bmc_sensor_super WHERE host_ip = '" + hostIp + "' GROUP BY sensor_seq, sensor_type, sensor_name";
         auto sensorResults = executeQuerySQL(sensorSql);
@@ -700,6 +768,13 @@ nlohmann::json NodeResourceData::to_json() const {
         gpuJson["timestamp"] = std::chrono::duration_cast<std::chrono::milliseconds>(gpu.timestamp.time_since_epoch()).count();
         j["gpu"].push_back(gpuJson);
     }
+
+    // Container data   
+    j["container"]["container_count"] = container.container_count;
+    j["container"]["paused_count"] = container.paused_count;
+    j["container"]["running_count"] = container.running_count;
+    j["container"]["stopped_count"] = container.stopped_count;
+    j["container"]["timestamp"] = std::chrono::duration_cast<std::chrono::milliseconds>(container.timestamp.time_since_epoch()).count();
     
     // Sensor data
     j["sensor"] = nlohmann::json::array();

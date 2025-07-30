@@ -87,6 +87,15 @@ struct NodeResourceData {
     };
     std::vector<GpuData> gpus;
 
+    // Container数据
+    struct ContainerData {
+        int container_count = 0;
+        int paused_count = 0;
+        int running_count = 0;
+        int stopped_count = 0;
+        std::chrono::system_clock::time_point timestamp;
+    } container;
+
     // Sensor数据
     struct SensorData {
         int sequence = 0;
@@ -157,4 +166,5 @@ private:
     bool insertDiskData(const std::string& hostIp, const std::vector<node::DiskInfo>& diskData);
     bool insertGpuData(const std::string& hostIp, const std::vector<node::GpuResourceInfo>& gpuData);
     bool insertNodeData(const std::string& hostIp, const node::ResourceData& resourceData);
+    bool insertContainerData(const std::string& hostIp, const std::vector<node::ComponentInfo>& containerData);
 };
