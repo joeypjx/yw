@@ -1,6 +1,10 @@
 #include "resource/websocket_server.h"
 #include "spdlog/spdlog.h"
 
+// Static constants for ping/pong timing
+const std::chrono::seconds WebSocketServer::PING_INTERVAL(30);  // Send ping every 30 seconds
+const std::chrono::seconds WebSocketServer::PONG_TIMEOUT(10);   // Wait 10 seconds for pong response
+
 WebSocketServer::WebSocketServer() : running_(false) {
     // Set logging level
     endpoint_.set_access_channels(websocketpp::log::alevel::all);
@@ -13,6 +17,11 @@ WebSocketServer::WebSocketServer() : running_(false) {
     endpoint_.set_open_handler(std::bind(&WebSocketServer::on_open, this, std::placeholders::_1));
     endpoint_.set_close_handler(std::bind(&WebSocketServer::on_close, this, std::placeholders::_1));
     endpoint_.set_message_handler(std::bind(&WebSocketServer::on_message, this, std::placeholders::_1, std::placeholders::_2));
+    
+    // Set ping/pong handlers
+    endpoint_.set_ping_handler(std::bind(&WebSocketServer::on_ping, this, std::placeholders::_1, std::placeholders::_2));
+    endpoint_.set_pong_handler(std::bind(&WebSocketServer::on_pong, this, std::placeholders::_1, std::placeholders::_2));
+    endpoint_.set_pong_timeout_handler(std::bind(&WebSocketServer::on_pong_timeout, this, std::placeholders::_1, std::placeholders::_2));
 }
 
 WebSocketServer::~WebSocketServer() {
@@ -30,6 +39,16 @@ void WebSocketServer::start(int port) {
             endpoint_.run();
         });
         
+        // Start ping timer thread
+        ping_thread_ = std::thread([this]() {
+            while (running_) {
+                std::this_thread::sleep_for(PING_INTERVAL);
+                if (running_) {
+                    ping_timer_callback();
+                }
+            }
+        });
+        
         spdlog::info("WebSocket server started successfully");
     } catch (websocketpp::exception const& e) {
         spdlog::error("Failed to start WebSocket server: {}", e.what());
@@ -43,6 +62,17 @@ void WebSocketServer::stop() {
         
         if (server_thread_.joinable()) {
             server_thread_.join();
+        }
+        
+        if (ping_thread_.joinable()) {
+            ping_thread_.join();
+        }
+        
+        // Clear ping/pong tracking data
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            last_pong_time_.clear();
+            ping_pending_.clear();
         }
         
         spdlog::info("WebSocket server stopped.");
@@ -77,6 +107,11 @@ void WebSocketServer::set_on_message_handler(std::function<void(connection_hdl, 
 void WebSocketServer::on_open(connection_hdl hdl) {
     std::lock_guard<std::mutex> lock(mutex_);
     connections_.insert(hdl);
+    
+    // Initialize ping/pong tracking for this connection
+    last_pong_time_[hdl] = std::chrono::steady_clock::now();
+    ping_pending_[hdl] = false;
+    
     spdlog::info("WebSocket connection opened. Total clients: {}", connections_.size());
     
     if (user_on_open_) {
@@ -87,6 +122,11 @@ void WebSocketServer::on_open(connection_hdl hdl) {
 void WebSocketServer::on_close(connection_hdl hdl) {
     std::lock_guard<std::mutex> lock(mutex_);
     connections_.erase(hdl);
+    
+    // Clean up ping/pong tracking for this connection
+    last_pong_time_.erase(hdl);
+    ping_pending_.erase(hdl);
+    
     spdlog::info("WebSocket connection closed. Total clients: {}", connections_.size());
     
     if (user_on_close_) {
@@ -105,6 +145,95 @@ void WebSocketServer::on_message(connection_hdl hdl, server::message_ptr msg) {
             endpoint_.send(hdl, "echo: " + msg->get_payload(), websocketpp::frame::opcode::text);
         } catch (websocketpp::exception const& e) {
             spdlog::error("Error echoing message: {}", e.what());
+        }
+    }
+}
+
+bool WebSocketServer::on_ping(connection_hdl hdl, std::string payload) {
+    spdlog::debug("Received ping from client, payload: {}", payload);
+    // Return true to automatically send pong response
+    return true;
+}
+
+void WebSocketServer::on_pong(connection_hdl hdl, std::string payload) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    spdlog::debug("Received pong from client, payload: {}", payload);
+    
+    // Update last pong time and clear pending ping flag
+    last_pong_time_[hdl] = std::chrono::steady_clock::now();
+    ping_pending_[hdl] = false;
+}
+
+void WebSocketServer::on_pong_timeout(connection_hdl hdl, std::string payload) {
+    spdlog::warn("Pong timeout from client, closing connection. Payload: {}", payload);
+    
+    try {
+        // Close the connection due to pong timeout
+        endpoint_.close(hdl, websocketpp::close::status::protocol_error, "Pong timeout");
+    } catch (websocketpp::exception const& e) {
+        spdlog::error("Error closing connection on pong timeout: {}", e.what());
+    }
+}
+
+void WebSocketServer::send_ping_to_all() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    
+    if (connections_.empty()) {
+        return;
+    }
+    
+    spdlog::debug("Sending ping to {} clients", connections_.size());
+    
+    for (auto hdl : connections_) {
+        try {
+            // Mark ping as pending for this connection
+            ping_pending_[hdl] = true;
+            
+            // Send ping with current timestamp as payload
+            auto now = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now().time_since_epoch()).count();
+            std::string payload = std::to_string(now);
+            
+            endpoint_.ping(hdl, payload);
+        } catch (websocketpp::exception const& e) {
+            spdlog::error("Error sending ping: {}", e.what());
+        }
+    }
+}
+
+void WebSocketServer::ping_timer_callback() {
+    check_connection_health();
+    send_ping_to_all();
+}
+
+void WebSocketServer::check_connection_health() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto now = std::chrono::steady_clock::now();
+    std::vector<connection_hdl> connections_to_close;
+    
+    for (auto hdl : connections_) {
+        // Check if pong timeout exceeded
+        auto last_pong_it = last_pong_time_.find(hdl);
+        auto ping_pending_it = ping_pending_.find(hdl);
+        
+        if (last_pong_it != last_pong_time_.end() && ping_pending_it != ping_pending_.end()) {
+            auto time_since_last_pong = now - last_pong_it->second;
+            
+            // If ping is pending and timeout exceeded, mark for closure
+            if (ping_pending_it->second && time_since_last_pong > (PING_INTERVAL + PONG_TIMEOUT)) {
+                spdlog::warn("Connection health check failed - no pong received within timeout");
+                connections_to_close.push_back(hdl);
+            }
+        }
+    }
+    
+    // Close unhealthy connections (do this outside the main loop to avoid iterator invalidation)
+    for (auto hdl : connections_to_close) {
+        try {
+            spdlog::info("Closing unhealthy connection due to ping/pong timeout");
+            endpoint_.close(hdl, websocketpp::close::status::protocol_error, "Health check failed");
+        } catch (websocketpp::exception const& e) {
+            spdlog::error("Error closing unhealthy connection: {}", e.what());
         }
     }
 } 

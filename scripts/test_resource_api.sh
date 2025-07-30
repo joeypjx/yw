@@ -287,7 +287,13 @@ generate_gpu_data() {
         power2=$power
     fi
     
+    # GPU allocation info
+    gpu_num=2
+    gpu_allocated=$(random_range 0 2)
+    
     cat <<EOF
+        "gpu_allocated": $gpu_allocated,
+        "gpu_num": $gpu_num,
         "gpu": [
             {
                 "index": 0,

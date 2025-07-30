@@ -145,15 +145,34 @@ struct ContainerConfig {
     ContainerConfig() {}
 };
 
-// 容器资源使用情况结构体
-struct ContainerResource {
-    double cpu_load;            // CPU负载率，百分比
+// cpu
+struct CpuResourceInfo {
+    double load;
+
+    CpuResourceInfo() {}
+};
+// memory
+struct MemoryResourceInfo {
     uint64_t mem_used;         // 内存占用，字节
     uint64_t mem_limit;        // 内存限制，字节
-    uint64_t network_tx;       // 发送字节，字节
-    uint64_t network_rx;       // 接收字节，字节
-    
-    ContainerResource() : cpu_load(0.0), mem_used(0), mem_limit(0), network_tx(0), network_rx(0) {}
+
+    MemoryResourceInfo() {}
+};
+// network
+struct NetworkResourceInfo {
+    uint64_t tx;       // 发送字节，字节
+    uint64_t rx;       // 接收字节，字节
+
+    NetworkResourceInfo() {}
+};
+
+// 容器资源使用情况结构体
+struct ContainerResource {
+    CpuResourceInfo cpu;
+    MemoryResourceInfo memory;
+    NetworkResourceInfo network;
+
+    ContainerResource() {}
 };
 
 // 组件信息结构体
@@ -185,7 +204,10 @@ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(DiskInfo, device, mount_point, total, used, f
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(GpuResourceInfo, index, name, compute_usage, mem_usage, mem_used, mem_total, temperature, power)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(ResourceData, cpu, memory, network, disk, gpu, gpu_allocated, gpu_num)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(ContainerConfig, name, id)
-NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(ContainerResource, cpu_load, mem_used, mem_limit, network_tx, network_rx)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(CpuResourceInfo, load)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(MemoryResourceInfo, mem_used, mem_limit)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(NetworkResourceInfo, tx, rx)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(ContainerResource, cpu, memory, network)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(ComponentInfo, instance_id, uuid, index, config, state, resource)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(ResourceInfo, host_ip, resource, component)
 

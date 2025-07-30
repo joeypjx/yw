@@ -58,7 +58,7 @@ std::string calculateHostIP(int box_id, int slot_id) {
     return "192.168." + std::to_string(network_id) + "." + std::to_string(host_id);
 }
 
-int ipmbaddrToSlotId(uint8_t ipmbaddr) {
+uint8_t ipmbaddrToSlotId(uint8_t ipmbaddr) {
     // 根据映射关系转换ipmbaddr为slotid
     switch (ipmbaddr) {
         case 0x7c: return 1;   // BOARD_S1
@@ -76,8 +76,8 @@ int ipmbaddrToSlotId(uint8_t ipmbaddr) {
         case 0x02: return 13;  // BOARD_S13 (D1)
         case 0x04: return 14;  // BOARD_S14 (D2)
         default:
-            LogManager::getLogger()->warn("Unknown ipmbaddr: 0x{:02x}, returning -1", ipmbaddr);
-            return -1;
+            LogManager::getLogger()->debug("Unknown ipmbaddr: 0x{:02x}, returning 0", ipmbaddr);
+            return 0;
     }
 }
 

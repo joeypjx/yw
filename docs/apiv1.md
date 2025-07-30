@@ -137,7 +137,7 @@
         "free": 8589934592,
         "usage_percent": 50.0
       },
-      "disks": [
+      "disk": [
         {
           "device": "/dev/sda1",
           "mount_point": "/",
@@ -147,7 +147,7 @@
           "usage_percent": 50.0
         }
       ],
-      "networks": [
+      "network": [
         {
           "interface": "eth0",
           "rx_bytes": 1024000,
@@ -160,7 +160,9 @@
           "tx_rate": 512.0
         }
       ],
-      "gpus": [
+      "gpu_allocated": 0,
+      "gpu_num": 1,
+      "gpu": [
         {
           "index": 0,
           "name": "NVIDIA RTX 4090",
@@ -1343,6 +1345,82 @@ curl "http://localhost:8080/alarm/events/count?status=firing"
 
 **错误响应:**
 - `500`: AlarmManager不可用或服务器内部错误
+
+---
+
+### 7. WebSocket实时通知API
+
+WebSocket API提供实时通知功能，允许客户端通过WebSocket连接接收实时的告警事件和系统状态更新。WebSocket服务器运行在独立的端口上，提供低延迟的实时通信。
+
+#### 7.1 WebSocket连接
+
+**WebSocket URL:** `ws://localhost:9002`
+
+**连接方式:**
+```javascript
+const ws = new WebSocket('ws://localhost:9002');
+```
+
+**连接状态:**
+- `CONNECTING` (0): 连接建立中
+- `OPEN` (1): 连接已建立，可以通信
+- `CLOSING` (2): 连接正在关闭
+- `CLOSED` (3): 连接已关闭
+
+
+#### 7.2 告警事件通知
+
+当告警事件触发或状态发生变化时，服务器会向所有连接的客户端广播告警事件：
+
+**告警事件消息格式:**
+```json
+{
+  "type": "alarm_event",
+  "fingerprint": "alert-fingerprint-hash",
+  "status": "firing",
+  "starts_at": "2024-01-01T00:00:00Z",
+  "ends_at": null,
+  "labels": {
+    "alertname": "CPU使用率过高",
+    "instance": "192.168.1.100",
+    "severity": "warning"
+  },
+  "annotations": {
+    "summary": "CPU使用率过高",
+    "description": "节点 192.168.1.100 CPU使用率达到 85.5%"
+  }
+}
+```
+
+**告警事件字段说明:**
+| 字段名 | 类型 | 说明 |
+|-------|------|------|
+| `type` | String | 消息类型，固定为 "alarm_event" |
+| `fingerprint` | String | 告警指纹，用于标识同一类告警 |
+| `status` | String | 告警状态：`firing`（触发中）、`resolved`（已解决） |
+| `starts_at` | String | 告警开始时间（ISO 8601格式） |
+| `ends_at` | String\|null | 告警结束时间，null表示仍在触发中 |
+| `labels` | Object | 告警标签信息 |
+| `annotations` | Object | 告警注释信息 |
+
+#### 7.3 心跳与连接健康
+
+WebSocket服务器会自动定期向所有客户端发送 ping，客户端收到后自动回复 pong（大多数浏览器和WebSocket库会自动处理）。
+
+- 服务器每30秒自动发ping
+- 客户端无需主动发心跳
+- 如果客户端长时间未响应pong，服务器会自动断开连接
+
+**客户端示例：**
+```javascript
+const ws = new WebSocket('ws://localhost:9002');
+ws.onopen = () => {
+  // 连接建立即可，无需手动心跳
+};
+ws.onclose = () => {
+  // 可实现自动重连
+};
+```
 
 ---
 

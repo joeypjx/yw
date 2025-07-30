@@ -44,11 +44,20 @@ const char* get_web_page_html() {
         .status-offline { color: #dc3545; font-weight: bold; }
         .status-warning { color: #ffc107; font-weight: bold; }
         .last-update { position: fixed; top: 10px; right: 20px; background: rgba(0,0,0,0.7); color: white; padding: 5px 10px; border-radius: 3px; font-size: 0.8em; z-index: 1000; }
+        .websocket-status { position: fixed; top: 10px; left: 20px; background: rgba(0,0,0,0.7); color: white; padding: 5px 10px; border-radius: 3px; font-size: 0.8em; z-index: 1000; }
+        .ws-connected { background: rgba(40,167,69,0.8) !important; }
+        .ws-disconnected { background: rgba(220,53,69,0.8) !important; }
+        .notification { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #fff; border: 2px solid #007bff; border-radius: 8px; padding: 20px; box-shadow: 0 4px 20px rgba(0,0,0,0.3); z-index: 2000; max-width: 400px; display: none; }
+        .notification h3 { margin-top: 0; color: #007bff; }
+        .notification button { margin-top: 15px; background: #007bff; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; }
+        .notification button:hover { background: #0056b3; }
+        .notification-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1999; display: none; }
     </style>
 </head>
 <body>
     <div id="container">
         <div id="last-update" class="last-update">Last update: Never</div>
+        <div id="websocket-status" class="websocket-status ws-disconnected">WebSocket: Disconnected</div>
         <h1>System Management</h1>
 
         <!-- Node Metrics Section -->
@@ -191,6 +200,14 @@ const char* get_web_page_html() {
         </div>
     </div>
 
+    <!-- Notification popup -->
+    <div id="notification-overlay" class="notification-overlay"></div>
+    <div id="notification" class="notification">
+        <h3>WebSocket Notification</h3>
+        <div id="notification-content">Message from server...</div>
+        <button onclick="closeNotification()">Close</button>
+    </div>
+
     <script>
     document.addEventListener('DOMContentLoaded', () => {
         const metricsTableBody = document.querySelector('#metrics-table tbody');
@@ -203,6 +220,110 @@ const char* get_web_page_html() {
         const refreshMetricsButton = document.getElementById('refresh-metrics');
         const refreshRulesButton = document.getElementById('refresh-rules');
         const lastUpdateDiv = document.getElementById('last-update');
+        const websocketStatusDiv = document.getElementById('websocket-status');
+        const notificationDiv = document.getElementById('notification');
+        const notificationOverlay = document.getElementById('notification-overlay');
+        const notificationContent = document.getElementById('notification-content');
+        
+        // WebSocket connection
+        let websocket = null;
+        let reconnectTimer = null;
+        
+        const connectWebSocket = () => {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${protocol}//${window.location.hostname}:9002`; // Assuming WebSocket server on port 9002
+            
+            try {
+                websocket = new WebSocket(wsUrl);
+                
+                websocket.onopen = () => {
+                    console.log('WebSocket connected');
+                    websocketStatusDiv.textContent = 'WebSocket: Connected';
+                    websocketStatusDiv.className = 'websocket-status ws-connected';
+                    
+                    // Register with the server
+                    const registrationMessage = {
+                        type: 'register',
+                        clientType: 'web_client',
+                        timestamp: new Date().toISOString()
+                    };
+                    websocket.send(JSON.stringify(registrationMessage));
+                    
+                    // Clear reconnect timer if connection successful
+                    if (reconnectTimer) {
+                        clearTimeout(reconnectTimer);
+                        reconnectTimer = null;
+                    }
+                };
+                
+                websocket.onmessage = (event) => {
+                    console.log('WebSocket message received:', event.data);
+                    try {
+                        const message = JSON.parse(event.data);
+                        showNotification(message);
+                    } catch (e) {
+                        // If not JSON, show as plain text
+                        showNotification({ content: event.data, type: 'message' });
+                    }
+                };
+                
+                websocket.onclose = () => {
+                    console.log('WebSocket disconnected');
+                    websocketStatusDiv.textContent = 'WebSocket: Disconnected';
+                    websocketStatusDiv.className = 'websocket-status ws-disconnected';
+                    websocket = null;
+                    
+                    // Attempt to reconnect after 5 seconds
+                    reconnectTimer = setTimeout(connectWebSocket, 5000);
+                };
+                
+                websocket.onerror = (error) => {
+                    console.error('WebSocket error:', error);
+                    websocketStatusDiv.textContent = 'WebSocket: Error';
+                    websocketStatusDiv.className = 'websocket-status ws-disconnected';
+                };
+                
+            } catch (error) {
+                console.error('Failed to create WebSocket connection:', error);
+                websocketStatusDiv.textContent = 'WebSocket: Failed';
+                websocketStatusDiv.className = 'websocket-status ws-disconnected';
+                
+                // Attempt to reconnect after 5 seconds
+                reconnectTimer = setTimeout(connectWebSocket, 5000);
+            }
+        };
+        
+        const showNotification = (message) => {
+            let content = '';
+            if (typeof message === 'object') {
+                if (message.content) {
+                    content = message.content;
+                } else if (message.summary) {
+                    content = message.summary;
+                } else if (message.message) {
+                    content = message.message;
+                } else {
+                    content = JSON.stringify(message, null, 2);
+                }
+            } else {
+                content = message.toString();
+            }
+            
+            notificationContent.textContent = content;
+            notificationOverlay.style.display = 'block';
+            notificationDiv.style.display = 'block';
+        };
+        
+        window.closeNotification = () => {
+            notificationOverlay.style.display = 'none';
+            notificationDiv.style.display = 'none';
+        };
+        
+        // Close notification when clicking overlay
+        notificationOverlay.addEventListener('click', closeNotification);
+        
+        // Initialize WebSocket connection
+        connectWebSocket();
         
         // Events Pagination elements
         const eventsPaginationDiv = document.getElementById('events-pagination');

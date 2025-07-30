@@ -54,7 +54,7 @@ std::string calculateHostIP(int box_id, int slot_id);
  * - 0x02 -> slotid 13 (D1)
  * - 0x04 -> slotid 14 (D2)
  */
-int ipmbaddrToSlotId(uint8_t ipmbaddr);
+uint8_t ipmbaddrToSlotId(uint8_t ipmbaddr);
 
 } // namespace Utils
 

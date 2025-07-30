@@ -49,7 +49,7 @@ struct AlarmSystemConfig {
     int bmc_multicast_port = 5715;
     
     // WebSocket服务器配置
-    int websocket_port = 8081;
+    int websocket_port = 9002;
     
     // 监控配置
     std::chrono::seconds evaluation_interval = std::chrono::seconds(3);
