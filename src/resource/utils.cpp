@@ -51,6 +51,8 @@ std::string calculateHostIP(int box_id, int slot_id) {
         network_id = box_id * 2;
         host_id = 5;
         LogManager::getLogger()->warn("Invalid slot_id: {}, using default host_ip calculation", slot_id);
+
+        return "";
     }
     
     return "192.168." + std::to_string(network_id) + "." + std::to_string(host_id);

@@ -95,6 +95,9 @@ bool NodeStorage::storeUDPInfo(const UdpInfo& udp_info) {
             
             // 使用Utils::calculateHostIP方法计算host_ip
             std::string host_ip = Utils::calculateHostIP(box_id, slot_id);
+            if (host_ip.empty()) {
+                continue;
+            }
             
             // 检查是否已存在该host_ip的节点数据
             auto it = m_nodes.find(host_ip);

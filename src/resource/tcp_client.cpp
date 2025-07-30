@@ -15,7 +15,7 @@ using namespace asio;
 using namespace asio::ip;
 
 struct TcpClient::Impl {
-    io_context io_context;
+    asio::io_context io_context;
     std::unique_ptr<tcp::socket> socket;
     int connect_timeout_seconds = 10;
     int read_write_timeout_seconds = 30;

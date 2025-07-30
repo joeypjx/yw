@@ -1213,9 +1213,9 @@ void HttpServer::handle_resource(const httplib::Request& req, httplib::Response&
         }
 
         // 将JSON数据反序列化为ResourceInfo结构体
-        node::ResourceInfo resource_info = body.get<node::ResourceInfo>();
+        node::ResourceInfo resource_info = data.get<node::ResourceInfo>();
 
-        if (m_resource_storage->insertResourceData(resource_info)) {
+        if (m_resource_storage->insertResourceData(resource_info.host_ip, resource_info)) {
             json response = {
                 {"api_version", 1},
                 {"status", "success"},

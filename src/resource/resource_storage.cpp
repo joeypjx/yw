@@ -57,7 +57,7 @@ bool ResourceStorage::createDatabase(const std::string& dbName) {
         return false;
     }
 
-    std::string sql = "CREATE DATABASE IF NOT EXISTS " + dbName + " KEEP 1";
+    std::string sql = "CREATE DATABASE IF NOT EXISTS " + dbName;
     if (!executeQuery(sql)) {
         return false;
     }
@@ -163,13 +163,12 @@ bool ResourceStorage::executeQuery(const std::string& sql) {
     return true;
 }
 
-bool ResourceStorage::insertResourceData(const node::ResourceInfo& resourceData) {
+bool ResourceStorage::insertResourceData(const std::string& hostIp, const node::ResourceInfo& resourceData) {
     if (!m_connected) {
         LogManager::getLogger()->error("Not connected to TDengine");
         return false;
     }
 
-    std::string hostIp = resourceData.host_ip;
     bool success = true;
 
     // LogManager::getLogger()->info("Inserting resource data for host: {}", hostIp);
@@ -597,7 +596,7 @@ NodeResourceData ResourceStorage::getNodeResourceData(const std::string& hostIp)
         }
 
         // 获取Sensor数据 - 使用LAST_ROW和GROUP BY优化
-        std::string sensorSql = "SELECT LAST_ROW(ts) as ts, LAST_ROW(value) as value, LAST_ROW(alarm_type) as alarm_type, sequence, type, name FROM sensor WHERE host_ip = '" + hostIp + "' GROUP BY sequence, type, name";
+        std::string sensorSql = "SELECT LAST_ROW(ts) as ts, LAST_ROW(sensor_value) as sensor_value, LAST_ROW(alarm_type) as alarm_type, sensor_seq as sequence, sensor_type as type, sensor_name as name FROM bmc_sensor_super WHERE host_ip = '" + hostIp + "' GROUP BY sensor_seq, sensor_type, sensor_name";
         auto sensorResults = executeQuerySQL(sensorSql);
         
         for (const auto& result : sensorResults) {
@@ -605,7 +604,7 @@ NodeResourceData ResourceStorage::getNodeResourceData(const std::string& hostIp)
             sensorData.sequence = result.labels.count("sequence") ? std::stoi(result.labels.at("sequence")) : 0;
             sensorData.type = result.labels.count("type") ? std::stoi(result.labels.at("type")) : 0;
             sensorData.name = result.labels.count("name") ? result.labels.at("name") : "Unknown Sensor";
-            sensorData.value = result.metrics.count("value") ? result.metrics.at("value") : 0.0;
+            sensorData.value = result.metrics.count("sensor_value") ? result.metrics.at("sensor_value") : 0.0;
             sensorData.alarm_type = result.metrics.count("alarm_type") ? result.metrics.at("alarm_type") : 0;
             sensorData.timestamp = result.timestamp;
             

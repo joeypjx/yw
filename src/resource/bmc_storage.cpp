@@ -181,7 +181,9 @@ bool BMCStorage::storeSensorData(const UdpInfo& udp_info) {
         for (int i = 0; i < 14; i++) {
             const auto& board = udp_info.board[i];
             uint8_t slot_id = Utils::ipmbaddrToSlotId(board.ipmbaddr);
-            
+            if (slot_id == -1) {
+                continue;
+            }
             // 计算host_ip
             std::string host_ip = Utils::calculateHostIP(static_cast<int>(udp_info.boxid), static_cast<int>(slot_id));
             
@@ -302,6 +304,9 @@ bool BMCStorage::storeBMCDataFromJson(const string& json_data) {
         auto boards = j["boards"];
         for (const auto& board : boards) {
             uint8_t slot_id =  Utils::ipmbaddrToSlotId(board["ipmb_address"]);
+            if (slot_id == -1) {
+                continue;
+            }
             auto sensors = board["sensors"];
             
             // 计算host_ip

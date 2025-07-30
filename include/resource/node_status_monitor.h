@@ -29,5 +29,5 @@ private:
     std::thread m_monitor_thread;
 
     const std::chrono::seconds m_check_interval{1}; // 每秒检查一次
-    const std::chrono::seconds m_offline_threshold{5}; // 5秒无心跳则认为离线
+    const std::chrono::seconds m_offline_threshold{20}; // 5秒无心跳则认为离线
 }; 

@@ -129,7 +129,7 @@ public:
     bool createDatabase(const std::string& dbName);
     bool createResourceTable();
     // 插入资源数据
-    bool insertResourceData(const node::ResourceInfo& resourceData);
+    bool insertResourceData(const std::string& hostIp, const node::ResourceInfo& resourceData);
     
     // 查询接口
     std::vector<QueryResult> executeQuerySQL(const std::string& sql);
