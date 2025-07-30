@@ -43,6 +43,9 @@ struct NodeData {
     int module_type;
     int bmc_company;
     std::string bmc_version;
+
+    // 节点状态，online/offline
+    std::string status;
     
     std::chrono::system_clock::time_point last_heartbeat;
     

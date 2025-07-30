@@ -28,6 +28,18 @@ void NodeStatusMonitor::stop() {
     LogManager::getLogger()->info("NodeStatusMonitor stopped.");
 }
 
+void NodeStatusMonitor::setNodeStatusChangeCallback(NodeStatusChangeCallback callback) {
+    std::lock_guard<std::mutex> lock(m_callback_mutex);
+    m_status_change_callback = callback;
+    LogManager::getLogger()->info("NodeStatusMonitor callback set.");
+}
+
+void NodeStatusMonitor::clearNodeStatusChangeCallback() {
+    std::lock_guard<std::mutex> lock(m_callback_mutex);
+    m_status_change_callback = nullptr;
+    LogManager::getLogger()->info("NodeStatusMonitor callback cleared.");
+}
+
 void NodeStatusMonitor::run() {
     while (m_running) {
         checkNodeStatus();
@@ -53,28 +65,57 @@ void NodeStatusMonitor::checkNodeStatus() {
         };
         std::string fingerprint = m_alarm_manager->calculateFingerprint("NodeOffline", labels);
 
-        if (time_since_heartbeat > m_offline_threshold) {
-            // 节点离线，触发告警
-            LogManager::getLogger()->warn("Node '{}' is offline. Last heartbeat {} seconds ago.", node->host_ip, time_since_heartbeat.count());
-
-            nlohmann::json labels_json = {
-                {"alert_name", "NodeOffline"},
-                {"host_ip", node->host_ip},
-                {"hostname", node->hostname},
-                {"severity", "critical"}
-            };
+        // 先判断节点当前应该的状态
+        std::string expected_status = (time_since_heartbeat <= m_offline_threshold) ? "online" : "offline";
+        
+        // 如果状态发生变化
+        if (node->status != expected_status) {
+            std::string old_status = node->status;
             
-            nlohmann::json annotations = {
-                {"summary", "Node is offline"},
-                {"description", "Node " + node->host_ip + " has not sent a heartbeat for more than " + std::to_string(m_offline_threshold.count()) + " seconds."}
-            };
+            if (expected_status == "offline" && node->status == "online") {
+                // 节点从在线变为离线，触发告警
+                LogManager::getLogger()->warn("Node '{}' is offline. Last heartbeat {} seconds ago.", node->host_ip, time_since_heartbeat.count());                
+                
+                // 调用状态变化回调
+                notifyStatusChange(node->host_ip, old_status, expected_status);
+                
+            } else if (expected_status == "online" && node->status == "offline") {
+                // 节点从离线恢复在线，解决告警
+                LogManager::getLogger()->info("Node '{}' is back online.", node->host_ip);
+                
+                // 调用状态变化回调
+                notifyStatusChange(node->host_ip, old_status, expected_status);
+            }
             
-            // 创建或更新告警，状态为 "firing"
-            m_alarm_manager->createOrUpdateAlarm(fingerprint, labels_json, annotations);
-
-        } else {
-            // 节点在线，如果存在相关的离线告警，则解决它
-            m_alarm_manager->resolveAlarm(fingerprint);
+            // 更新节点状态
+            node->status = expected_status;
         }
     }
-} 
+}
+
+void NodeStatusMonitor::notifyStatusChange(const std::string& host_ip, const std::string& old_status, const std::string& new_status) {
+    std::lock_guard<std::mutex> lock(m_callback_mutex);
+    
+    if (m_status_change_callback) {
+        try {
+            // 在单独的线程中异步调用回调，避免阻塞监控线程
+            std::thread callback_thread([this, host_ip, old_status, new_status]() {
+                try {
+                    m_status_change_callback(host_ip, old_status, new_status);
+                } catch (const std::exception& e) {
+                    LogManager::getLogger()->error("Exception in NodeStatusMonitor callback: {}", e.what());
+                } catch (...) {
+                    LogManager::getLogger()->error("Unknown exception in NodeStatusMonitor callback");
+                }
+            });
+            
+            // 分离线程，让其在后台运行
+            callback_thread.detach();
+            
+            LogManager::getLogger()->debug("NodeStatusMonitor callback invoked for node {} ({}->{})", 
+                                         host_ip, old_status, new_status);
+        } catch (const std::exception& e) {
+            LogManager::getLogger()->error("Failed to invoke NodeStatusMonitor callback: {}", e.what());
+        }
+    }
+}

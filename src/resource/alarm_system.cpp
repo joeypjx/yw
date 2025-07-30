@@ -356,12 +356,6 @@ bool AlarmSystem::initializeServices() {
                 try {
                     // 将告警事件转换为JSON格式
                     nlohmann::json alarm_json = {
-                        {"type", "alarm_event"},
-                        {"fingerprint", event.fingerprint},
-                        {"status", event.status},
-                        {"starts_at", AlarmRuleEngine::formatTimestamp(event.starts_at)},
-                        {"ends_at", event.status == "resolved" ? AlarmRuleEngine::formatTimestamp(event.ends_at) : ""},
-                        {"generator_url", event.generator_url},
                         {"labels", event.labels},
                         {"annotations", event.annotations}
                     };
@@ -398,6 +392,42 @@ bool AlarmSystem::initializeServices() {
         // 7. 初始化节点状态监控器
         LogManager::getLogger()->info("👁️ 初始化节点状态监控器...");
         node_status_monitor_ = std::make_shared<NodeStatusMonitor>(node_storage_, alarm_manager_);
+        node_status_monitor_->setNodeStatusChangeCallback([this](const std::string& host_ip, const std::string& old_status, const std::string& new_status) {
+
+            std::string fingerprint = alarm_manager_->calculateFingerprint("NodeOffline", {
+                {"host_ip", host_ip}
+            });
+
+            if (new_status == "offline") {
+                nlohmann::json labels_json = {
+                    {"alert_name", "NodeOffline"},
+                    {"host_ip", host_ip},
+                    {"severity", "critical"}
+                };
+                
+                nlohmann::json annotations = {
+                    {"summary", "Node is offline"},
+                    {"description", "Node " + host_ip + " has not sent a heartbeat for more than 20 seconds."}
+                };
+                
+                // 创建或更新告警，状态为 "firing"
+                alarm_manager_->createOrUpdateAlarm(fingerprint, labels_json, annotations);
+
+                // 将告警事件转换为JSON格式
+                nlohmann::json alarm_json = {
+                    {"labels", labels_json},
+                    {"annotations", annotations}
+                };
+                
+                // 广播告警事件
+                websocket_server_->broadcast(alarm_json.dump());
+
+                LogManager::getLogger()->warn("Node '{}' is offline.", host_ip);
+            } else if (new_status == "online") {
+                alarm_manager_->resolveAlarm(fingerprint);
+                LogManager::getLogger()->info("Node '{}' is back online.", host_ip);
+            }
+        });
         node_status_monitor_->start();
         LogManager::getLogger()->info("✅ 节点状态监控器启动成功");
         
