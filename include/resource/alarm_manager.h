@@ -3,6 +3,9 @@
 #include <string>
 #include <memory>
 #include <chrono>
+#include <atomic>
+#include <thread>
+#include <mutex>
 #include <mysql.h>
 #include "json.hpp"
 
@@ -39,6 +42,12 @@ struct PaginatedAlarmEvents {
 // 暂不实现：分组、静默、抑制等高级功能
 class AlarmManager {
 public:
+    // 常量定义
+    static constexpr int DEFAULT_RECONNECT_INTERVAL = 5;
+    static constexpr int DEFAULT_MAX_RECONNECT_ATTEMPTS = 10;
+    static constexpr int DEFAULT_CONNECTION_CHECK_INTERVAL = 5000;
+    static constexpr int DEFAULT_MAX_BACKOFF_SECONDS = 60;
+
     AlarmManager(const std::string& host, int port, const std::string& user, 
                  const std::string& password, const std::string& database);
     ~AlarmManager();
@@ -71,6 +80,20 @@ public:
     bool createOrUpdateAlarm(const std::string& fingerprint, const nlohmann::json& labels, const nlohmann::json& annotations);
     bool resolveAlarm(const std::string& fingerprint);
 
+    // 自动重连相关方法
+    void enableAutoReconnect(bool enable = true);
+    void setReconnectInterval(int seconds);
+    void setMaxReconnectAttempts(int attempts);
+    bool isAutoReconnectEnabled() const;
+    int getReconnectAttempts() const;
+    
+    // 性能优化相关方法
+    void setConnectionCheckInterval(int milliseconds);
+    void enableExponentialBackoff(bool enable = true);
+    void setMaxBackoffSeconds(int seconds);
+    int getConnectionCheckInterval() const;
+    bool isExponentialBackoffEnabled() const;
+
 private:
     std::string m_host;
     int m_port;
@@ -79,6 +102,25 @@ private:
     std::string m_database;
     
     MYSQL* m_connection;
+    std::atomic<bool> m_connected;
+
+    // 自动重连相关成员变量
+    std::atomic<bool> m_auto_reconnect_enabled;
+    std::atomic<int> m_reconnect_interval_seconds;
+    std::atomic<int> m_max_reconnect_attempts;
+    std::atomic<int> m_current_reconnect_attempts;
+    std::atomic<bool> m_reconnect_in_progress;
+    std::chrono::steady_clock::time_point m_last_reconnect_attempt;
+    std::mutex m_reconnect_mutex;
+    std::thread m_reconnect_thread;
+    std::atomic<bool> m_stop_reconnect_thread;
+    
+    // 性能优化相关成员变量
+    std::chrono::steady_clock::time_point m_last_connection_check;
+    std::mutex m_connection_check_mutex;
+    std::atomic<int> m_connection_check_interval_ms;
+    std::atomic<bool> m_use_exponential_backoff;
+    std::atomic<int> m_max_backoff_seconds;
     
     // 数据库操作辅助函数
     bool executeQuery(const std::string& query);
@@ -99,4 +141,16 @@ private:
     void logInfo(const std::string& message);
     void logError(const std::string& message);
     void logDebug(const std::string& message);
+    
+    // 自动重连相关私有方法
+    bool tryReconnect();
+    void reconnectLoop();
+    bool checkConnection();
+    void resetReconnectAttempts();
+    bool shouldAttemptReconnect();
+    
+    // 性能优化相关私有方法
+    bool shouldCheckConnection();
+    int calculateBackoffInterval();
+    void updateLastConnectionCheck();
 };
