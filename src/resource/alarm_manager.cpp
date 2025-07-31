@@ -136,6 +136,10 @@ bool AlarmManager::createEventTable() {
 }
 
 bool AlarmManager::processAlarmEvent(const AlarmEvent& event) {
+    if (!validateAlarmEvent(event)) {
+        return false;
+    }
+    
     if (!checkConnection()) {
         logError("No database connection");
         return false;
@@ -222,54 +226,27 @@ bool AlarmManager::alarmEventExists(const std::string& fingerprint) {
     query << "SELECT COUNT(*) FROM alarm_events WHERE fingerprint = '"
           << escaped_fingerprint << "' AND status = 'firing'";
     
-    MYSQL_RES* result = executeSelectQuery(query.str());
-    if (!result) {
+    MYSQL_RES* raw_result = executeSelectQuery(query.str());
+    if (!raw_result) {
         return false;
     }
     
-    MYSQL_ROW row = mysql_fetch_row(result);
+    MySQLResultRAII result(raw_result);
+    MYSQL_ROW row = mysql_fetch_row(result.get());
     int count = row ? std::stoi(row[0]) : 0;
     
-    mysql_free_result(result);
     return count > 0;
 }
 
 std::vector<AlarmEventRecord> AlarmManager::getActiveAlarmEvents() {
-    std::vector<AlarmEventRecord> events;
-    
     std::string query = "SELECT id, fingerprint, status, labels_json, annotations_json, "
                        "starts_at, ends_at, generator_url, created_at, updated_at "
                        "FROM alarm_events WHERE status = 'firing' ORDER BY starts_at DESC";
     
-    MYSQL_RES* result = executeSelectQuery(query);
-    if (!result) {
-        return events;
-    }
-    
-    MYSQL_ROW row;
-    while ((row = mysql_fetch_row(result)) != nullptr) {
-        AlarmEventRecord record;
-        record.id = row[0] ? row[0] : "";
-        record.fingerprint = row[1] ? row[1] : "";
-        record.status = row[2] ? row[2] : "";
-        record.labels_json = row[3] ? row[3] : "";
-        record.annotations_json = row[4] ? row[4] : "";
-        record.starts_at = row[5] ? row[5] : "";
-        record.ends_at = row[6] ? row[6] : "";
-        record.generator_url = row[7] ? row[7] : "";
-        record.created_at = row[8] ? row[8] : "";
-        record.updated_at = row[9] ? row[9] : "";
-        
-        events.push_back(record);
-    }
-    
-    mysql_free_result(result);
-    return events;
+    return executeSelectAlarmEvents(query);
 }
 
 std::vector<AlarmEventRecord> AlarmManager::getAlarmEventsByFingerprint(const std::string& fingerprint) {
-    std::vector<AlarmEventRecord> events;
-    
     std::string escaped_fingerprint = escapeString(fingerprint);
     
     std::ostringstream query;
@@ -278,64 +255,16 @@ std::vector<AlarmEventRecord> AlarmManager::getAlarmEventsByFingerprint(const st
           << "FROM alarm_events WHERE fingerprint = '"
           << escaped_fingerprint << "' ORDER BY starts_at DESC";
     
-    MYSQL_RES* result = executeSelectQuery(query.str());
-    if (!result) {
-        return events;
-    }
-    
-    MYSQL_ROW row;
-    while ((row = mysql_fetch_row(result)) != nullptr) {
-        AlarmEventRecord record;
-        record.id = row[0] ? row[0] : "";
-        record.fingerprint = row[1] ? row[1] : "";
-        record.status = row[2] ? row[2] : "";
-        record.labels_json = row[3] ? row[3] : "";
-        record.annotations_json = row[4] ? row[4] : "";
-        record.starts_at = row[5] ? row[5] : "";
-        record.ends_at = row[6] ? row[6] : "";
-        record.generator_url = row[7] ? row[7] : "";
-        record.created_at = row[8] ? row[8] : "";
-        record.updated_at = row[9] ? row[9] : "";
-        
-        events.push_back(record);
-    }
-    
-    mysql_free_result(result);
-    return events;
+    return executeSelectAlarmEvents(query.str());
 }
 
 std::vector<AlarmEventRecord> AlarmManager::getRecentAlarmEvents(int limit) {
-    std::vector<AlarmEventRecord> events;
-    
     std::ostringstream query;
     query << "SELECT id, fingerprint, status, labels_json, annotations_json, "
           << "starts_at, ends_at, generator_url, created_at, updated_at "
           << "FROM alarm_events ORDER BY created_at DESC LIMIT " << limit;
     
-    MYSQL_RES* result = executeSelectQuery(query.str());
-    if (!result) {
-        return events;
-    }
-    
-    MYSQL_ROW row;
-    while ((row = mysql_fetch_row(result)) != nullptr) {
-        AlarmEventRecord record;
-        record.id = row[0] ? row[0] : "";
-        record.fingerprint = row[1] ? row[1] : "";
-        record.status = row[2] ? row[2] : "";
-        record.labels_json = row[3] ? row[3] : "";
-        record.annotations_json = row[4] ? row[4] : "";
-        record.starts_at = row[5] ? row[5] : "";
-        record.ends_at = row[6] ? row[6] : "";
-        record.generator_url = row[7] ? row[7] : "";
-        record.created_at = row[8] ? row[8] : "";
-        record.updated_at = row[9] ? row[9] : "";
-        
-        events.push_back(record);
-    }
-    
-    mysql_free_result(result);
-    return events;
+    return executeSelectAlarmEvents(query.str());
 }
 
 AlarmEventRecord AlarmManager::getAlarmEventById(const std::string& id) {
@@ -348,56 +277,47 @@ AlarmEventRecord AlarmManager::getAlarmEventById(const std::string& id) {
           << "starts_at, ends_at, generator_url, created_at, updated_at "
           << "FROM alarm_events WHERE id = '" << escaped_id << "'";
     
-    MYSQL_RES* result = executeSelectQuery(query.str());
-    if (!result) {
+    MYSQL_RES* raw_result = executeSelectQuery(query.str());
+    if (!raw_result) {
         return record;
     }
     
-    MYSQL_ROW row = mysql_fetch_row(result);
+    MySQLResultRAII result(raw_result);
+    MYSQL_ROW row = mysql_fetch_row(result.get());
     if (row) {
-        record.id = row[0] ? row[0] : "";
-        record.fingerprint = row[1] ? row[1] : "";
-        record.status = row[2] ? row[2] : "";
-        record.labels_json = row[3] ? row[3] : "";
-        record.annotations_json = row[4] ? row[4] : "";
-        record.starts_at = row[5] ? row[5] : "";
-        record.ends_at = row[6] ? row[6] : "";
-        record.generator_url = row[7] ? row[7] : "";
-        record.created_at = row[8] ? row[8] : "";
-        record.updated_at = row[9] ? row[9] : "";
+        record = parseRowToAlarmEventRecord(row);
     }
     
-    mysql_free_result(result);
     return record;
 }
 
 int AlarmManager::getActiveAlarmCount() {
     std::string query = "SELECT COUNT(*) FROM alarm_events WHERE status = 'firing'";
     
-    MYSQL_RES* result = executeSelectQuery(query);
-    if (!result) {
+    MYSQL_RES* raw_result = executeSelectQuery(query);
+    if (!raw_result) {
         return 0;
     }
     
-    MYSQL_ROW row = mysql_fetch_row(result);
+    MySQLResultRAII result(raw_result);
+    MYSQL_ROW row = mysql_fetch_row(result.get());
     int count = row ? std::stoi(row[0]) : 0;
     
-    mysql_free_result(result);
     return count;
 }
 
 int AlarmManager::getTotalAlarmCount() {
     std::string query = "SELECT COUNT(*) FROM alarm_events";
     
-    MYSQL_RES* result = executeSelectQuery(query);
-    if (!result) {
+    MYSQL_RES* raw_result = executeSelectQuery(query);
+    if (!raw_result) {
         return 0;
     }
     
-    MYSQL_ROW row = mysql_fetch_row(result);
+    MySQLResultRAII result(raw_result);
+    MYSQL_ROW row = mysql_fetch_row(result.get());
     int count = row ? std::stoi(row[0]) : 0;
     
-    mysql_free_result(result);
     return count;
 }
 
@@ -410,10 +330,8 @@ PaginatedAlarmEvents AlarmManager::getPaginatedAlarmEvents(int page, int page_si
     result.has_next = false;
     result.has_prev = false;
     
-    // 验证参数
-    if (page < 1) page = 1;
-    if (page_size < 1) page_size = 20;
-    if (page_size > 1000) page_size = 1000; // 限制最大页面大小
+    // 验证和修正参数
+    validatePaginationParams(page, page_size);
     
     result.page = page;
     result.page_size = page_size;
@@ -427,16 +345,16 @@ PaginatedAlarmEvents AlarmManager::getPaginatedAlarmEvents(int page, int page_si
     }
     
     // 获取总记录数
-    MYSQL_RES* count_result = executeSelectQuery(count_query.str());
-    if (!count_result) {
+    MYSQL_RES* raw_count_result = executeSelectQuery(count_query.str());
+    if (!raw_count_result) {
         return result;
     }
     
-    MYSQL_ROW count_row = mysql_fetch_row(count_result);
+    MySQLResultRAII count_result(raw_count_result);
+    MYSQL_ROW count_row = mysql_fetch_row(count_result.get());
     if (count_row && count_row[0]) {
         result.total_count = std::stoi(count_row[0]);
     }
-    mysql_free_result(count_result);
     
     // 计算总页数
     result.total_pages = (result.total_count + page_size - 1) / page_size;
@@ -467,30 +385,18 @@ PaginatedAlarmEvents AlarmManager::getPaginatedAlarmEvents(int page, int page_si
     data_query << " ORDER BY created_at DESC LIMIT " << page_size << " OFFSET " << offset;
     
     // 执行数据查询
-    MYSQL_RES* data_result = executeSelectQuery(data_query.str());
-    if (!data_result) {
+    MYSQL_RES* raw_data_result = executeSelectQuery(data_query.str());
+    if (!raw_data_result) {
         return result;
     }
     
+    MySQLResultRAII data_result(raw_data_result);
     // 填充结果数据
     MYSQL_ROW row;
-    while ((row = mysql_fetch_row(data_result)) != nullptr) {
-        AlarmEventRecord record;
-        record.id = row[0] ? row[0] : "";
-        record.fingerprint = row[1] ? row[1] : "";
-        record.status = row[2] ? row[2] : "";
-        record.labels_json = row[3] ? row[3] : "";
-        record.annotations_json = row[4] ? row[4] : "";
-        record.starts_at = row[5] ? row[5] : "";
-        record.ends_at = row[6] ? row[6] : "";
-        record.generator_url = row[7] ? row[7] : "";
-        record.created_at = row[8] ? row[8] : "";
-        record.updated_at = row[9] ? row[9] : "";
-        
-        result.events.push_back(record);
+    while ((row = mysql_fetch_row(data_result.get())) != nullptr) {
+        result.events.push_back(parseRowToAlarmEventRecord(row));
     }
     
-    mysql_free_result(data_result);
     return result;
 }
 
@@ -504,8 +410,8 @@ bool AlarmManager::executeQuery(const std::string& query) {
     logDebug("Executing query: " + query);
     
     if (mysql_query(m_connection, query.c_str()) != 0) {
-        logError("Query failed: " + std::string(mysql_error(m_connection)));
-        logError("SQL: " + query);
+        logQueryError(query, mysql_error(m_connection));
+        handleMySQLError("Query execution");
         return false;
     }
     
@@ -858,4 +764,248 @@ int AlarmManager::calculateBackoffInterval() {
 void AlarmManager::updateLastConnectionCheck() {
     std::lock_guard<std::mutex> lock(m_connection_check_mutex);
     m_last_connection_check = std::chrono::steady_clock::now();
+}
+
+// PreparedStatementRAII 实现
+AlarmManager::PreparedStatementRAII::PreparedStatementRAII(MYSQL* mysql, const std::string& query) 
+    : stmt(nullptr) {
+    if (mysql) {
+        stmt = mysql_stmt_init(mysql);
+        if (stmt) {
+            if (mysql_stmt_prepare(stmt, query.c_str(), query.length()) != 0) {
+                mysql_stmt_close(stmt);
+                stmt = nullptr;
+            }
+        }
+    }
+}
+
+AlarmManager::PreparedStatementRAII::~PreparedStatementRAII() {
+    if (stmt) {
+        mysql_stmt_close(stmt);
+    }
+}
+
+bool AlarmManager::PreparedStatementRAII::bindParams(MYSQL_BIND* binds) {
+    if (!stmt) return false;
+    return mysql_stmt_bind_param(stmt, binds) == 0;
+}
+
+bool AlarmManager::PreparedStatementRAII::execute() {
+    if (!stmt) return false;
+    return mysql_stmt_execute(stmt) == 0;
+}
+
+MYSQL_RES* AlarmManager::PreparedStatementRAII::getResult() {
+    if (!stmt) return nullptr;
+    return mysql_stmt_result_metadata(stmt);
+}
+
+// 优化的解析方法
+AlarmEventRecord AlarmManager::parseRowToAlarmEventRecord(MYSQL_ROW row) {
+    AlarmEventRecord record;
+    if (row) {
+        record.id = row[0] ? row[0] : "";
+        record.fingerprint = row[1] ? row[1] : "";
+        record.status = row[2] ? row[2] : "";
+        record.labels_json = row[3] ? row[3] : "";
+        record.annotations_json = row[4] ? row[4] : "";
+        record.starts_at = row[5] ? row[5] : "";
+        record.ends_at = row[6] ? row[6] : "";
+        record.generator_url = row[7] ? row[7] : "";
+        record.created_at = row[8] ? row[8] : "";
+        record.updated_at = row[9] ? row[9] : "";
+    }
+    return record;
+}
+
+// 优化的查询执行方法
+std::vector<AlarmEventRecord> AlarmManager::executeSelectAlarmEvents(const std::string& query) {
+    std::vector<AlarmEventRecord> events;
+    
+    MYSQL_RES* raw_result = executeSelectQuery(query);
+    if (!raw_result) {
+        return events;
+    }
+    
+    MySQLResultRAII result(raw_result);
+    MYSQL_ROW row;
+    while ((row = mysql_fetch_row(result.get())) != nullptr) {
+        events.push_back(parseRowToAlarmEventRecord(row));
+    }
+    
+    return events;
+}
+
+// 错误处理和验证方法实现
+bool AlarmManager::validateAlarmEvent(const AlarmEvent& event) {
+    if (event.fingerprint.empty()) {
+        logError("Invalid alarm event: fingerprint is empty");
+        return false;
+    }
+    
+    if (event.status != "firing" && event.status != "resolved") {
+        logError("Invalid alarm event: status must be 'firing' or 'resolved', got: " + event.status);
+        return false;
+    }
+    
+    return true;
+}
+
+bool AlarmManager::validatePaginationParams(int& page, int& page_size) {
+    bool modified = false;
+    
+    if (page < 1) {
+        logError("Invalid page number: " + std::to_string(page) + ", setting to 1");
+        page = 1;
+        modified = true;
+    }
+    
+    if (page_size < 1) {
+        logError("Invalid page size: " + std::to_string(page_size) + ", setting to 20");
+        page_size = 20;
+        modified = true;
+    }
+    
+    if (page_size > 1000) {
+        logError("Page size too large: " + std::to_string(page_size) + ", limiting to 1000");
+        page_size = 1000;
+        modified = true;
+    }
+    
+    return !modified;
+}
+
+void AlarmManager::logQueryError(const std::string& query, const std::string& error_msg) {
+    logError("Query failed: " + error_msg);
+    logError("SQL: " + query);
+}
+
+bool AlarmManager::handleMySQLError(const std::string& operation) {
+    if (!m_connection) {
+        logError(operation + " failed: No database connection");
+        return false;
+    }
+    
+    std::string error_msg = mysql_error(m_connection);
+    if (!error_msg.empty()) {
+        logError(operation + " failed: " + error_msg);
+        
+        // 检查是否为连接错误
+        unsigned int error_code = mysql_errno(m_connection);
+        if (error_code == CR_SERVER_GONE_ERROR || error_code == CR_SERVER_LOST) {
+            logError("MySQL connection lost during " + operation + ", marking as disconnected");
+            m_connected = false;
+        }
+        
+        return false;
+    }
+    
+    return true;
+}
+
+// 批量操作方法实现
+bool AlarmManager::batchInsertAlarmEvents(const std::vector<AlarmEvent>& events) {
+    if (events.empty()) {
+        logDebug("No events to insert in batch");
+        return true;
+    }
+    
+    if (!checkConnection()) {
+        logError("No database connection for batch insert");
+        return false;
+    }
+    
+    // 验证所有事件
+    for (const auto& event : events) {
+        if (!validateAlarmEvent(event)) {
+            return false;
+        }
+    }
+    
+    logInfo("Batch inserting " + std::to_string(events.size()) + " alarm events");
+    
+    // 构建批量插入查询
+    std::ostringstream query;
+    query << "INSERT INTO alarm_events (id, fingerprint, status, labels_json, annotations_json, "
+          << "starts_at, generator_url) VALUES ";
+    
+    bool first = true;
+    for (const auto& event : events) {
+        if (!first) {
+            query << ", ";
+        }
+        first = false;
+        
+        std::string id = generateEventId();
+        std::string fingerprint = escapeString(event.fingerprint);
+        std::string status = escapeString(event.status);
+        
+        nlohmann::json labels_json = event.labels;
+        std::string labels_str = escapeString(labels_json.dump());
+        
+        nlohmann::json annotations_json = event.annotations;
+        std::string annotations_str = escapeString(annotations_json.dump());
+        
+        std::string starts_at = formatTimestamp(event.starts_at);
+        std::string generator_url = escapeString(event.generator_url);
+        
+        query << "('" << id << "', '"
+              << fingerprint << "', '"
+              << status << "', '"
+              << labels_str << "', '"
+              << annotations_str << "', '"
+              << starts_at << "', '"
+              << generator_url << "')";
+    }
+    
+    if (!executeQuery(query.str())) {
+        logError("Failed to batch insert alarm events");
+        return false;
+    }
+    
+    logInfo("Successfully batch inserted " + std::to_string(events.size()) + " alarm events");
+    return true;
+}
+
+bool AlarmManager::batchUpdateAlarmEventsToResolved(const std::vector<std::string>& fingerprints) {
+    if (fingerprints.empty()) {
+        logDebug("No fingerprints to update in batch");
+        return true;
+    }
+    
+    if (!checkConnection()) {
+        logError("No database connection for batch update");
+        return false;
+    }
+    
+    logInfo("Batch resolving " + std::to_string(fingerprints.size()) + " alarm events");
+    
+    // 构建批量更新查询
+    std::ostringstream query;
+    query << "UPDATE alarm_events SET status = 'resolved', ends_at = NOW() WHERE status = 'firing' AND fingerprint IN (";
+    
+    bool first = true;
+    for (const auto& fingerprint : fingerprints) {
+        if (!first) {
+            query << ", ";
+        }
+        first = false;
+        
+        std::string escaped_fingerprint = escapeString(fingerprint);
+        query << "'" << escaped_fingerprint << "'";
+    }
+    
+    query << ")";
+    
+    if (!executeQuery(query.str())) {
+        logError("Failed to batch update alarm events to resolved");
+        return false;
+    }
+    
+    // 检查受影响的行数
+    my_ulonglong affected_rows = mysql_affected_rows(m_connection);
+    logInfo("Successfully batch resolved " + std::to_string(affected_rows) + " alarm events");
+    
+    return true;
 }

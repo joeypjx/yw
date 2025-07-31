@@ -153,4 +153,47 @@ private:
     bool shouldCheckConnection();
     int calculateBackoffInterval();
     void updateLastConnectionCheck();
+    
+    // RAII包装器用于MySQL结果集
+    class MySQLResultRAII {
+    public:
+        explicit MySQLResultRAII(MYSQL_RES* res) : result(res) {}
+        ~MySQLResultRAII() { if (result) mysql_free_result(result); }
+        MYSQL_RES* get() const { return result; }
+        MYSQL_RES* release() { MYSQL_RES* r = result; result = nullptr; return r; }
+    private:
+        MYSQL_RES* result;
+        MySQLResultRAII(const MySQLResultRAII&) = delete;
+        MySQLResultRAII& operator=(const MySQLResultRAII&) = delete;
+    };
+    
+    // 预编译语句帮助方法
+    class PreparedStatementRAII {
+    public:
+        explicit PreparedStatementRAII(MYSQL* mysql, const std::string& query);
+        ~PreparedStatementRAII();
+        MYSQL_STMT* get() const { return stmt; }
+        bool isValid() const { return stmt != nullptr; }
+        bool bindParams(MYSQL_BIND* binds);
+        bool execute();
+        MYSQL_RES* getResult();
+    private:
+        MYSQL_STMT* stmt;
+        PreparedStatementRAII(const PreparedStatementRAII&) = delete;
+        PreparedStatementRAII& operator=(const PreparedStatementRAII&) = delete;
+    };
+    
+    // 优化的查询方法
+    AlarmEventRecord parseRowToAlarmEventRecord(MYSQL_ROW row);
+    std::vector<AlarmEventRecord> executeSelectAlarmEvents(const std::string& query);
+    
+    // 错误处理和验证方法
+    bool validateAlarmEvent(const AlarmEvent& event);
+    bool validatePaginationParams(int& page, int& page_size);
+    void logQueryError(const std::string& query, const std::string& error_msg);
+    bool handleMySQLError(const std::string& operation);
+    
+    // 批量操作方法
+    bool batchInsertAlarmEvents(const std::vector<AlarmEvent>& events);
+    bool batchUpdateAlarmEventsToResolved(const std::vector<std::string>& fingerprints);
 };
