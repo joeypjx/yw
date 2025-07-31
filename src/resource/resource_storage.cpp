@@ -446,7 +446,7 @@ std::vector<QueryResult> ResourceStorage::executeQuerySQL(const std::string& sql
         LogManager::getLogger()->error("ResourceStorage: Query failed: {}", taos_errstr(res));
         LogManager::getLogger()->error("ResourceStorage: SQL: {}", sql);
         taos_free_result(res);
-        return results;
+        throw std::runtime_error("ResourceStorage: Query failed: " + std::string(taos_errstr(res)));
     }
     
     // 获取字段信息
