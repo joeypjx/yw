@@ -413,15 +413,18 @@ bool AlarmSystem::initializeServices() {
             });
 
             if (new_status == "offline") {
+                
+
                 nlohmann::json labels_json = {
-                    {"alert_name", "NodeOffline"},
+                    {"alert_name", "节点离线"},
                     {"host_ip", host_ip},
-                    {"severity", "critical"}
+                    {"severity", "严重"},
+                    {"alert_type", "硬件资源"}
                 };
                 
                 nlohmann::json annotations = {
-                    {"summary", "Node is offline"},
-                    {"description", "Node " + host_ip + " has not sent a heartbeat for more than 20 seconds."}
+                    {"summary", "节点离线"},
+                    {"description", "与节点 " + host_ip + " 失联。"}
                 };
                 
                 // 创建或更新告警，状态为 "firing"
