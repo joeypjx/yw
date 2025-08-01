@@ -117,6 +117,9 @@ private:
     std::thread m_reconnect_thread;
     std::atomic<bool> m_stop_reconnect_thread;
     
+    // 连接操作互斥锁 - 保护m_connection的所有操作
+    mutable std::mutex m_connection_mutex;
+    
     // 性能优化相关成员变量
     std::chrono::steady_clock::time_point m_last_connection_check;
     std::mutex m_connection_check_mutex;
@@ -128,6 +131,9 @@ private:
     bool executeQuery(const std::string& query);
     MYSQL_RES* executeSelectQuery(const std::string& query);
     std::string escapeString(const std::string& str);
+    
+    // 内部线程安全辅助方法
+    bool checkConnectionUnsafe();
     
     // 告警事件处理
     bool insertAlarmEvent(const AlarmEvent& event);

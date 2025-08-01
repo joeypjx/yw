@@ -41,6 +41,8 @@ AlarmManager::~AlarmManager() {
 }
 
 bool AlarmManager::connect() {
+    std::lock_guard<std::mutex> lock(m_connection_mutex);
+    
     if (m_connected) {
         return true;
     }
@@ -77,6 +79,8 @@ bool AlarmManager::connect() {
 }
 
 void AlarmManager::disconnect() {
+    std::lock_guard<std::mutex> lock(m_connection_mutex);
+    
     if (m_connection) {
         mysql_close(m_connection);
         m_connection = nullptr;
@@ -410,8 +414,10 @@ PaginatedAlarmEvents AlarmManager::getPaginatedAlarmEvents(int page, int page_si
 }
 
 bool AlarmManager::executeQuery(const std::string& query) {
+    std::lock_guard<std::mutex> lock(m_connection_mutex);
+    
     // 检查连接状态
-    if (!checkConnection()) {
+    if (!checkConnectionUnsafe()) {
         logError("No database connection");
         return false;
     }
@@ -428,7 +434,19 @@ bool AlarmManager::executeQuery(const std::string& query) {
 }
 
 MYSQL_RES* AlarmManager::executeSelectQuery(const std::string& query) {
-    if (!executeQuery(query)) {
+    std::lock_guard<std::mutex> lock(m_connection_mutex);
+    
+    // 检查连接状态
+    if (!checkConnectionUnsafe()) {
+        logError("No database connection");
+        return nullptr;
+    }
+    
+    logDebug("Executing query: " + query);
+    
+    if (mysql_query(m_connection, query.c_str()) != 0) {
+        logQueryError(query, mysql_error(m_connection));
+        handleMySQLError("Query execution");
         return nullptr;
     }
     
@@ -442,7 +460,9 @@ MYSQL_RES* AlarmManager::executeSelectQuery(const std::string& query) {
 }
 
 std::string AlarmManager::escapeString(const std::string& str) {
-    if (!checkConnection()) {
+    std::lock_guard<std::mutex> lock(m_connection_mutex);
+    
+    if (!checkConnectionUnsafe()) {
         return str;
     }
     
@@ -611,44 +631,49 @@ bool AlarmManager::tryReconnect() {
     
     logInfo("Attempting to reconnect to MySQL");
     
-    // 断开现有连接
-    if (m_connection != nullptr) {
-        mysql_close(m_connection);
-        m_connection = nullptr;
+    // 获取连接锁来保护m_connection的操作
+    {
+        std::lock_guard<std::mutex> conn_lock(m_connection_mutex);
+        
+        // 断开现有连接
+        if (m_connection != nullptr) {
+            mysql_close(m_connection);
+            m_connection = nullptr;
+        }
+        m_connected = false;
+        
+        // 尝试重新连接
+        m_connection = mysql_init(nullptr);
+        if (m_connection == nullptr) {
+            logError("Failed to initialize MySQL during reconnect");
+            m_reconnect_in_progress = false;
+            return false;
+        }
+        
+        // 设置连接选项
+        bool reconnect = true;
+        mysql_options(m_connection, MYSQL_OPT_RECONNECT, &reconnect);
+        
+        if (!mysql_real_connect(m_connection, m_host.c_str(), m_user.c_str(), 
+                               m_password.c_str(), nullptr, m_port, nullptr, 0)) {
+            logError("Failed to reconnect to MySQL: " + std::string(mysql_error(m_connection)));
+            mysql_close(m_connection);
+            m_connection = nullptr;
+            m_reconnect_in_progress = false;
+            return false;
+        }
+        
+        // 重新选择数据库
+        if (mysql_select_db(m_connection, m_database.c_str()) != 0) {
+            logError("Failed to select database during reconnect: " + std::string(mysql_error(m_connection)));
+            mysql_close(m_connection);
+            m_connection = nullptr;
+            m_reconnect_in_progress = false;
+            return false;
+        }
+        
+        m_connected = true;
     }
-    m_connected = false;
-    
-    // 尝试重新连接
-    m_connection = mysql_init(nullptr);
-    if (m_connection == nullptr) {
-        logError("Failed to initialize MySQL during reconnect");
-        m_reconnect_in_progress = false;
-        return false;
-    }
-    
-    // 设置连接选项
-    bool reconnect = true;
-    mysql_options(m_connection, MYSQL_OPT_RECONNECT, &reconnect);
-    
-    if (!mysql_real_connect(m_connection, m_host.c_str(), m_user.c_str(), 
-                           m_password.c_str(), nullptr, m_port, nullptr, 0)) {
-        logError("Failed to reconnect to MySQL: " + std::string(mysql_error(m_connection)));
-        mysql_close(m_connection);
-        m_connection = nullptr;
-        m_reconnect_in_progress = false;
-        return false;
-    }
-    
-    // 重新选择数据库
-    if (mysql_select_db(m_connection, m_database.c_str()) != 0) {
-        logError("Failed to select database during reconnect: " + std::string(mysql_error(m_connection)));
-        mysql_close(m_connection);
-        m_connection = nullptr;
-        m_reconnect_in_progress = false;
-        return false;
-    }
-    
-    m_connected = true;
     m_reconnect_in_progress = false;
     resetReconnectAttempts();
     
@@ -685,6 +710,11 @@ void AlarmManager::reconnectLoop() {
 }
 
 bool AlarmManager::checkConnection() {
+    std::lock_guard<std::mutex> lock(m_connection_mutex);
+    return checkConnectionUnsafe();
+}
+
+bool AlarmManager::checkConnectionUnsafe() {
     if (!m_connected || m_connection == nullptr) {
         return false;
     }
