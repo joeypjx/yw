@@ -280,9 +280,16 @@ bool AlarmSystem::initializeDatabase() {
             config_.mysql_host, config_.mysql_port, config_.db_user, 
             config_.db_password, config_.alarm_db);
         
-        if (!alarm_manager_->connect()) {
+        if (!alarm_manager_->initialize()) {
             std::lock_guard<std::mutex> lock(error_mutex_);
-            last_error_ = "告警管理器连接数据库失败";
+            last_error_ = "告警管理器初始化失败";
+            return false;
+        }
+        
+        // 创建数据库（如果不存在）
+        if (!alarm_manager_->createDatabase()) {
+            std::lock_guard<std::mutex> lock(error_mutex_);
+            last_error_ = "创建告警数据库失败";
             return false;
         }
         

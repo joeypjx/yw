@@ -10,6 +10,7 @@
 #include <mysqld_error.h>
 #include <errmsg.h>
 #include "json.hpp"
+#include "mysql_connection_pool.h"
 
 // 告警事件 (从 alarm_rule_engine.h 复制定义)
 struct AlarmEvent;
@@ -44,22 +45,27 @@ struct PaginatedAlarmEvents {
 // 暂不实现：分组、静默、抑制等高级功能
 class AlarmManager {
 public:
-    // 常量定义
+    // 常量定义 - 保留用于向后兼容，但实际使用连接池配置
     static constexpr int DEFAULT_RECONNECT_INTERVAL = 5;
     static constexpr int DEFAULT_MAX_RECONNECT_ATTEMPTS = 10;
     static constexpr int DEFAULT_CONNECTION_CHECK_INTERVAL = 5000;
     static constexpr int DEFAULT_MAX_BACKOFF_SECONDS = 60;
 
+    // 构造函数 - 使用连接池配置
+    AlarmManager(const MySQLPoolConfig& pool_config);
+    // 兼容性构造函数 - 将单连接参数转换为连接池配置
     AlarmManager(const std::string& host, int port, const std::string& user, 
                  const std::string& password, const std::string& database);
     ~AlarmManager();
 
-    // 数据库连接管理
-    bool connect();
-    void disconnect();
+    // 数据库连接管理 - 使用连接池
+    bool initialize();
+    void shutdown();
     bool createDatabase();
     bool createEventTable();
-    MYSQL* getConnection() const { return m_connection; }
+    
+    // 获取连接池统计信息
+    MySQLConnectionPool::PoolStats getConnectionPoolStats() const;
 
     // 核心功能：处理告警事件
     bool processAlarmEvent(const AlarmEvent& event);
@@ -82,58 +88,21 @@ public:
     bool createOrUpdateAlarm(const std::string& fingerprint, const nlohmann::json& labels, const nlohmann::json& annotations);
     bool resolveAlarm(const std::string& fingerprint);
 
-    // 自动重连相关方法
-    void enableAutoReconnect(bool enable = true);
-    void setReconnectInterval(int seconds);
-    void setMaxReconnectAttempts(int attempts);
-    bool isAutoReconnectEnabled() const;
-    int getReconnectAttempts() const;
-    
-    // 性能优化相关方法
-    void setConnectionCheckInterval(int milliseconds);
-    void enableExponentialBackoff(bool enable = true);
-    void setMaxBackoffSeconds(int seconds);
-    int getConnectionCheckInterval() const;
-    bool isExponentialBackoffEnabled() const;
+    // 连接池配置方法 - 用于调整连接池参数
+    void updateConnectionPoolConfig(const MySQLPoolConfig& config);
+    bool isInitialized() const { return m_initialized; }
 
 private:
-    std::string m_host;
-    int m_port;
-    std::string m_user;
-    std::string m_password;
-    std::string m_database;
+    // 连接池配置和实例
+    MySQLPoolConfig m_pool_config;
+    std::shared_ptr<MySQLConnectionPool> m_connection_pool;
+    std::atomic<bool> m_initialized;
     
-    MYSQL* m_connection;
-    std::atomic<bool> m_connected;
-
-    // 自动重连相关成员变量
-    std::atomic<bool> m_auto_reconnect_enabled;
-    std::atomic<int> m_reconnect_interval_seconds;
-    std::atomic<int> m_max_reconnect_attempts;
-    std::atomic<int> m_current_reconnect_attempts;
-    std::atomic<bool> m_reconnect_in_progress;
-    std::chrono::steady_clock::time_point m_last_reconnect_attempt;
-    std::mutex m_reconnect_mutex;
-    std::thread m_reconnect_thread;
-    std::atomic<bool> m_stop_reconnect_thread;
-    
-    // 连接操作互斥锁 - 保护m_connection的所有操作
-    mutable std::mutex m_connection_mutex;
-    
-    // 性能优化相关成员变量
-    std::chrono::steady_clock::time_point m_last_connection_check;
-    std::mutex m_connection_check_mutex;
-    std::atomic<int> m_connection_check_interval_ms;
-    std::atomic<bool> m_use_exponential_backoff;
-    std::atomic<int> m_max_backoff_seconds;
-    
-    // 数据库操作辅助函数
+    // 数据库操作辅助函数 - 使用连接池
     bool executeQuery(const std::string& query);
     MYSQL_RES* executeSelectQuery(const std::string& query);
     std::string escapeString(const std::string& str);
-    
-    // 内部线程安全辅助方法
-    bool checkConnectionUnsafe();
+    std::string escapeStringWithConnection(const std::string& str, MySQLConnection* connection);
     
     // 告警事件处理
     bool insertAlarmEvent(const AlarmEvent& event);
@@ -150,17 +119,8 @@ private:
     void logError(const std::string& message);
     void logDebug(const std::string& message);
     
-    // 自动重连相关私有方法
-    bool tryReconnect();
-    void reconnectLoop();
-    bool checkConnection();
-    void resetReconnectAttempts();
-    bool shouldAttemptReconnect();
-    
-    // 性能优化相关私有方法
-    bool shouldCheckConnection();
-    int calculateBackoffInterval();
-    void updateLastConnectionCheck();
+    // 连接池辅助方法
+    MySQLPoolConfig createDefaultPoolConfig() const;
     
     // RAII包装器用于MySQL结果集
     class MySQLResultRAII {
