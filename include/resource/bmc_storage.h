@@ -55,6 +55,12 @@ struct HistoricalBMCResponse {
 class BMCStorage {
 public:
     /**
+     * 连接池注入构造函数 - 推荐使用
+     * @param connection_pool 共享的TDengine连接池
+     */
+    BMCStorage(std::shared_ptr<TDengineConnectionPool> connection_pool);
+    
+    /**
      * 新的连接池构造函数
      * @param pool_config TDengine连接池配置
      */
@@ -201,6 +207,7 @@ private:
     TDenginePoolConfig m_pool_config;
     std::shared_ptr<TDengineConnectionPool> m_connection_pool;
     std::atomic<bool> m_initialized;
+    bool m_owns_connection_pool;  // 标记是否拥有连接池的所有权
     std::string last_error_;
     
     /**

@@ -23,8 +23,10 @@ class BMCListener;
 class BMCStorage;
 class WebSocketServer;
 class MySQLConnectionPool;
+class TDengineConnectionPool;
 struct AlarmEvent;
 struct MySQLPoolConfig;
+struct TDenginePoolConfig;
 
 /**
  * 告警系统配置结构体
@@ -197,6 +199,7 @@ private:
     
     // 共享连接池
     std::shared_ptr<MySQLConnectionPool> mysql_connection_pool_;
+    std::shared_ptr<TDengineConnectionPool> tdengine_connection_pool_;
     
     // 系统组件
     std::shared_ptr<ResourceStorage> resource_storage_;

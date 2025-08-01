@@ -13,6 +13,7 @@
 #include "bmc_storage.h"
 #include "websocket_server.h"
 #include "mysql_connection_pool.h"
+#include "tdengine_connection_pool.h"
 #include "json.hpp"
 
 #include <iostream>
@@ -258,14 +259,49 @@ bool AlarmSystem::initializeDatabase() {
         
         LogManager::getLogger()->info("✅ 共享MySQL连接池创建成功");
         
-        // 1. 初始化资源存储
+        // 0.2. 创建共享的TDengine连接池
+        LogManager::getLogger()->info("🗃️ 创建共享TDengine连接池...");
+        TDenginePoolConfig tdengine_config;
+        tdengine_config.host = config_.tdengine_host;
+        tdengine_config.port = 6030;
+        tdengine_config.user = config_.db_user;
+        tdengine_config.password = config_.db_password;
+        tdengine_config.database = config_.resource_db;
+        tdengine_config.locale = "C";
+        tdengine_config.charset = "UTF-8";
+        tdengine_config.timezone = "";
+        
+        // 连接池配置
+        tdengine_config.min_connections = 2;
+        tdengine_config.max_connections = 10;
+        tdengine_config.initial_connections = 3;
+        
+        // 超时配置
+        tdengine_config.connection_timeout = 30;
+        tdengine_config.idle_timeout = 600;      // 10分钟
+        tdengine_config.max_lifetime = 3600;     // 1小时
+        tdengine_config.acquire_timeout = 10;
+        
+        // 健康检查配置
+        tdengine_config.health_check_interval = 60;
+        tdengine_config.health_check_query = "SELECT SERVER_VERSION()";
+        
+        tdengine_connection_pool_ = std::make_shared<TDengineConnectionPool>(tdengine_config);
+        if (!tdengine_connection_pool_->initialize()) {
+            std::lock_guard<std::mutex> lock(error_mutex_);
+            last_error_ = "TDengine连接池初始化失败";
+            return false;
+        }
+        
+        LogManager::getLogger()->info("✅ 共享TDengine连接池创建成功");
+        
+        // 1. 初始化资源存储（使用共享TDengine连接池）
         LogManager::getLogger()->info("📦 初始化资源存储...");
-        resource_storage_ = std::make_shared<ResourceStorage>(
-            config_.tdengine_host, config_.db_user, config_.db_password);
+        resource_storage_ = std::make_shared<ResourceStorage>(tdengine_connection_pool_);
         
         if (!resource_storage_->initialize()) {
             std::lock_guard<std::mutex> lock(error_mutex_);
-            last_error_ = "连接TDengine失败";
+            last_error_ = "资源存储初始化失败";
             return false;
         }
         
@@ -332,14 +368,13 @@ bool AlarmSystem::initializeDatabase() {
         
         LogManager::getLogger()->info("✅ 告警管理器初始化成功");
         
-        // 4. 初始化BMC存储
+        // 4. 初始化BMC存储（使用共享TDengine连接池）
         LogManager::getLogger()->info("🗄️ 初始化BMC存储...");
-        bmc_storage_ = std::make_shared<BMCStorage>(
-            config_.tdengine_host, config_.db_user, config_.db_password, config_.resource_db);
+        bmc_storage_ = std::make_shared<BMCStorage>(tdengine_connection_pool_);
         
         if (!bmc_storage_->initialize()) {
             std::lock_guard<std::mutex> lock(error_mutex_);
-            last_error_ = "BMC存储连接失败: " + bmc_storage_->getLastError();
+            last_error_ = "BMC存储初始化失败: " + bmc_storage_->getLastError();
             return false;
         }
         

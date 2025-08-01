@@ -132,6 +132,9 @@ struct NodeResourceRangeData {
 
 class ResourceStorage {
 public:
+    // 连接池注入构造函数 - 推荐使用
+    ResourceStorage(std::shared_ptr<TDengineConnectionPool> connection_pool);
+    
     // 新的连接池构造函数
     ResourceStorage(const TDenginePoolConfig& pool_config);
     
@@ -166,6 +169,7 @@ private:
     TDenginePoolConfig m_pool_config;
     std::shared_ptr<TDengineConnectionPool> m_connection_pool;
     std::atomic<bool> m_initialized;
+    bool m_owns_connection_pool;  // 标记是否拥有连接池的所有权
 
     bool executeQuery(const std::string& sql);
     TAOS_RES* executeSelectQuery(const std::string& sql);
