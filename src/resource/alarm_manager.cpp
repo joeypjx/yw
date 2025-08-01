@@ -7,6 +7,15 @@
 #include <uuid/uuid.h>
 #include <cstring>
 
+// MySQL错误码兼容性定义
+#ifndef CR_SERVER_GONE_ERROR
+#define CR_SERVER_GONE_ERROR 2006
+#endif
+
+#ifndef CR_SERVER_LOST
+#define CR_SERVER_LOST 2013
+#endif
+
 AlarmManager::AlarmManager(const std::string& host, int port, const std::string& user,
                            const std::string& password, const std::string& database)
     : m_host(host), m_port(port), m_user(user), m_password(password), m_database(database), 

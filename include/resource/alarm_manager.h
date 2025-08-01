@@ -7,6 +7,8 @@
 #include <thread>
 #include <mutex>
 #include <mysql.h>
+#include <mysqld_error.h>
+#include <errmsg.h>
 #include "json.hpp"
 
 // 告警事件 (从 alarm_rule_engine.h 复制定义)

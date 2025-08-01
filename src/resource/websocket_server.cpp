@@ -30,6 +30,9 @@ WebSocketServer::~WebSocketServer() {
 
 void WebSocketServer::start(int port) {
     try {
+        // Set socket options for faster resource cleanup
+        endpoint_.set_reuse_addr(true);
+        
         endpoint_.listen(port);
         endpoint_.start_accept();
         
@@ -58,6 +61,28 @@ void WebSocketServer::start(int port) {
 void WebSocketServer::stop() {
     if (running_) {
         running_ = false;
+        
+        // First, explicitly close all active connections
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            spdlog::info("Closing {} active connections...", connections_.size());
+            
+            for (auto hdl : connections_) {
+                try {
+                    endpoint_.close(hdl, websocketpp::close::status::going_away, "Server shutting down");
+                } catch (websocketpp::exception const& e) {
+                    spdlog::error("Error closing connection during shutdown: {}", e.what());
+                }
+            }
+        }
+        
+        // Stop accepting new connections
+        endpoint_.stop_listening();
+        
+        // Give connections a moment to close gracefully
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        
+        // Stop the endpoint
         endpoint_.stop();
         
         if (server_thread_.joinable()) {
@@ -68,14 +93,15 @@ void WebSocketServer::stop() {
             ping_thread_.join();
         }
         
-        // Clear ping/pong tracking data
+        // Clear all tracking data
         {
             std::lock_guard<std::mutex> lock(mutex_);
+            connections_.clear();
             last_pong_time_.clear();
             ping_pending_.clear();
         }
         
-        spdlog::info("WebSocket server stopped.");
+        spdlog::info("WebSocket server stopped and all resources cleaned up.");
     }
 }
 
