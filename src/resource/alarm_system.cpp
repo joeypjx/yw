@@ -21,9 +21,19 @@
 #include <vector>
 #include <string>
 #include <signal.h>
+#include <sstream>
+#include <iomanip>
 
 // 全局实例指针，用于信号处理
 AlarmSystem* AlarmSystem::s_instance = nullptr;
+
+// 辅助函数：格式化时间戳为ISO 8601字符串
+static std::string formatTimestamp(const std::chrono::system_clock::time_point& tp) {
+    auto time_t = std::chrono::system_clock::to_time_t(tp);
+    std::ostringstream oss;
+    oss << std::put_time(std::gmtime(&time_t), "%Y-%m-%d %H:%M:%S");
+    return oss.str();
+}
 
 
 
@@ -356,8 +366,12 @@ bool AlarmSystem::initializeServices() {
                 try {
                     // 将告警事件转换为JSON格式
                     nlohmann::json alarm_json = {
+                        {"fingerprint", event.fingerprint},
+                        {"status", event.status},
                         {"labels", event.labels},
-                        {"annotations", event.annotations}
+                        {"annotations", event.annotations},
+                        {"starts_at", formatTimestamp(event.starts_at)},
+                        {"ends_at", formatTimestamp(event.ends_at)}
                     };
                     
                     // 广播告警事件
