@@ -254,7 +254,7 @@ bool AlarmSystem::initializeDatabase() {
             config_.mysql_host, config_.mysql_port, config_.db_user, 
             config_.db_password, config_.alarm_db);
         
-        if (!alarm_rule_storage_->connect()) {
+        if (!alarm_rule_storage_->initialize()) {
             std::lock_guard<std::mutex> lock(error_mutex_);
             last_error_ = "连接MySQL失败";
             return false;

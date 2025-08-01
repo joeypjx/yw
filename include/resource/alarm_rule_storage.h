@@ -11,6 +11,7 @@
 #include "json.hpp"
 #include <memory>
 #include <random>
+#include "mysql_connection_pool.h"
 
 struct AlarmRule {
     std::string id;
@@ -42,20 +43,22 @@ public:
     // 常量定义
     static constexpr int DEFAULT_PAGE_SIZE = 20;
     static constexpr int MAX_PAGE_SIZE = 1000;
-    static constexpr int DEFAULT_RECONNECT_INTERVAL = 5;
-    static constexpr int DEFAULT_MAX_RECONNECT_ATTEMPTS = 10;
-    static constexpr int DEFAULT_CONNECTION_CHECK_INTERVAL = 5000;
-    static constexpr int DEFAULT_MAX_BACKOFF_SECONDS = 60;
     static constexpr const char* DEFAULT_CHARSET = "utf8mb4";
     static constexpr const char* DEFAULT_COLLATION = "utf8mb4_unicode_ci";
+    
+    // 新的连接池构造函数
+    AlarmRuleStorage(const MySQLPoolConfig& pool_config);
+    
+    // 兼容性构造函数 - 将旧参数转换为连接池配置
     AlarmRuleStorage(const std::string& host, int port, const std::string& user, 
                     const std::string& password, const std::string& database);
     ~AlarmRuleStorage();
 
-    bool connect();
-    void disconnect();
+    bool initialize();
+    void shutdown();
     bool createDatabase();
     bool createTable();
+    bool isInitialized() const { return m_initialized; }
     
     std::string insertAlarmRule(const std::string& alert_name, 
                                const nlohmann::json& expression,
@@ -84,51 +87,22 @@ public:
     // 分页查询功能
     PaginatedAlarmRules getPaginatedAlarmRules(int page = 1, int page_size = 20, bool enabled_only = false);
 
-    // 自动重连相关方法
-    void enableAutoReconnect(bool enable = true);
-    void setReconnectInterval(int seconds);
-    void setMaxReconnectAttempts(int attempts);
-    bool isAutoReconnectEnabled() const;
-    int getReconnectAttempts() const;
-    
-    // 性能优化相关方法
-    void setConnectionCheckInterval(int milliseconds);
-    void enableExponentialBackoff(bool enable = true);
-    void setMaxBackoffSeconds(int seconds);
-    int getConnectionCheckInterval() const;
-    bool isExponentialBackoffEnabled() const;
+    // 连接池相关方法
+    MySQLConnectionPool::PoolStats getConnectionPoolStats() const;
+    void updateConnectionPoolConfig(const MySQLPoolConfig& config);
 
 private:
-    std::string m_host;
-    int m_port;
-    std::string m_user;
-    std::string m_password;
-    std::string m_database;
-    MYSQL* m_mysql;
-    std::atomic<bool> m_connected;
-
-    // 自动重连相关成员变量
-    std::atomic<bool> m_auto_reconnect_enabled;
-    std::atomic<int> m_reconnect_interval_seconds;
-    std::atomic<int> m_max_reconnect_attempts;
-    std::atomic<int> m_current_reconnect_attempts;
-    std::atomic<bool> m_reconnect_in_progress;
-    std::chrono::steady_clock::time_point m_last_reconnect_attempt;
-    std::mutex m_reconnect_mutex;
-    std::thread m_reconnect_thread;
-    std::atomic<bool> m_stop_reconnect_thread;
-    
-    // 性能优化相关成员变量
-    std::chrono::steady_clock::time_point m_last_connection_check;
-    std::mutex m_connection_check_mutex;
-    std::atomic<int> m_connection_check_interval_ms;
-    std::atomic<bool> m_use_exponential_backoff;
-    std::atomic<int> m_max_backoff_seconds;
+    MySQLPoolConfig m_pool_config;
+    std::shared_ptr<MySQLConnectionPool> m_connection_pool;
+    std::atomic<bool> m_initialized;
 
     bool executeQuery(const std::string& sql);
+    MYSQL_RES* executeSelectQuery(const std::string& sql);
     std::string escapeString(const std::string& str);
+    std::string escapeStringWithConnection(const std::string& str, MySQLConnection* connection);
     std::string generateUUID();
     AlarmRule parseRowToAlarmRule(MYSQL_ROW row);
+    MySQLPoolConfig createDefaultPoolConfig() const;
     
     // RAII包装器用于MySQL结果集
     class MySQLResultRAII {
@@ -150,17 +124,11 @@ private:
         return gen;
     }
     
-    // 自动重连相关私有方法
-    bool tryReconnect();
-    void reconnectLoop();
-    bool checkConnection();
-    void resetReconnectAttempts();
-    bool shouldAttemptReconnect();
-    
-    // 性能优化相关私有方法
-    bool shouldCheckConnection();
-    int calculateBackoffInterval();
-    void updateLastConnectionCheck();
+    // 日志辅助方法
+    void logInfo(const std::string& message) const;
+    void logError(const std::string& message) const;
+    void logDebug(const std::string& message) const;
+    void logQueryError(const std::string& query, const std::string& error_msg) const;
     
     // 预编译语句帮助方法
     class PreparedStatementRAII {

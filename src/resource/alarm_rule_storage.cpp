@@ -6,112 +6,116 @@
 #include <random>
 #include <chrono>
 
+// 新的连接池构造函数
+AlarmRuleStorage::AlarmRuleStorage(const MySQLPoolConfig& pool_config)
+    : m_pool_config(pool_config), m_initialized(false) {
+    m_connection_pool = std::make_shared<MySQLConnectionPool>(m_pool_config);
+}
+
+// 兼容性构造函数 - 将旧参数转换为连接池配置
 AlarmRuleStorage::AlarmRuleStorage(const std::string& host, int port, const std::string& user, 
                                  const std::string& password, const std::string& database)
-    : m_host(host), m_port(port), m_user(user), m_password(password), m_database(database), 
-      m_mysql(nullptr), m_connected(false),
-      m_auto_reconnect_enabled(true),
-      m_reconnect_interval_seconds(DEFAULT_RECONNECT_INTERVAL),
-      m_max_reconnect_attempts(DEFAULT_MAX_RECONNECT_ATTEMPTS),
-      m_current_reconnect_attempts(0),
-      m_reconnect_in_progress(false),
-      m_stop_reconnect_thread(false),
-      m_connection_check_interval_ms(DEFAULT_CONNECTION_CHECK_INTERVAL),
-      m_use_exponential_backoff(true),
-      m_max_backoff_seconds(DEFAULT_MAX_BACKOFF_SECONDS) {
+    : m_initialized(false) {
+    m_pool_config = createDefaultPoolConfig();
+    m_pool_config.host = host;
+    m_pool_config.port = port;
+    m_pool_config.user = user;
+    m_pool_config.password = password;
+    m_pool_config.database = database;
+    
+    m_connection_pool = std::make_shared<MySQLConnectionPool>(m_pool_config);
 }
 
 AlarmRuleStorage::~AlarmRuleStorage() {
-    // 停止重连线程
-    m_stop_reconnect_thread = true;
-    if (m_reconnect_thread.joinable()) {
-        m_reconnect_thread.join();
-    }
-    disconnect();
+    shutdown();
 }
 
-bool AlarmRuleStorage::connect() {
-    if (m_connected) {
+bool AlarmRuleStorage::initialize() {
+    if (m_initialized) {
+        logInfo("AlarmRuleStorage already initialized");
         return true;
     }
-
-    m_mysql = mysql_init(nullptr);
-    if (m_mysql == nullptr) {
-        LogManager::getLogger()->error("Failed to initialize MySQL");
+    
+    if (!m_connection_pool) {
+        logError("Connection pool not created");
         return false;
     }
-
-    if (mysql_real_connect(m_mysql, m_host.c_str(), m_user.c_str(), m_password.c_str(), 
-                          nullptr, m_port, nullptr, 0) == nullptr) {
-        LogManager::getLogger()->error("Failed to connect to MySQL: {}", mysql_error(m_mysql));
-        mysql_close(m_mysql);
-        m_mysql = nullptr;
+    
+    if (!m_connection_pool->initialize()) {
+        logError("Failed to initialize connection pool");
         return false;
     }
-
-    m_connected = true;
     
-    // 启动自动重连线程
-    if (m_auto_reconnect_enabled && !m_reconnect_thread.joinable()) {
-        m_stop_reconnect_thread = false;
-        m_reconnect_thread = std::thread(&AlarmRuleStorage::reconnectLoop, this);
-    }
-    
+    m_initialized = true;
+    logInfo("AlarmRuleStorage initialized successfully with connection pool");
     return true;
 }
 
-void AlarmRuleStorage::disconnect() {
-    if (m_mysql != nullptr) {
-        mysql_close(m_mysql);
-        m_mysql = nullptr;
+void AlarmRuleStorage::shutdown() {
+    if (!m_initialized) {
+        return;
     }
-    m_connected = false;
+    
+    if (m_connection_pool) {
+        m_connection_pool->shutdown();
+    }
+    
+    m_initialized = false;
+    logInfo("AlarmRuleStorage shutdown completed");
 }
 
 bool AlarmRuleStorage::createDatabase() {
-    if (!m_connected) {
-        LogManager::getLogger()->error("Not connected to MySQL");
+    if (!m_initialized) {
+        logError("AlarmRuleStorage not initialized");
         return false;
     }
-
-    std::string sql = "CREATE DATABASE IF NOT EXISTS " + m_database + 
-                     " CHARACTER SET " + DEFAULT_CHARSET + " COLLATE " + DEFAULT_COLLATION;
-    if (!executeQuery(sql)) {
+    
+    std::string query = "CREATE DATABASE IF NOT EXISTS " + m_pool_config.database + 
+                       " CHARACTER SET " + std::string(DEFAULT_CHARSET) + 
+                       " COLLATE " + std::string(DEFAULT_COLLATION);
+    
+    if (!executeQuery(query)) {
+        logError("Failed to create database: " + m_pool_config.database);
         return false;
     }
-
-    sql = "USE " + m_database;
-    return executeQuery(sql);
+    
+    // 注意: 数据库选择已经在连接池连接时完成
+    logInfo("Database created: " + m_pool_config.database);
+    return true;
 }
 
 bool AlarmRuleStorage::createTable() {
-    if (!m_connected) {
-        LogManager::getLogger()->error("Not connected to MySQL");
+    if (!m_initialized) {
+        logError("AlarmRuleStorage not initialized");
         return false;
     }
-
-    std::string sql = "CREATE TABLE IF NOT EXISTS alarm_rules ("
-                     "id VARCHAR(36) PRIMARY KEY,"
-                     "alert_name VARCHAR(255) NOT NULL UNIQUE,"
-                     "expression_json TEXT NOT NULL,"
-                     "for_duration VARCHAR(32) NOT NULL,"
-                     "severity VARCHAR(32) NOT NULL,"
-                     "summary TEXT NOT NULL,"
-                     "description TEXT NOT NULL,"
-                     "alert_type VARCHAR(255) NOT NULL,"
-                     "enabled BOOLEAN DEFAULT TRUE,"
-                     "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,"
-                     "updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,"
-                     "INDEX idx_alert_name (alert_name),"
-                     "INDEX idx_enabled (enabled),"
-                     "INDEX idx_severity (severity),"
-                     "INDEX idx_alert_type (alert_type)"
-                     ") ENGINE=InnoDB DEFAULT CHARSET=" + std::string(DEFAULT_CHARSET) + 
-                     " COLLATE=" + std::string(DEFAULT_COLLATION);
-
-    bool table_created = executeQuery(sql);
-        
-    return table_created;
+    
+    std::string query = "CREATE TABLE IF NOT EXISTS alarm_rules ("
+                       "id VARCHAR(36) PRIMARY KEY,"
+                       "alert_name VARCHAR(255) NOT NULL UNIQUE,"
+                       "expression_json TEXT NOT NULL,"
+                       "for_duration VARCHAR(32) NOT NULL,"
+                       "severity VARCHAR(32) NOT NULL,"
+                       "summary TEXT NOT NULL,"
+                       "description TEXT NOT NULL,"
+                       "alert_type VARCHAR(255) NOT NULL,"
+                       "enabled BOOLEAN DEFAULT TRUE,"
+                       "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,"
+                       "updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,"
+                       "INDEX idx_alert_name (alert_name),"
+                       "INDEX idx_enabled (enabled),"
+                       "INDEX idx_severity (severity),"
+                       "INDEX idx_alert_type (alert_type)"
+                       ") ENGINE=InnoDB DEFAULT CHARSET=" + std::string(DEFAULT_CHARSET) + 
+                       " COLLATE=" + std::string(DEFAULT_COLLATION);
+    
+    if (!executeQuery(query)) {
+        logError("Failed to create alarm_rules table");
+        return false;
+    }
+    
+    logInfo("Alarm rules table created successfully");
+    return true;
 }
 
 std::string AlarmRuleStorage::insertAlarmRule(const std::string& alert_name, 
@@ -122,8 +126,8 @@ std::string AlarmRuleStorage::insertAlarmRule(const std::string& alert_name,
                                             const std::string& description,
                                             const std::string& alert_type,
                                             bool enabled) {
-    if (!m_connected) {
-        LogManager::getLogger()->error("Not connected to MySQL");
+    if (!m_initialized) {
+        logError("AlarmRuleStorage not initialized");
         return "";
     }
 
@@ -157,8 +161,8 @@ bool AlarmRuleStorage::updateAlarmRule(const std::string& id,
                                      const std::string& description,
                                      const std::string& alert_type,
                                      bool enabled) {
-    if (!m_connected) {
-        LogManager::getLogger()->error("Not connected to MySQL");
+    if (!m_initialized) {
+        logError("AlarmRuleStorage not initialized");
         return false;
     }
 
@@ -180,8 +184,8 @@ bool AlarmRuleStorage::updateAlarmRule(const std::string& id,
 }
 
 bool AlarmRuleStorage::deleteAlarmRule(const std::string& id) {
-    if (!m_connected) {
-        LogManager::getLogger()->error("Not connected to MySQL");
+    if (!m_initialized) {
+        logError("AlarmRuleStorage not initialized");
         return false;
     }
 
@@ -192,21 +196,15 @@ bool AlarmRuleStorage::deleteAlarmRule(const std::string& id) {
 AlarmRule AlarmRuleStorage::getAlarmRule(const std::string& id) {
     AlarmRule rule;
     
-    if (!checkConnection()) {
-        LogManager::getLogger()->error("Not connected to MySQL");
+    if (!m_initialized) {
+        logError("AlarmRuleStorage not initialized");
         return rule;
     }
 
     std::string sql = "SELECT id, alert_name, expression_json, for_duration, severity, summary, description, alert_type, enabled, created_at, updated_at FROM alarm_rules WHERE id = '" + escapeString(id) + "'";
     
-    if (mysql_query(m_mysql, sql.c_str()) != 0) {
-        LogManager::getLogger()->error("Query failed: {}", mysql_error(m_mysql));
-        return rule;
-    }
-
-    MYSQL_RES* raw_result = mysql_store_result(m_mysql);
-    if (raw_result == nullptr) {
-        LogManager::getLogger()->error("Failed to get result: {}", mysql_error(m_mysql));
+    MYSQL_RES* raw_result = executeSelectQuery(sql);
+    if (!raw_result) {
         return rule;
     }
 
@@ -222,21 +220,15 @@ AlarmRule AlarmRuleStorage::getAlarmRule(const std::string& id) {
 std::vector<AlarmRule> AlarmRuleStorage::getAllAlarmRules() {
     std::vector<AlarmRule> rules;
     
-    if (!checkConnection()) {
-        LogManager::getLogger()->error("Not connected to MySQL");
+    if (!m_initialized) {
+        logError("AlarmRuleStorage not initialized");
         return rules;
     }
 
     std::string sql = "SELECT id, alert_name, expression_json, for_duration, severity, summary, description, alert_type, enabled, created_at, updated_at FROM alarm_rules ORDER BY created_at DESC";
     
-    if (mysql_query(m_mysql, sql.c_str()) != 0) {
-        LogManager::getLogger()->error("Query failed: {}", mysql_error(m_mysql));
-        return rules;
-    }
-
-    MYSQL_RES* raw_result = mysql_store_result(m_mysql);
-    if (raw_result == nullptr) {
-        LogManager::getLogger()->error("Failed to get result: {}", mysql_error(m_mysql));
+    MYSQL_RES* raw_result = executeSelectQuery(sql);
+    if (!raw_result) {
         return rules;
     }
 
@@ -252,21 +244,15 @@ std::vector<AlarmRule> AlarmRuleStorage::getAllAlarmRules() {
 std::vector<AlarmRule> AlarmRuleStorage::getEnabledAlarmRules() {
     std::vector<AlarmRule> rules;
     
-    if (!checkConnection()) {
-        LogManager::getLogger()->error("Not connected to MySQL");
+    if (!m_initialized) {
+        logError("AlarmRuleStorage not initialized");
         return rules;
     }
 
     std::string sql = "SELECT id, alert_name, expression_json, for_duration, severity, summary, description, alert_type, enabled, created_at, updated_at FROM alarm_rules WHERE enabled = TRUE ORDER BY created_at DESC";
     
-    if (mysql_query(m_mysql, sql.c_str()) != 0) {
-        LogManager::getLogger()->error("Query failed: {}", mysql_error(m_mysql));
-        return rules;
-    }
-
-    MYSQL_RES* raw_result = mysql_store_result(m_mysql);
-    if (raw_result == nullptr) {
-        LogManager::getLogger()->error("Failed to get result: {}", mysql_error(m_mysql));
+    MYSQL_RES* raw_result = executeSelectQuery(sql);
+    if (!raw_result) {
         return rules;
     }
 
@@ -279,30 +265,105 @@ std::vector<AlarmRule> AlarmRuleStorage::getEnabledAlarmRules() {
     return rules;
 }
 
-bool AlarmRuleStorage::executeQuery(const std::string& sql) {
-    // 检查连接状态
-    if (!checkConnection()) {
-        LogManager::getLogger()->error("Not connected to MySQL");
+bool AlarmRuleStorage::executeQuery(const std::string& query) {
+    if (!m_initialized) {
+        logError("AlarmRuleStorage not initialized");
         return false;
     }
-
-    if (mysql_query(m_mysql, sql.c_str()) != 0) {
-        LogManager::getLogger()->error("Query failed: {}", mysql_error(m_mysql));
-        LogManager::getLogger()->error("SQL: {}", sql);
+    
+    MySQLConnectionGuard guard(m_connection_pool);
+    if (!guard.isValid()) {
+        logError("Failed to get database connection from pool");
         return false;
     }
-
+    
+    logDebug("Executing query: " + query);
+    
+    MYSQL* mysql = guard->get();
+    if (mysql_query(mysql, query.c_str()) != 0) {
+        logQueryError(query, mysql_error(mysql));
+        return false;
+    }
+    
     return true;
 }
 
-std::string AlarmRuleStorage::escapeString(const std::string& str) {
-    if (!checkConnection()) {
-        return str;
+MYSQL_RES* AlarmRuleStorage::executeSelectQuery(const std::string& query) {
+    if (!m_initialized) {
+        logError("AlarmRuleStorage not initialized");
+        return nullptr;
     }
+    
+    MySQLConnectionGuard guard(m_connection_pool);
+    if (!guard.isValid()) {
+        logError("Failed to get database connection from pool");
+        return nullptr;
+    }
+    
+    logDebug("Executing query: " + query);
+    
+    MYSQL* mysql = guard->get();
+    if (mysql_query(mysql, query.c_str()) != 0) {
+        logQueryError(query, mysql_error(mysql));
+        return nullptr;
+    }
+    
+    MYSQL_RES* result = mysql_store_result(mysql);
+    if (!result) {
+        logError("Failed to store result: " + std::string(mysql_error(mysql)));
+        return nullptr;
+    }
+    
+    return result;
+}
 
-    std::unique_ptr<char[]> escaped(new char[str.length() * 2 + 1]);
-    mysql_real_escape_string(m_mysql, escaped.get(), str.c_str(), str.length());
-    return std::string(escaped.get());
+std::string AlarmRuleStorage::escapeString(const std::string& str) {
+    if (!m_initialized) {
+        // 如果未初始化，返回简单转义的字符串
+        std::string escaped = str;
+        size_t pos = 0;
+        while ((pos = escaped.find("'", pos)) != std::string::npos) {
+            escaped.replace(pos, 1, "\\'");
+            pos += 2;
+        }
+        return escaped;
+    }
+    
+    MySQLConnectionGuard guard(m_connection_pool);
+    if (!guard.isValid()) {
+        // 如果无法获取连接，使用简单转义
+        std::string escaped = str;
+        size_t pos = 0;
+        while ((pos = escaped.find("'", pos)) != std::string::npos) {
+            escaped.replace(pos, 1, "\\'");
+            pos += 2;
+        }
+        return escaped;
+    }
+    
+    return escapeStringWithConnection(str, guard.get());
+}
+
+std::string AlarmRuleStorage::escapeStringWithConnection(const std::string& str, MySQLConnection* connection) {
+    if (!connection || !connection->get()) {
+        // 如果没有提供连接，返回简单转义的字符串
+        std::string escaped = str;
+        size_t pos = 0;
+        while ((pos = escaped.find("'", pos)) != std::string::npos) {
+            escaped.replace(pos, 1, "\\'");
+            pos += 2;
+        }
+        return escaped;
+    }
+    
+    MYSQL* mysql = connection->get();
+    char* escaped = new char[str.length() * 2 + 1];
+    mysql_real_escape_string(mysql, escaped, str.c_str(), str.length());
+    
+    std::string result(escaped);
+    delete[] escaped;
+    
+    return result;
 }
 
 AlarmRule AlarmRuleStorage::parseRowToAlarmRule(MYSQL_ROW row) {
@@ -363,8 +424,8 @@ PaginatedAlarmRules AlarmRuleStorage::getPaginatedAlarmRules(int page, int page_
     result.has_next = false;
     result.has_prev = false;
     
-    if (!checkConnection()) {
-        LogManager::getLogger()->error("Not connected to MySQL");
+    if (!m_initialized) {
+        logError("AlarmRuleStorage not initialized");
         return result;
     }
     
@@ -391,14 +452,8 @@ PaginatedAlarmRules AlarmRuleStorage::getPaginatedAlarmRules(int page, int page_
     data_query << " ORDER BY created_at DESC LIMIT " << page_size << " OFFSET " << offset;
     
     // 执行数据查询
-    if (mysql_query(m_mysql, data_query.str().c_str()) != 0) {
-        LogManager::getLogger()->error("Data query failed: {}", mysql_error(m_mysql));
-        return result;
-    }
-    
-    MYSQL_RES* raw_data_result = mysql_store_result(m_mysql);
-    if (raw_data_result == nullptr) {
-        LogManager::getLogger()->error("Failed to get data result: {}", mysql_error(m_mysql));
+    MYSQL_RES* raw_data_result = executeSelectQuery(data_query.str());
+    if (!raw_data_result) {
         return result;
     }
     
@@ -411,14 +466,8 @@ PaginatedAlarmRules AlarmRuleStorage::getPaginatedAlarmRules(int page, int page_
     }
     
     // 获取总记录数
-    if (mysql_query(m_mysql, "SELECT FOUND_ROWS()") != 0) {
-        LogManager::getLogger()->error("FOUND_ROWS query failed: {}", mysql_error(m_mysql));
-        return result;
-    }
-    
-    MYSQL_RES* raw_count_result = mysql_store_result(m_mysql);
-    if (raw_count_result == nullptr) {
-        LogManager::getLogger()->error("Failed to get count result: {}", mysql_error(m_mysql));
+    MYSQL_RES* raw_count_result = executeSelectQuery("SELECT FOUND_ROWS()");
+    if (!raw_count_result) {
         return result;
     }
     
@@ -437,206 +486,63 @@ PaginatedAlarmRules AlarmRuleStorage::getPaginatedAlarmRules(int page, int page_
     return result;
 }
 
-// 自动重连相关方法实现
-void AlarmRuleStorage::enableAutoReconnect(bool enable) {
-    m_auto_reconnect_enabled = enable;
-    if (enable && !m_reconnect_thread.joinable()) {
-        m_stop_reconnect_thread = false;
-        m_reconnect_thread = std::thread(&AlarmRuleStorage::reconnectLoop, this);
+// 新增的连接池相关方法
+MySQLConnectionPool::PoolStats AlarmRuleStorage::getConnectionPoolStats() const {
+    if (!m_connection_pool) {
+        return MySQLConnectionPool::PoolStats{};
     }
+    return m_connection_pool->getStats();
 }
 
-void AlarmRuleStorage::setReconnectInterval(int seconds) {
-    if (seconds > 0) {
-        m_reconnect_interval_seconds = seconds;
-    }
+void AlarmRuleStorage::updateConnectionPoolConfig(const MySQLPoolConfig& config) {
+    m_pool_config = config;
+    // 注意：实际应用中，这里可能需要重新创建连接池
+    logInfo("Connection pool configuration updated");
 }
 
-void AlarmRuleStorage::setMaxReconnectAttempts(int attempts) {
-    if (attempts >= 0) {
-        m_max_reconnect_attempts = attempts;
-    }
+MySQLPoolConfig AlarmRuleStorage::createDefaultPoolConfig() const {
+    MySQLPoolConfig config;
+    config.host = "localhost";
+    config.port = 3306;
+    config.user = "root";
+    config.password = "";
+    config.database = "";
+    config.charset = "utf8mb4";
+    
+    // 连接池配置
+    config.min_connections = 2;
+    config.max_connections = 8;
+    config.initial_connections = 3;
+    
+    // 超时配置
+    config.connection_timeout = 30;
+    config.idle_timeout = 600;      // 10分钟
+    config.max_lifetime = 3600;     // 1小时
+    config.acquire_timeout = 10;
+    
+    // 健康检查配置
+    config.health_check_interval = 60;
+    config.health_check_query = "SELECT 1";
+    
+    return config;
 }
 
-bool AlarmRuleStorage::isAutoReconnectEnabled() const {
-    return m_auto_reconnect_enabled;
+// 日志辅助方法
+void AlarmRuleStorage::logInfo(const std::string& message) const {
+    LogManager::getLogger()->info("AlarmRuleStorage: {}", message);
 }
 
-int AlarmRuleStorage::getReconnectAttempts() const {
-    return m_current_reconnect_attempts;
+void AlarmRuleStorage::logError(const std::string& message) const {
+    LogManager::getLogger()->error("AlarmRuleStorage: {}", message);
 }
 
-bool AlarmRuleStorage::tryReconnect() {
-    std::lock_guard<std::mutex> lock(m_reconnect_mutex);
-    
-    if (m_reconnect_in_progress) {
-        return false;
-    }
-    
-    m_reconnect_in_progress = true;
-    m_last_reconnect_attempt = std::chrono::steady_clock::now();
-    
-    LogManager::getLogger()->info("Attempting to reconnect to MySQL");
-    
-    // 断开现有连接
-    if (m_mysql != nullptr) {
-        mysql_close(m_mysql);
-        m_mysql = nullptr;
-    }
-    m_connected = false;
-    
-    // 尝试重新连接
-    m_mysql = mysql_init(nullptr);
-    if (m_mysql == nullptr) {
-        LogManager::getLogger()->error("Failed to initialize MySQL during reconnect");
-        m_reconnect_in_progress = false;
-        return false;
-    }
-    
-    if (mysql_real_connect(m_mysql, m_host.c_str(), m_user.c_str(), m_password.c_str(), 
-                          nullptr, m_port, nullptr, 0) == nullptr) {
-        LogManager::getLogger()->error("Failed to reconnect to MySQL: {}", mysql_error(m_mysql));
-        mysql_close(m_mysql);
-        m_mysql = nullptr;
-        m_reconnect_in_progress = false;
-        return false;
-    }
-    
-    // 重新选择数据库
-    std::string sql = "USE " + m_database;
-    if (mysql_query(m_mysql, sql.c_str()) != 0) {
-        LogManager::getLogger()->error("Failed to select database during reconnect: {}", mysql_error(m_mysql));
-        mysql_close(m_mysql);
-        m_mysql = nullptr;
-        m_reconnect_in_progress = false;
-        return false;
-    }
-    
-    m_connected = true;
-    m_reconnect_in_progress = false;
-    resetReconnectAttempts();
-    
-    LogManager::getLogger()->info("Successfully reconnected to MySQL");
-    return true;
+void AlarmRuleStorage::logDebug(const std::string& message) const {
+    LogManager::getLogger()->debug("AlarmRuleStorage: {}", message);
 }
 
-void AlarmRuleStorage::reconnectLoop() {
-    while (!m_stop_reconnect_thread) {
-        if (m_auto_reconnect_enabled && !m_connected && shouldAttemptReconnect()) {
-            if (tryReconnect()) {
-                // 重连成功，等待较长时间再检查
-                std::this_thread::sleep_for(std::chrono::seconds(m_reconnect_interval_seconds));
-            } else {
-                // 重连失败，增加尝试次数
-                m_current_reconnect_attempts++;
-                
-                // 如果达到最大尝试次数，停止自动重连
-                if (m_current_reconnect_attempts >= m_max_reconnect_attempts) {
-                    LogManager::getLogger()->error("Max reconnect attempts reached, stopping auto-reconnect");
-                    m_auto_reconnect_enabled = false;
-                    break;
-                }
-                
-                // 使用指数退避计算等待时间
-                int backoff_seconds = calculateBackoffInterval();
-                std::this_thread::sleep_for(std::chrono::seconds(backoff_seconds));
-            }
-        } else {
-            // 连接正常或不需要重连，使用较长的休眠间隔
-            std::this_thread::sleep_for(std::chrono::milliseconds(1000));  // 1秒
-        }
-    }
-}
-
-bool AlarmRuleStorage::checkConnection() {
-    if (!m_connected || m_mysql == nullptr) {
-        return false;
-    }
-    
-    // 检查是否需要执行连接检测
-    if (!shouldCheckConnection()) {
-        return true;  // 假设连接正常，避免频繁ping
-    }
-    
-    // 使用ping检查连接是否还活着
-    if (mysql_ping(m_mysql) != 0) {
-        LogManager::getLogger()->warn("MySQL connection lost, will attempt reconnect");
-        m_connected = false;
-        return false;
-    }
-    
-    // 更新最后检查时间
-    updateLastConnectionCheck();
-    return true;
-}
-
-void AlarmRuleStorage::resetReconnectAttempts() {
-    m_current_reconnect_attempts = 0;
-}
-
-bool AlarmRuleStorage::shouldAttemptReconnect() {
-    // 检查是否在重连间隔内
-    auto now = std::chrono::steady_clock::now();
-    auto time_since_last_attempt = std::chrono::duration_cast<std::chrono::seconds>(
-        now - m_last_reconnect_attempt).count();
-    
-    return time_since_last_attempt >= m_reconnect_interval_seconds;
-}
-
-// 性能优化相关方法实现
-void AlarmRuleStorage::setConnectionCheckInterval(int milliseconds) {
-    if (milliseconds > 0) {
-        m_connection_check_interval_ms = milliseconds;
-    }
-}
-
-void AlarmRuleStorage::enableExponentialBackoff(bool enable) {
-    m_use_exponential_backoff = enable;
-}
-
-void AlarmRuleStorage::setMaxBackoffSeconds(int seconds) {
-    if (seconds > 0) {
-        m_max_backoff_seconds = seconds;
-    }
-}
-
-int AlarmRuleStorage::getConnectionCheckInterval() const {
-    return m_connection_check_interval_ms;
-}
-
-bool AlarmRuleStorage::isExponentialBackoffEnabled() const {
-    return m_use_exponential_backoff;
-}
-
-bool AlarmRuleStorage::shouldCheckConnection() {
-    std::lock_guard<std::mutex> lock(m_connection_check_mutex);
-    auto now = std::chrono::steady_clock::now();
-    auto time_since_last_check = std::chrono::duration_cast<std::chrono::milliseconds>(
-        now - m_last_connection_check).count();
-    
-    return time_since_last_check >= m_connection_check_interval_ms;
-}
-
-int AlarmRuleStorage::calculateBackoffInterval() {
-    if (!m_use_exponential_backoff) {
-        return m_reconnect_interval_seconds;
-    }
-    
-    // 指数退避：基础间隔 * 2^(尝试次数-1)，但不超过最大退避时间
-    int base_interval = m_reconnect_interval_seconds;
-    int backoff_seconds = base_interval * (1 << (m_current_reconnect_attempts - 1));
-    
-    // 限制最大退避时间
-    if (backoff_seconds > m_max_backoff_seconds) {
-        backoff_seconds = m_max_backoff_seconds;
-    }
-    
-    return backoff_seconds;
-}
-
-void AlarmRuleStorage::updateLastConnectionCheck() {
-    std::lock_guard<std::mutex> lock(m_connection_check_mutex);
-    m_last_connection_check = std::chrono::steady_clock::now();
+void AlarmRuleStorage::logQueryError(const std::string& query, const std::string& error_msg) const {
+    logError("Query failed: " + error_msg);
+    logError("SQL: " + query);
 }
 
 // PreparedStatementRAII 实现
