@@ -1,6 +1,6 @@
-#include "alarm_manager.h"
-#include "alarm_rule_engine.h"
-#include "log_manager.h"
+#include "../../include/resource/alarm_manager.h"
+#include "../../include/resource/alarm_rule_engine.h"
+#include "../../include/resource/log_manager.h"
 #include <iostream>
 #include <sstream>
 #include <iomanip>
@@ -16,16 +16,24 @@
 #define CR_SERVER_LOST 2013
 #endif
 
+// 连接池注入构造函数 - 推荐使用
+AlarmManager::AlarmManager(std::shared_ptr<MySQLConnectionPool> connection_pool)
+    : m_connection_pool(connection_pool), m_initialized(false), m_owns_connection_pool(false) {
+    if (!m_connection_pool) {
+        logError("Injected connection pool is null");
+    }
+}
+
 // 新的连接池构造函数
 AlarmManager::AlarmManager(const MySQLPoolConfig& pool_config)
-    : m_pool_config(pool_config), m_initialized(false) {
+    : m_pool_config(pool_config), m_initialized(false), m_owns_connection_pool(true) {
     m_connection_pool = std::make_shared<MySQLConnectionPool>(m_pool_config);
 }
 
 // 兼容性构造函数 - 将旧参数转换为连接池配置
 AlarmManager::AlarmManager(const std::string& host, int port, const std::string& user,
                            const std::string& password, const std::string& database)
-    : m_initialized(false) {
+    : m_initialized(false), m_owns_connection_pool(true) {
     m_pool_config = createDefaultPoolConfig();
     m_pool_config.host = host;
     m_pool_config.port = port;
@@ -51,9 +59,12 @@ bool AlarmManager::initialize() {
         return false;
     }
     
-    if (!m_connection_pool->initialize()) {
-        logError("Failed to initialize connection pool");
-        return false;
+    // 只有当我们拥有连接池时才需要初始化它
+    if (m_owns_connection_pool) {
+        if (!m_connection_pool->initialize()) {
+            logError("Failed to initialize connection pool");
+            return false;
+        }
     }
     
     m_initialized = true;
@@ -66,7 +77,8 @@ void AlarmManager::shutdown() {
         return;
     }
     
-    if (m_connection_pool) {
+    // 只有当我们拥有连接池时才关闭它
+    if (m_connection_pool && m_owns_connection_pool) {
         m_connection_pool->shutdown();
     }
     

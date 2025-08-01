@@ -14,45 +14,73 @@
 using namespace std;
 using json = nlohmann::json;
 
+// 新的连接池构造函数
+BMCStorage::BMCStorage(const TDenginePoolConfig& pool_config)
+    : m_pool_config(pool_config), m_initialized(false) {
+    m_connection_pool = std::make_shared<TDengineConnectionPool>(m_pool_config);
+}
+
+// 兼容性构造函数 - 将旧参数转换为连接池配置
 BMCStorage::BMCStorage(const string& host, const string& user, 
                        const string& password, const string& database)
-    : host_(host), user_(user), password_(password), database_(database), taos_(nullptr) {
+    : m_initialized(false) {
+    m_pool_config = createDefaultPoolConfig();
+    m_pool_config.host = host;
+    m_pool_config.user = user;
+    m_pool_config.password = password;
+    m_pool_config.database = database;
+    
+    m_connection_pool = std::make_shared<TDengineConnectionPool>(m_pool_config);
 }
 
 BMCStorage::~BMCStorage() {
-    disconnect();
+    shutdown();
 }
 
-bool BMCStorage::connect() {
-    // 初始化TDengine客户端
-    taos_init();
+bool BMCStorage::initialize() {
+    if (m_initialized) {
+        logInfo("BMCStorage already initialized");
+        return true;
+    }
     
-    // 连接数据库
-    taos_ = taos_connect(host_.c_str(), user_.c_str(), password_.c_str(), nullptr, 0);
-    if (taos_ == nullptr) {
-        last_error_ = "连接TDengine失败: " + string(taos_errstr(nullptr));
-        LogManager::getLogger()->error("BMC存储连接失败: {}", last_error_);
+    if (!m_connection_pool) {
+        logError("Connection pool not created");
         return false;
     }
     
-    // 使用数据库
-    string use_db_sql = "USE " + database_;
-    if (!executeSql(use_db_sql)) {
-        last_error_ = "切换到数据库 " + database_ + " 失败";
-        LogManager::getLogger()->error("BMC存储切换数据库失败: {}", last_error_);
+    if (!m_connection_pool->initialize()) {
+        logError("Failed to initialize connection pool");
         return false;
     }
     
-    LogManager::getLogger()->info("✅ BMC存储连接成功: {}", host_);
+    // 先标记为已初始化，这样executeQuery就可以正常工作了
+    m_initialized = true;
+    
+    // 如果配置中指定了数据库，切换到该数据库
+    if (!m_pool_config.database.empty()) {
+        string use_db_sql = "USE " + m_pool_config.database;
+        if (!executeQuery(use_db_sql)) {
+            last_error_ = "切换到数据库 " + m_pool_config.database + " 失败";
+            logError("切换数据库失败: " + last_error_);
+            m_initialized = false; // 失败时重置状态
+            return false;
+        }
+    }
+    logInfo("BMC存储初始化成功: " + m_pool_config.host);
     return true;
 }
 
-void BMCStorage::disconnect() {
-    if (taos_) {
-        taos_close(taos_);
-        taos_ = nullptr;
-        taos_cleanup();
+void BMCStorage::shutdown() {
+    if (!m_initialized) {
+        return;
     }
+    
+    if (m_connection_pool) {
+        m_connection_pool->shutdown();
+    }
+    
+    m_initialized = false;
+    logInfo("BMC存储已关闭");
 }
 
 bool BMCStorage::createBMCTables() {
@@ -86,7 +114,7 @@ bool BMCStorage::createFanSuperTable() {
         )
     )";
     
-    if (!executeSql(sql)) {
+    if (!executeQuery(sql)) {
         last_error_ = "创建风扇超级表失败";
         return false;
     }
@@ -111,7 +139,7 @@ bool BMCStorage::createSensorSuperTable() {
         )
     )";
     
-    if (!executeSql(sql)) {
+    if (!executeQuery(sql)) {
         last_error_ = "创建传感器超级表失败";
         return false;
     }
@@ -122,8 +150,8 @@ bool BMCStorage::createSensorSuperTable() {
 
 void BMCStorage::dropOldBMCTables() {
     // 静默删除旧的超级表，如果不存在也不会报错
-    executeSql("DROP TABLE IF EXISTS bmc_fan_super");
-    executeSql("DROP TABLE IF EXISTS bmc_sensor_super");
+    executeQuery("DROP TABLE IF EXISTS bmc_fan_super");
+    executeQuery("DROP TABLE IF EXISTS bmc_sensor_super");
     LogManager::getLogger()->debug("🗑️ 清理旧BMC超级表");
 }
 
@@ -146,7 +174,7 @@ bool BMCStorage::storeFanData(const UdpInfo& udp_info) {
                       << static_cast<int>(udp_info.boxid) << ", "
                       << static_cast<int>(fan.fanseq) << ")";
             
-            if (!executeSql(create_sql.str())) {
+            if (!executeQuery(create_sql.str())) {
                 continue;
             }
             
@@ -158,7 +186,7 @@ bool BMCStorage::storeFanData(const UdpInfo& udp_info) {
                       << (fan.fanmode & 0x0F) << ", "         // work_mode  
                       << fan.fanspeed << ")";
             
-            if (!executeSql(insert_sql.str())) {
+            if (!executeQuery(insert_sql.str())) {
                 LogManager::getLogger()->warn("插入风扇数据失败: box_id={}, fan_seq={}", 
                                             udp_info.boxid, fan.fanseq);
             }
@@ -209,7 +237,7 @@ bool BMCStorage::storeSensorData(const UdpInfo& udp_info) {
                           << static_cast<int>(sensor.sensortype) << ", "
                           << "'" << host_ip << "')";
                 
-                if (!executeSql(create_sql.str())) {
+                if (!executeQuery(create_sql.str())) {
                     continue;
                 }
                 
@@ -223,7 +251,7 @@ bool BMCStorage::storeSensorData(const UdpInfo& udp_info) {
                           << sensor_value << ", "
                           << static_cast<int>(sensor.sensoralmtype) << ")";
                 
-                if (!executeSql(insert_sql.str())) {
+                if (!executeQuery(insert_sql.str())) {
                     LogManager::getLogger()->warn("插入传感器数据失败: box_id={}, slot_id={}, sensor_seq={}", 
                                                 udp_info.boxid, slot_id, sensor.sensorseq);
                 }
@@ -287,7 +315,7 @@ bool BMCStorage::storeBMCDataFromJson(const string& json_data) {
                       << static_cast<int>(box_id) << ", "
                       << static_cast<int>(fan_seq) << ")";
             
-            if (executeSql(create_sql.str())) {
+            if (executeQuery(create_sql.str())) {
                 // 插入数据
                 ostringstream insert_sql;
                 insert_sql << "INSERT INTO " << table_name << " VALUES ("
@@ -296,7 +324,7 @@ bool BMCStorage::storeBMCDataFromJson(const string& json_data) {
                           << static_cast<int>(work_mode) << ", "
                           << speed << ")";
                 
-                executeSql(insert_sql.str());
+                executeQuery(insert_sql.str());
             }
         }
         
@@ -333,7 +361,7 @@ bool BMCStorage::storeBMCDataFromJson(const string& json_data) {
                           << static_cast<int>(sensor_type) << ", "
                           << "'" << host_ip << "')";
                 
-                if (executeSql(create_sql.str())) {
+                if (executeQuery(create_sql.str())) {
                     // 插入数据
                     ostringstream insert_sql;
                     insert_sql << "INSERT INTO " << table_name << " VALUES ("
@@ -341,7 +369,7 @@ bool BMCStorage::storeBMCDataFromJson(const string& json_data) {
                               << sensor_value << ", "
                               << static_cast<int>(alarm_type) << ")";
                     
-                    executeSql(insert_sql.str());
+                    executeQuery(insert_sql.str());
                 }
             }
         }
@@ -360,18 +388,29 @@ string BMCStorage::getLastError() const {
     return last_error_;
 }
 
-bool BMCStorage::executeSql(const string& sql) {
-    if (!taos_) {
-        last_error_ = "数据库连接未建立";
+bool BMCStorage::executeQuery(const string& sql) {
+    if (!m_initialized) {
+        last_error_ = "BMCStorage not initialized";
+        logError("BMCStorage not initialized");
         return false;
     }
     
-    TAOS_RES* result = taos_query(taos_, sql.c_str());
+    TDengineConnectionGuard guard(m_connection_pool);
+    if (!guard.isValid()) {
+        last_error_ = "Failed to get database connection from pool";
+        logError("Failed to get database connection from pool");
+        return false;
+    }
+    
+    logDebug("Executing SQL: " + sql);
+    
+    TAOS* taos = guard->get();
+    TAOS_RES* result = taos_query(taos, sql.c_str());
     int code = taos_errno(result);
     
     if (code != 0) {
         last_error_ = "SQL执行失败: " + string(taos_errstr(result)) + " SQL: " + sql;
-        LogManager::getLogger()->error("SQL执行失败: {} - SQL: {}", taos_errstr(result), sql);
+        logError("SQL执行失败: " + string(taos_errstr(result)) + " - SQL: " + sql);
         taos_free_result(result);
         return false;
     }
@@ -399,19 +438,28 @@ string BMCStorage::cleanString(const string& str) {
 vector<BMCQueryResult> BMCStorage::executeBMCQuerySQL(const string& sql) {
     vector<BMCQueryResult> results;
     
-    if (!taos_) {
-        last_error_ = "数据库连接未建立";
+    if (!m_initialized) {
+        last_error_ = "BMCStorage not initialized";
+        logError("BMCStorage not initialized");
         return results;
     }
     
-    LogManager::getLogger()->debug("BMCStorage: 执行查询: {}", sql);
+    logDebug("BMCStorage: 执行查询: " + sql);
     
-    TAOS_RES* res = taos_query(taos_, sql.c_str());
+    TDengineConnectionGuard guard(m_connection_pool);
+    if (!guard.isValid()) {
+        last_error_ = "Failed to get database connection from pool";
+        logError("Failed to get database connection from pool");
+        return results;
+    }
+    
+    TAOS* taos = guard->get();
+    TAOS_RES* res = taos_query(taos, sql.c_str());
     int code = taos_errno(res);
     
     if (code != 0) {
         last_error_ = "SQL执行失败: " + string(taos_errstr(res)) + " SQL: " + sql;
-        LogManager::getLogger()->error("BMCStorage: SQL执行失败: {} - SQL: {}", taos_errstr(res), sql);
+        logError("BMCStorage: SQL执行失败: " + string(taos_errstr(res)) + " - SQL: " + sql);
         taos_free_result(res);
         return results;
     }
@@ -529,8 +577,8 @@ BMCRangeData BMCStorage::getBMCRangeData(uint8_t box_id,
     rangeData.time_range = time_range;
     rangeData.metrics_types = metrics;
     
-    if (!taos_) {
-        LogManager::getLogger()->error("BMCStorage: 数据库连接未建立");
+    if (!m_initialized) {
+        logError("BMCStorage not initialized");
         return rangeData;
     }
     
@@ -666,4 +714,62 @@ nlohmann::json BMCRangeData::to_json() const {
     j["metrics"] = metrics;
     
     return j;
+}
+
+// 新增的连接池相关方法
+TDengineConnectionPool::PoolStats BMCStorage::getConnectionPoolStats() const {
+    if (!m_connection_pool) {
+        return TDengineConnectionPool::PoolStats{};
+    }
+    return m_connection_pool->getStats();
+}
+
+void BMCStorage::updateConnectionPoolConfig(const TDenginePoolConfig& config) {
+    m_pool_config = config;
+    if (m_connection_pool) {
+        m_connection_pool->updateConfig(config);
+    }
+    logInfo("Connection pool configuration updated");
+}
+
+TDenginePoolConfig BMCStorage::createDefaultPoolConfig() const {
+    TDenginePoolConfig config;
+    config.host = "localhost";
+    config.port = 6030;
+    config.user = "test";
+    config.password = "HZ715Net";
+    config.database = "resource";
+    config.locale = "C";
+    config.charset = "UTF-8";
+    config.timezone = "";
+    
+    // 连接池配置
+    config.min_connections = 2;
+    config.max_connections = 8;
+    config.initial_connections = 3;
+    
+    // 超时配置
+    config.connection_timeout = 30;
+    config.idle_timeout = 600;      // 10分钟
+    config.max_lifetime = 3600;     // 1小时
+    config.acquire_timeout = 10;
+    
+    // 健康检查配置
+    config.health_check_interval = 60;
+    config.health_check_query = "SELECT SERVER_VERSION()";
+    
+    return config;
+}
+
+// 日志辅助方法
+void BMCStorage::logInfo(const string& message) const {
+    LogManager::getLogger()->info("BMCStorage: {}", message);
+}
+
+void BMCStorage::logError(const string& message) const {
+    LogManager::getLogger()->error("BMCStorage: {}", message);
+}
+
+void BMCStorage::logDebug(const string& message) const {
+    LogManager::getLogger()->debug("BMCStorage: {}", message);
 }

@@ -20,9 +20,9 @@
 struct MySQLPoolConfig {
     std::string host = "localhost";           // 数据库主机
     int port = 3306;                         // 数据库端口
-    std::string user = "root";               // 用户名
-    std::string password = "";               // 密码
-    std::string database = "";               // 数据库名
+    std::string user = "test";               // 用户名
+    std::string password = "HZ715Net";               // 密码
+    std::string database = "alarm";               // 数据库名
     std::string charset = "utf8mb4";         // 字符集
     
     // 连接池配置

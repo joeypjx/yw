@@ -12,6 +12,7 @@
 #include "bmc_listener.h"
 #include "bmc_storage.h"
 #include "websocket_server.h"
+#include "mysql_connection_pool.h"
 #include "json.hpp"
 
 #include <iostream>
@@ -223,12 +224,46 @@ bool AlarmSystem::initializeSignalHandlers() {
 
 bool AlarmSystem::initializeDatabase() {
     try {
+        // 0. 创建共享的MySQL连接池
+        LogManager::getLogger()->info("🗃️ 创建共享MySQL连接池...");
+        MySQLPoolConfig mysql_config;
+        mysql_config.host = config_.mysql_host;
+        mysql_config.port = config_.mysql_port;
+        mysql_config.user = config_.db_user;
+        mysql_config.password = config_.db_password;
+        mysql_config.database = config_.alarm_db;
+        mysql_config.charset = "utf8mb4";
+        
+        // 连接池配置
+        mysql_config.min_connections = 3;
+        mysql_config.max_connections = 15;
+        mysql_config.initial_connections = 5;
+        
+        // 超时配置
+        mysql_config.connection_timeout = 30;
+        mysql_config.idle_timeout = 600;      // 10分钟
+        mysql_config.max_lifetime = 3600;     // 1小时
+        mysql_config.acquire_timeout = 10;
+        
+        // 健康检查配置
+        mysql_config.health_check_interval = 60;
+        mysql_config.health_check_query = "SELECT 1";
+        
+        mysql_connection_pool_ = std::make_shared<MySQLConnectionPool>(mysql_config);
+        if (!mysql_connection_pool_->initialize()) {
+            std::lock_guard<std::mutex> lock(error_mutex_);
+            last_error_ = "MySQL连接池初始化失败";
+            return false;
+        }
+        
+        LogManager::getLogger()->info("✅ 共享MySQL连接池创建成功");
+        
         // 1. 初始化资源存储
         LogManager::getLogger()->info("📦 初始化资源存储...");
         resource_storage_ = std::make_shared<ResourceStorage>(
             config_.tdengine_host, config_.db_user, config_.db_password);
         
-        if (!resource_storage_->connect()) {
+        if (!resource_storage_->initialize()) {
             std::lock_guard<std::mutex> lock(error_mutex_);
             last_error_ = "连接TDengine失败";
             return false;
@@ -248,15 +283,13 @@ bool AlarmSystem::initializeDatabase() {
         
         LogManager::getLogger()->info("✅ 资源存储初始化成功");
         
-        // 2. 初始化告警规则存储
+        // 2. 初始化告警规则存储（使用共享连接池）
         LogManager::getLogger()->info("📋 初始化告警规则存储...");
-        alarm_rule_storage_ = std::make_shared<AlarmRuleStorage>(
-            config_.mysql_host, config_.mysql_port, config_.db_user, 
-            config_.db_password, config_.alarm_db);
+        alarm_rule_storage_ = std::make_shared<AlarmRuleStorage>(mysql_connection_pool_);
         
         if (!alarm_rule_storage_->initialize()) {
             std::lock_guard<std::mutex> lock(error_mutex_);
-            last_error_ = "连接MySQL失败";
+            last_error_ = "告警规则存储初始化失败";
             return false;
         }
         
@@ -274,11 +307,9 @@ bool AlarmSystem::initializeDatabase() {
         
         LogManager::getLogger()->info("✅ 告警规则存储初始化成功");
         
-        // 3. 初始化告警管理器
+        // 3. 初始化告警管理器（使用共享连接池）
         LogManager::getLogger()->info("🚨 初始化告警管理器...");
-        alarm_manager_ = std::make_shared<AlarmManager>(
-            config_.mysql_host, config_.mysql_port, config_.db_user, 
-            config_.db_password, config_.alarm_db);
+        alarm_manager_ = std::make_shared<AlarmManager>(mysql_connection_pool_);
         
         if (!alarm_manager_->initialize()) {
             std::lock_guard<std::mutex> lock(error_mutex_);
@@ -306,7 +337,7 @@ bool AlarmSystem::initializeDatabase() {
         bmc_storage_ = std::make_shared<BMCStorage>(
             config_.tdengine_host, config_.db_user, config_.db_password, config_.resource_db);
         
-        if (!bmc_storage_->connect()) {
+        if (!bmc_storage_->initialize()) {
             std::lock_guard<std::mutex> lock(error_mutex_);
             last_error_ = "BMC存储连接失败: " + bmc_storage_->getLastError();
             return false;

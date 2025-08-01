@@ -5,9 +5,11 @@
 #include <vector>
 #include <map>
 #include <chrono>
+#include <atomic>
 #include <taos.h>
 #include "json.hpp"
 #include "node_model.h"
+#include "tdengine_connection_pool.h"
 
 // 查询结果结构
 struct QueryResult {
@@ -130,13 +132,18 @@ struct NodeResourceRangeData {
 
 class ResourceStorage {
 public:
+    // 新的连接池构造函数
+    ResourceStorage(const TDenginePoolConfig& pool_config);
+    
+    // 兼容性构造函数 - 将旧参数转换为连接池配置
     ResourceStorage(const std::string& host, const std::string& user, const std::string& password);
     ~ResourceStorage();
 
-    bool connect();
-    void disconnect();
+    bool initialize();
+    void shutdown();
     bool createDatabase(const std::string& dbName);
     bool createResourceTable();
+    bool isInitialized() const { return m_initialized; }
     // 插入资源数据
     bool insertResourceData(const std::string& hostIp, const node::ResourceInfo& resourceData);
     
@@ -150,15 +157,24 @@ public:
     NodeResourceRangeData getNodeResourceRangeData(const std::string& hostIp, 
                                                    const std::string& time_range,
                                                    const std::vector<std::string>& metrics);
+    
+    // 连接池相关方法
+    TDengineConnectionPool::PoolStats getConnectionPoolStats() const;
+    void updateConnectionPoolConfig(const TDenginePoolConfig& config);
 
 private:
-    std::string m_host;
-    std::string m_user;
-    std::string m_password;
-    TAOS* m_taos;
-    bool m_connected;
+    TDenginePoolConfig m_pool_config;
+    std::shared_ptr<TDengineConnectionPool> m_connection_pool;
+    std::atomic<bool> m_initialized;
 
     bool executeQuery(const std::string& sql);
+    TAOS_RES* executeSelectQuery(const std::string& sql);
+    TDenginePoolConfig createDefaultPoolConfig() const;
+    
+    // 日志辅助方法
+    void logInfo(const std::string& message) const;
+    void logError(const std::string& message) const;
+    void logDebug(const std::string& message) const;
     
     bool insertCpuData(const std::string& hostIp, const node::CpuInfo& cpuData);
     bool insertMemoryData(const std::string& hostIp, const node::MemoryInfo& memoryData);

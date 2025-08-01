@@ -46,6 +46,9 @@ public:
     static constexpr const char* DEFAULT_CHARSET = "utf8mb4";
     static constexpr const char* DEFAULT_COLLATION = "utf8mb4_unicode_ci";
     
+    // 连接池注入构造函数 - 推荐使用
+    AlarmRuleStorage(std::shared_ptr<MySQLConnectionPool> connection_pool);
+    
     // 新的连接池构造函数
     AlarmRuleStorage(const MySQLPoolConfig& pool_config);
     
@@ -95,6 +98,7 @@ private:
     MySQLPoolConfig m_pool_config;
     std::shared_ptr<MySQLConnectionPool> m_connection_pool;
     std::atomic<bool> m_initialized;
+    bool m_owns_connection_pool;  // 标记是否拥有连接池的所有权
 
     bool executeQuery(const std::string& sql);
     MYSQL_RES* executeSelectQuery(const std::string& sql);

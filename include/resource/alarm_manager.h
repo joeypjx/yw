@@ -51,6 +51,9 @@ public:
     static constexpr int DEFAULT_CONNECTION_CHECK_INTERVAL = 5000;
     static constexpr int DEFAULT_MAX_BACKOFF_SECONDS = 60;
 
+    // 连接池注入构造函数 - 推荐使用
+    AlarmManager(std::shared_ptr<MySQLConnectionPool> connection_pool);
+    
     // 构造函数 - 使用连接池配置
     AlarmManager(const MySQLPoolConfig& pool_config);
     // 兼容性构造函数 - 将单连接参数转换为连接池配置
@@ -97,6 +100,7 @@ private:
     MySQLPoolConfig m_pool_config;
     std::shared_ptr<MySQLConnectionPool> m_connection_pool;
     std::atomic<bool> m_initialized;
+    bool m_owns_connection_pool;  // 标记是否拥有连接池的所有权
     
     // 数据库操作辅助函数 - 使用连接池
     bool executeQuery(const std::string& query);

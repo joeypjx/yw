@@ -22,7 +22,9 @@ class NodeStatusMonitor;
 class BMCListener;
 class BMCStorage;
 class WebSocketServer;
+class MySQLConnectionPool;
 struct AlarmEvent;
+struct MySQLPoolConfig;
 
 /**
  * 告警系统配置结构体
@@ -192,6 +194,9 @@ private:
     std::atomic<bool> running_;
     std::string last_error_;
     mutable std::mutex error_mutex_;
+    
+    // 共享连接池
+    std::shared_ptr<MySQLConnectionPool> mysql_connection_pool_;
     
     // 系统组件
     std::shared_ptr<ResourceStorage> resource_storage_;

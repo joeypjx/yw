@@ -6,8 +6,10 @@
 #include <vector>
 #include <map>
 #include <chrono>
+#include <atomic>
 #include "bmc_listener.h"
 #include "json.hpp"
+#include "tdengine_connection_pool.h"
 
 // BMC查询结果结构
 struct BMCQueryResult {
@@ -53,7 +55,13 @@ struct HistoricalBMCResponse {
 class BMCStorage {
 public:
     /**
-     * 构造函数
+     * 新的连接池构造函数
+     * @param pool_config TDengine连接池配置
+     */
+    BMCStorage(const TDenginePoolConfig& pool_config);
+    
+    /**
+     * 兼容性构造函数 - 将旧参数转换为连接池配置
      * @param host TDengine主机地址
      * @param user 用户名
      * @param password 密码
@@ -68,15 +76,21 @@ public:
     ~BMCStorage();
     
     /**
-     * 连接到TDengine数据库
+     * 初始化连接池
      * @return 成功返回true，失败返回false
      */
-    bool connect();
+    bool initialize();
     
     /**
-     * 断开数据库连接
+     * 关闭连接池
      */
-    void disconnect();
+    void shutdown();
+    
+    /**
+     * 检查是否已初始化
+     * @return 已初始化返回true
+     */
+    bool isInitialized() const { return m_initialized; }
     
     /**
      * 创建BMC相关的超级表
@@ -128,6 +142,19 @@ public:
      * @return 错误信息字符串
      */
     std::string getLastError() const;
+    
+    /**
+     * 连接池相关方法
+     */
+    TDengineConnectionPool::PoolStats getConnectionPoolStats() const;
+    void updateConnectionPoolConfig(const TDenginePoolConfig& config);
+    
+    /**
+     * 执行查询并返回BMC格式的结果
+     * @param sql SQL查询语句
+     * @return BMC查询结果列表
+     */
+    std::vector<BMCQueryResult> executeBMCQuerySQL(const std::string& sql);
 
 private:
     /**
@@ -164,13 +191,6 @@ private:
     std::string cleanString(const std::string& str);
     
     /**
-     * 执行查询并返回BMC格式的结果
-     * @param sql SQL查询语句
-     * @return BMC查询结果列表
-     */
-    std::vector<BMCQueryResult> executeBMCQuerySQL(const std::string& sql);
-    
-    /**
      * 解析时间范围字符串
      * @param time_range 时间范围字符串，如"1h", "30m"
      * @return 对应的秒数
@@ -178,12 +198,30 @@ private:
     std::chrono::seconds parseTimeRange(const std::string& time_range);
 
 private:
-    std::string host_;
-    std::string user_;
-    std::string password_;
-    std::string database_;
-    void* taos_;  // TAOS连接句柄
+    TDenginePoolConfig m_pool_config;
+    std::shared_ptr<TDengineConnectionPool> m_connection_pool;
+    std::atomic<bool> m_initialized;
     std::string last_error_;
+    
+    /**
+     * 执行SQL语句（使用连接池）
+     * @param sql SQL语句
+     * @return 成功返回true，失败返回false
+     */
+    bool executeQuery(const std::string& sql);
+    
+    /**
+     * 创建默认连接池配置
+     * @return 默认配置
+     */
+    TDenginePoolConfig createDefaultPoolConfig() const;
+    
+    /**
+     * 日志辅助方法
+     */
+    void logInfo(const std::string& message) const;
+    void logError(const std::string& message) const;
+    void logDebug(const std::string& message) const;
 };
 
 #endif // BMC_STORAGE_H

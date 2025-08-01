@@ -20,55 +20,90 @@ namespace {
     }
 }
 
+// 新的连接池构造函数
+ResourceStorage::ResourceStorage(const TDenginePoolConfig& pool_config)
+    : m_pool_config(pool_config), m_initialized(false) {
+    m_connection_pool = std::make_shared<TDengineConnectionPool>(m_pool_config);
+}
+
+// 兼容性构造函数 - 将旧参数转换为连接池配置
 ResourceStorage::ResourceStorage(const std::string& host, const std::string& user, const std::string& password)
-    : m_host(host), m_user(user), m_password(password), m_taos(nullptr), m_connected(false) {
+    : m_initialized(false) {
+    m_pool_config = createDefaultPoolConfig();
+    m_pool_config.host = host;
+    m_pool_config.user = user;
+    m_pool_config.password = password;
+    m_pool_config.database = ""; // 默认数据库为空
+    
+    m_connection_pool = std::make_shared<TDengineConnectionPool>(m_pool_config);
 }
 
 ResourceStorage::~ResourceStorage() {
-    disconnect();
+    shutdown();
 }
 
-bool ResourceStorage::connect() {
-    if (m_connected) {
+bool ResourceStorage::initialize() {
+    if (m_initialized) {
+        logInfo("ResourceStorage already initialized");
         return true;
     }
-
-    m_taos = taos_connect(m_host.c_str(), m_user.c_str(), m_password.c_str(), nullptr, 0);
-    if (m_taos == nullptr) {
-        LogManager::getLogger()->error("Failed to connect to TDengine: {}", taos_errstr(m_taos));
+    
+    if (!m_connection_pool) {
+        logError("Connection pool not created");
         return false;
     }
-
-    m_connected = true;
+    
+    if (!m_connection_pool->initialize()) {
+        logError("Failed to initialize connection pool");
+        return false;
+    }
+    
+    m_initialized = true;
+    logInfo("ResourceStorage initialized successfully with connection pool");
     return true;
 }
 
-void ResourceStorage::disconnect() {
-    if (m_taos != nullptr) {
-        taos_close(m_taos);
-        m_taos = nullptr;
+void ResourceStorage::shutdown() {
+    if (!m_initialized) {
+        return;
     }
-    m_connected = false;
+    
+    if (m_connection_pool) {
+        m_connection_pool->shutdown();
+    }
+    
+    m_initialized = false;
+    logInfo("ResourceStorage shutdown completed");
 }
 
 bool ResourceStorage::createDatabase(const std::string& dbName) {
-    if (!m_connected) {
-        LogManager::getLogger()->error("Not connected to TDengine");
+    if (!m_initialized) {
+        logError("ResourceStorage not initialized");
         return false;
     }
-
-    std::string sql = "CREATE DATABASE IF NOT EXISTS " + dbName;
-    if (!executeQuery(sql)) {
+    
+    std::string query = "CREATE DATABASE IF NOT EXISTS " + dbName;
+    if (!executeQuery(query)) {
         return false;
     }
-
-    sql = "USE " + dbName;
-    return executeQuery(sql);
+    
+    // 切换到新创建的数据库
+    query = "USE " + dbName;
+    if (!executeQuery(query)) {
+        return false;
+    }
+    
+    // 更新连接池配置中的数据库名称
+    m_pool_config.database = dbName;
+    m_connection_pool->updateConfig(m_pool_config);
+    
+    logInfo("Database created and selected: " + dbName);
+    return true;
 }
 
 bool ResourceStorage::createResourceTable() {
-    if (!m_connected) {
-        LogManager::getLogger()->error("Not connected to TDengine");
+    if (!m_initialized) {
+        logError("ResourceStorage not initialized");
         return false;
     }
 
@@ -155,27 +190,62 @@ bool ResourceStorage::createResourceTable() {
     return true;
 }
 
-bool ResourceStorage::executeQuery(const std::string& sql) {
-    if (!m_connected) {
-        LogManager::getLogger()->error("Not connected to TDengine");
+bool ResourceStorage::executeQuery(const std::string& query) {
+    if (!m_initialized) {
+        logError("ResourceStorage not initialized");
         return false;
     }
-
-    TAOS_RES* result = taos_query(m_taos, sql.c_str());
+    
+    TDengineConnectionGuard guard(m_connection_pool);
+    if (!guard.isValid()) {
+        logError("Failed to get database connection from pool");
+        return false;
+    }
+    
+    logDebug("Executing query: " + query);
+    
+    TAOS* taos = guard->get();
+    TAOS_RES* result = taos_query(taos, query.c_str());
     if (taos_errno(result) != 0) {
-        LogManager::getLogger()->error("SQL execution failed: {}", taos_errstr(result));
-        LogManager::getLogger()->error("SQL: {}", sql);
+        logError("SQL execution failed: " + std::string(taos_errstr(result)));
+        logError("SQL: " + query);
         taos_free_result(result);
         return false;
     }
-
+    
     taos_free_result(result);
     return true;
 }
 
+TAOS_RES* ResourceStorage::executeSelectQuery(const std::string& query) {
+    if (!m_initialized) {
+        logError("ResourceStorage not initialized");
+        return nullptr;
+    }
+    
+    TDengineConnectionGuard guard(m_connection_pool);
+    if (!guard.isValid()) {
+        logError("Failed to get database connection from pool");
+        return nullptr;
+    }
+    
+    logDebug("Executing select query: " + query);
+    
+    TAOS* taos = guard->get();
+    TAOS_RES* result = taos_query(taos, query.c_str());
+    if (taos_errno(result) != 0) {
+        logError("SQL execution failed: " + std::string(taos_errstr(result)));
+        logError("SQL: " + query);
+        taos_free_result(result);
+        return nullptr;
+    }
+    
+    return result;
+}
+
 bool ResourceStorage::insertResourceData(const std::string& hostIp, const node::ResourceInfo& resourceData) {
-    if (!m_connected) {
-        LogManager::getLogger()->error("Not connected to TDengine");
+    if (!m_initialized) {
+        logError("ResourceStorage not initialized");
         return false;
     }
 
@@ -434,17 +504,24 @@ bool ResourceStorage::insertContainerData(const std::string& hostIp, const std::
 std::vector<QueryResult> ResourceStorage::executeQuerySQL(const std::string& sql) {
     std::vector<QueryResult> results;
     
-    if (!m_connected || !m_taos) {
-        LogManager::getLogger()->error("ResourceStorage: Not connected to TDengine");
+    if (!m_initialized) {
+        logError("ResourceStorage not initialized");
         return results;
     }
     
-    LogManager::getLogger()->debug("ResourceStorage: Executing query: {}", sql);
+    logDebug("Executing query: " + sql);
     
-    TAOS_RES* res = taos_query(m_taos, sql.c_str());
+    TDengineConnectionGuard guard(m_connection_pool);
+    if (!guard.isValid()) {
+        logError("Failed to get database connection from pool");
+        return results;
+    }
+    
+    TAOS* taos = guard->get();
+    TAOS_RES* res = taos_query(taos, sql.c_str());
     if (taos_errno(res) != 0) {
-        LogManager::getLogger()->error("ResourceStorage: Query failed: {}", taos_errstr(res));
-        LogManager::getLogger()->error("ResourceStorage: SQL: {}", sql);
+        logError("Query failed: " + std::string(taos_errstr(res)));
+        logError("SQL: " + sql);
         taos_free_result(res);
         throw std::runtime_error("ResourceStorage: Query failed: " + std::string(taos_errstr(res)));
     }
@@ -532,8 +609,8 @@ NodeResourceData ResourceStorage::getNodeResourceData(const std::string& hostIp)
     NodeResourceData nodeData;
     nodeData.host_ip = hostIp;
     
-    if (!m_connected || !m_taos) {
-        LogManager::getLogger()->error("ResourceStorage: Not connected to TDengine");
+    if (!m_initialized) {
+        logError("ResourceStorage not initialized");
         return nodeData;
     }
     
@@ -834,8 +911,8 @@ NodeResourceRangeData ResourceStorage::getNodeResourceRangeData(const std::strin
     rangeData.time_range = time_range;
     rangeData.metrics_types = metrics;
     
-    if (!m_connected || !m_taos) {
-        LogManager::getLogger()->error("ResourceStorage: Not connected to TDengine");
+    if (!m_initialized) {
+        logError("ResourceStorage not initialized");
         return rangeData;
     }
     
@@ -1092,4 +1169,62 @@ nlohmann::json NodeResourceRangeData::to_json() const {
     j["metrics"] = metrics;
     
     return j;
+}
+
+// 新增的连接池相关方法
+TDengineConnectionPool::PoolStats ResourceStorage::getConnectionPoolStats() const {
+    if (!m_connection_pool) {
+        return TDengineConnectionPool::PoolStats{};
+    }
+    return m_connection_pool->getStats();
+}
+
+void ResourceStorage::updateConnectionPoolConfig(const TDenginePoolConfig& config) {
+    m_pool_config = config;
+    if (m_connection_pool) {
+        m_connection_pool->updateConfig(config);
+    }
+    logInfo("Connection pool configuration updated");
+}
+
+TDenginePoolConfig ResourceStorage::createDefaultPoolConfig() const {
+    TDenginePoolConfig config;
+    config.host = "localhost";
+    config.port = 6030;
+    config.user = "test";
+    config.password = "HZ715Net";
+    config.database = "resource";
+    config.locale = "C";
+    config.charset = "UTF-8";
+    config.timezone = "";
+    
+    // 连接池配置
+    config.min_connections = 2;
+    config.max_connections = 8;
+    config.initial_connections = 3;
+    
+    // 超时配置
+    config.connection_timeout = 30;
+    config.idle_timeout = 600;      // 10分钟
+    config.max_lifetime = 3600;     // 1小时
+    config.acquire_timeout = 10;
+    
+    // 健康检查配置
+    config.health_check_interval = 60;
+    config.health_check_query = "SELECT SERVER_VERSION()";
+    
+    return config;
+}
+
+// 日志辅助方法
+void ResourceStorage::logInfo(const std::string& message) const {
+    LogManager::getLogger()->info("ResourceStorage: {}", message);
+}
+
+void ResourceStorage::logError(const std::string& message) const {
+    LogManager::getLogger()->error("ResourceStorage: {}", message);
+}
+
+void ResourceStorage::logDebug(const std::string& message) const {
+    LogManager::getLogger()->debug("ResourceStorage: {}", message);
 }
