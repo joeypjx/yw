@@ -101,11 +101,70 @@ bool BMCStorage::createBMCTables() {
     // 先尝试删除可能存在的旧超级表（如果结构不匹配）
     dropOldBMCTables();
     
-    if (!createFanSuperTable()) {
+    // 使用单个连接批量创建BMC超级表，减少连接开销
+    TDengineConnectionGuard guard(m_connection_pool);
+    if (!guard.isValid()) {
+        last_error_ = "无法获取数据库连接";
+        LogManager::getLogger()->error("Failed to get database connection from pool");
         return false;
     }
     
-    if (!createSensorSuperTable()) {
+    TAOS* taos = guard->get();
+    
+    // 定义所有BMC CREATE STABLE语句
+    std::vector<std::pair<std::string, std::string>> bmc_tables = {
+        {"bmc_fan_super", R"(
+            CREATE TABLE IF NOT EXISTS bmc_fan_super (
+                ts TIMESTAMP,
+                alarm_type SMALLINT,
+                work_mode SMALLINT,
+                speed INT
+            ) TAGS (
+                box_id SMALLINT,
+                fan_seq SMALLINT
+            )
+        )"},
+        
+        {"bmc_sensor_super", R"(
+            CREATE TABLE IF NOT EXISTS bmc_sensor_super (
+                ts TIMESTAMP,
+                sensor_value INT,
+                alarm_type SMALLINT
+            ) TAGS (
+                box_id SMALLINT,
+                slot_id SMALLINT,
+                sensor_seq SMALLINT,
+                sensor_name NCHAR(16),
+                sensor_type SMALLINT,
+                host_ip NCHAR(16)
+            )
+        )"}
+    };
+    
+    // 批量执行CREATE STABLE语句，使用同一个连接
+    std::vector<std::string> failed_tables;
+    for (const auto& table : bmc_tables) {
+        LogManager::getLogger()->debug("创建BMC超级表: " + table.first);
+        
+        TAOS_RES* result = taos_query(taos, table.second.c_str());
+        if (taos_errno(result) != 0) {
+            std::string error_msg = "创建BMC超级表失败 " + table.first + ": " + std::string(taos_errstr(result));
+            LogManager::getLogger()->error(error_msg);
+            failed_tables.push_back(table.first);
+        } else {
+            LogManager::getLogger()->debug("✅ " + table.first + " 创建成功");
+        }
+        taos_free_result(result);
+    }
+    
+    if (!failed_tables.empty()) {
+        std::string failed_list;
+        for (size_t i = 0; i < failed_tables.size(); ++i) {
+            if (i > 0) failed_list += ", ";
+            failed_list += failed_tables[i];
+        }
+        last_error_ = "创建BMC超级表失败: " + failed_list;
+        LogManager::getLogger()->error(last_error_);
         return false;
     }
     
@@ -113,50 +172,16 @@ bool BMCStorage::createBMCTables() {
     return true;
 }
 
+// 保留这些方法以维持接口兼容性，但它们现在只是简单的包装器
 bool BMCStorage::createFanSuperTable() {
-    string sql = R"(
-        CREATE TABLE IF NOT EXISTS bmc_fan_super (
-            ts TIMESTAMP,
-            alarm_type SMALLINT,
-            work_mode SMALLINT,
-            speed INT
-        ) TAGS (
-            box_id SMALLINT,
-            fan_seq SMALLINT
-        )
-    )";
-    
-    if (!executeQuery(sql)) {
-        last_error_ = "创建风扇超级表失败";
-        return false;
-    }
-    
-    LogManager::getLogger()->debug("✅ 风扇超级表创建成功");
+    // 这个方法现在被createBMCTables()统一处理，保留是为了兼容性
+    LogManager::getLogger()->debug("✅ 风扇超级表创建成功 (通过批量创建)");
     return true;
 }
 
 bool BMCStorage::createSensorSuperTable() {
-    string sql = R"(
-        CREATE TABLE IF NOT EXISTS bmc_sensor_super (
-            ts TIMESTAMP,
-            sensor_value INT,
-            alarm_type SMALLINT
-        ) TAGS (
-            box_id SMALLINT,
-            slot_id SMALLINT,
-            sensor_seq SMALLINT,
-            sensor_name NCHAR(16),
-            sensor_type SMALLINT,
-            host_ip NCHAR(16)
-        )
-    )";
-    
-    if (!executeQuery(sql)) {
-        last_error_ = "创建传感器超级表失败";
-        return false;
-    }
-    
-    LogManager::getLogger()->debug("✅ 传感器超级表创建成功");
+    // 这个方法现在被createBMCTables()统一处理，保留是为了兼容性
+    LogManager::getLogger()->debug("✅ 传感器超级表创建成功 (通过批量创建)");
     return true;
 }
 
@@ -167,63 +192,63 @@ void BMCStorage::dropOldBMCTables() {
     LogManager::getLogger()->debug("🗑️ 清理旧BMC超级表");
 }
 
-bool BMCStorage::storeFanData(const UdpInfo& udp_info) {
+
+
+bool BMCStorage::storeBMCData(const UdpInfo& udp_info) {
+    // 使用批量插入优化
+    return storeBMCDataBatch(udp_info);
+}
+
+bool BMCStorage::storeBMCDataBatch(const UdpInfo& udp_info) {
     try {
+        // 使用单个连接和批量INSERT语句
+        TDengineConnectionGuard guard(m_connection_pool);
+        if (!guard.isValid()) {
+            last_error_ = "无法获取数据库连接";
+            LogManager::getLogger()->error("Failed to get database connection from pool");
+            return false;
+        }
+
+        TAOS* taos = guard->get();
+        
         // 获取当前时间戳
         auto now = chrono::system_clock::now();
         auto timestamp = chrono::duration_cast<chrono::milliseconds>(now.time_since_epoch()).count();
-        
+
+        // 1. 批量创建子表语句
+        std::vector<std::string> createTableStatements;
+        std::ostringstream batchInsertSql;
+        batchInsertSql << "INSERT INTO ";
+
+        // 2. 处理风扇数据
         for (int i = 0; i < 2; i++) {
             const auto& fan = udp_info.fan[i];
-            
-            // 创建子表名
             string table_name = "bmc_fan_" + to_string(udp_info.boxid) + "_" + to_string(fan.fanseq);
             
-            // 创建子表（如果不存在）
+            // 创建子表语句
             ostringstream create_sql;
             create_sql << "CREATE TABLE IF NOT EXISTS " << table_name 
                       << " USING bmc_fan_super TAGS ("
                       << static_cast<int>(udp_info.boxid) << ", "
                       << static_cast<int>(fan.fanseq) << ")";
+            createTableStatements.push_back(create_sql.str());
             
-            if (!executeQuery(create_sql.str())) {
-                continue;
-            }
-            
-            // 插入数据
-            ostringstream insert_sql;
-            insert_sql << "INSERT INTO " << table_name << " VALUES ("
-                      << timestamp << ", "
-                      << ((fan.fanmode >> 4) & 0x0F) << ", "  // alarm_type
-                      << (fan.fanmode & 0x0F) << ", "         // work_mode  
-                      << fan.fanspeed << ")";
-            
-            if (!executeQuery(insert_sql.str())) {
-                LogManager::getLogger()->warn("插入风扇数据失败: box_id={}, fan_seq={}", 
-                                            udp_info.boxid, fan.fanseq);
-            }
+            // 添加到批量插入语句
+            batchInsertSql << table_name << " VALUES ("
+                          << timestamp << ", "
+                          << ((fan.fanmode >> 4) & 0x0F) << ", "  // alarm_type
+                          << (fan.fanmode & 0x0F) << ", "         // work_mode  
+                          << fan.fanspeed << ") ";
         }
-        
-        return true;
-    } catch (const exception& e) {
-        last_error_ = "存储风扇数据异常: " + string(e.what());
-        LogManager::getLogger()->error("存储风扇数据异常: {}", e.what());
-        return false;
-    }
-}
 
-bool BMCStorage::storeSensorData(const UdpInfo& udp_info) {
-    try {
-        // 获取当前时间戳
-        auto now = chrono::system_clock::now();
-        auto timestamp = chrono::duration_cast<chrono::milliseconds>(now.time_since_epoch()).count();
-        
+        // 3. 处理传感器数据
         for (int i = 0; i < 14; i++) {
             const auto& board = udp_info.board[i];
             uint8_t slot_id = Utils::ipmbaddrToSlotId(board.ipmbaddr);
             if (slot_id == 0) {
                 continue;
             }
+            
             // 计算host_ip
             std::string host_ip = Utils::calculateHostIP(static_cast<int>(udp_info.boxid), static_cast<int>(slot_id));
             
@@ -231,14 +256,13 @@ bool BMCStorage::storeSensorData(const UdpInfo& udp_info) {
             for (int j = 0; j < sensor_count; j++) {
                 const auto& sensor = board.sensor[j];
                 
-                // 创建子表名
                 string table_name = "bmc_sensor_" + to_string(udp_info.boxid) + "_" + 
                                    to_string(slot_id) + "_" + to_string(sensor.sensorseq);
                 
                 // 传感器名称清理
                 string sensor_name = cleanString(string(reinterpret_cast<const char*>(sensor.sensorname), 6));
                 
-                // 创建子表（如果不存在）
+                // 创建子表语句
                 ostringstream create_sql;
                 create_sql << "CREATE TABLE IF NOT EXISTS " << table_name 
                           << " USING bmc_sensor_super TAGS ("
@@ -248,46 +272,48 @@ bool BMCStorage::storeSensorData(const UdpInfo& udp_info) {
                           << "'" << sensor_name << "', "
                           << static_cast<int>(sensor.sensortype) << ", "
                           << "'" << host_ip << "')";
-                
-                if (!executeQuery(create_sql.str())) {
-                    continue;
-                }
+                createTableStatements.push_back(create_sql.str());
                 
                 // 合并传感器值
                 uint16_t sensor_value = (sensor.sensorvalue_H << 8) | sensor.sensorvalue_L;
                 
-                // 插入数据
-                ostringstream insert_sql;
-                insert_sql << "INSERT INTO " << table_name << " VALUES ("
-                          << timestamp << ", "
-                          << sensor_value << ", "
-                          << static_cast<int>(sensor.sensoralmtype) << ")";
-                
-                if (!executeQuery(insert_sql.str())) {
-                    LogManager::getLogger()->warn("插入传感器数据失败: box_id={}, slot_id={}, sensor_seq={}", 
-                                                udp_info.boxid, slot_id, sensor.sensorseq);
-                }
+                // 添加到批量插入语句
+                batchInsertSql << table_name << " VALUES ("
+                              << timestamp << ", "
+                              << sensor_value << ", "
+                              << static_cast<int>(sensor.sensoralmtype) << ") ";
             }
         }
-        
-        return true;
-    } catch (const exception& e) {
-        last_error_ = "存储传感器数据异常: " + string(e.what());
-        LogManager::getLogger()->error("存储传感器数据异常: {}", e.what());
-        return false;
-    }
-}
 
-bool BMCStorage::storeBMCData(const UdpInfo& udp_info) {
-    bool fan_success = storeFanData(udp_info);
-    bool sensor_success = storeSensorData(udp_info);
-    
-    if (fan_success && sensor_success) {
-        LogManager::getLogger()->debug("✅ BMC数据存储成功: box_id={}", udp_info.boxid);
+        // 4. 执行所有CREATE TABLE语句
+        for (const auto& createSql : createTableStatements) {
+            TAOS_RES* result = taos_query(taos, createSql.c_str());
+            if (taos_errno(result) != 0) {
+                LogManager::getLogger()->warn("创建BMC子表失败: {}", taos_errstr(result));
+                // 继续执行，不中断整个过程
+            }
+            taos_free_result(result);
+        }
+
+        // 5. 执行批量插入
+        string finalSql = batchInsertSql.str();
+        LogManager::getLogger()->debug("执行BMC批量插入: {}", finalSql);
+        
+        TAOS_RES* result = taos_query(taos, finalSql.c_str());
+        if (taos_errno(result) != 0) {
+            last_error_ = "BMC批量插入失败: " + string(taos_errstr(result));
+            LogManager::getLogger()->error("BMC批量插入失败: {}", taos_errstr(result));
+            taos_free_result(result);
+            return false;
+        }
+        
+        taos_free_result(result);
+        LogManager::getLogger()->debug("✅ BMC批量数据存储成功: box_id={}", udp_info.boxid);
         return true;
-    } else {
-        LogManager::getLogger()->warn("⚠️ BMC数据部分存储失败: box_id={}, fan_ok={}, sensor_ok={}", 
-                                    udp_info.boxid, fan_success, sensor_success);
+        
+    } catch (const exception& e) {
+        last_error_ = "BMC批量存储数据异常: " + string(e.what());
+        LogManager::getLogger()->error("BMC批量存储数据异常: {}", e.what());
         return false;
     }
 }

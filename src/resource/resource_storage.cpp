@@ -28,24 +28,6 @@ ResourceStorage::ResourceStorage(std::shared_ptr<TDengineConnectionPool> connect
     }
 }
 
-// 新的连接池构造函数
-ResourceStorage::ResourceStorage(const TDenginePoolConfig& pool_config)
-    : m_pool_config(pool_config), m_initialized(false), m_owns_connection_pool(true) {
-    m_connection_pool = std::make_shared<TDengineConnectionPool>(m_pool_config);
-}
-
-// 兼容性构造函数 - 将旧参数转换为连接池配置
-ResourceStorage::ResourceStorage(const std::string& host, const std::string& user, const std::string& password)
-    : m_initialized(false), m_owns_connection_pool(true) {
-    m_pool_config = createDefaultPoolConfig();
-    m_pool_config.host = host;
-    m_pool_config.user = user;
-    m_pool_config.password = password;
-    m_pool_config.database = ""; // 默认数据库为空
-    
-    m_connection_pool = std::make_shared<TDengineConnectionPool>(m_pool_config);
-}
-
 ResourceStorage::~ResourceStorage() {
     shutdown();
 }
@@ -119,8 +101,18 @@ bool ResourceStorage::createResourceTable() {
         return false;
     }
 
-    // Create CPU super table
-    std::string sql = "CREATE STABLE IF NOT EXISTS cpu ("
+    // 使用单个连接批量创建所有超级表，减少连接开销
+    TDengineConnectionGuard guard(m_connection_pool);
+    if (!guard.isValid()) {
+        logError("Failed to get database connection from pool");
+        return false;
+    }
+    
+    TAOS* taos = guard->get();
+    
+    // 定义所有CREATE STABLE语句
+    std::vector<std::pair<std::string, std::string>> tables = {
+        {"cpu", "CREATE STABLE IF NOT EXISTS cpu ("
         "ts TIMESTAMP, "
         "usage_percent DOUBLE, "
         "load_avg_1m DOUBLE, "
@@ -132,21 +124,17 @@ bool ResourceStorage::createResourceTable() {
         "voltage DOUBLE, "
         "current DOUBLE, "
         "power DOUBLE"
-        ") TAGS (host_ip NCHAR(16))";
-    if (!executeQuery(sql)) return false;
+            ") TAGS (host_ip NCHAR(16))"},
 
-    // Create Memory super table
-    sql = "CREATE STABLE IF NOT EXISTS memory ("
+        {"memory", "CREATE STABLE IF NOT EXISTS memory ("
         "ts TIMESTAMP, "
         "total BIGINT, "
         "used BIGINT, "
         "free BIGINT, "
         "usage_percent DOUBLE"
-        ") TAGS (host_ip NCHAR(16))";
-    if (!executeQuery(sql)) return false;
+            ") TAGS (host_ip NCHAR(16))"},
 
-    // Create Network super table
-    sql = "CREATE STABLE IF NOT EXISTS network ("
+        {"network", "CREATE STABLE IF NOT EXISTS network ("
         "ts TIMESTAMP, "
         "rx_bytes BIGINT, "
         "tx_bytes BIGINT, "
@@ -156,21 +144,17 @@ bool ResourceStorage::createResourceTable() {
         "tx_errors BIGINT, "
         "rx_rate BIGINT, "
         "tx_rate BIGINT"
-        ") TAGS (host_ip NCHAR(16), interface NCHAR(32))";
-    if (!executeQuery(sql)) return false;
+            ") TAGS (host_ip NCHAR(16), interface NCHAR(32))"},
 
-    // Create Disk super table
-    sql = "CREATE STABLE IF NOT EXISTS disk ("
+        {"disk", "CREATE STABLE IF NOT EXISTS disk ("
         "ts TIMESTAMP, "
         "total BIGINT, "
         "used BIGINT, "
         "free BIGINT, "
         "usage_percent DOUBLE"
-        ") TAGS (host_ip NCHAR(16), device NCHAR(32), mount_point NCHAR(64))";
-    if (!executeQuery(sql)) return false;
+            ") TAGS (host_ip NCHAR(16), device NCHAR(32), mount_point NCHAR(64))"},
 
-    // Create GPU super table
-    sql = "CREATE STABLE IF NOT EXISTS gpu ("
+        {"gpu", "CREATE STABLE IF NOT EXISTS gpu ("
         "ts TIMESTAMP, "
         "compute_usage DOUBLE, "
         "mem_usage DOUBLE, "
@@ -178,27 +162,50 @@ bool ResourceStorage::createResourceTable() {
         "mem_total BIGINT, "
         "temperature DOUBLE, "
         "power DOUBLE"
-        ") TAGS (host_ip NCHAR(16), gpu_index INT, gpu_name NCHAR(64))";
-    if (!executeQuery(sql)) return false;
+            ") TAGS (host_ip NCHAR(16), gpu_index INT, gpu_name NCHAR(64))"},
 
-    // Create Node super table
-    sql = "CREATE STABLE IF NOT EXISTS node ("
+        {"node", "CREATE STABLE IF NOT EXISTS node ("
         "ts TIMESTAMP, "
         "gpu_allocated INT, "
         "gpu_num INT"
-        ") TAGS (host_ip NCHAR(16))";
-    if (!executeQuery(sql)) return false;
+            ") TAGS (host_ip NCHAR(16))"},
 
-    // Create Container super table
-    sql = "CREATE STABLE IF NOT EXISTS container ("
+        {"container", "CREATE STABLE IF NOT EXISTS container ("
         "ts TIMESTAMP, "
         "container_count INT, "
         "paused_count INT, "
         "running_count INT, "
         "stopped_count INT"
-        ") TAGS (host_ip NCHAR(16))";
-    if (!executeQuery(sql)) return false;
-
+            ") TAGS (host_ip NCHAR(16))"}
+    };
+    
+    // 批量执行CREATE STABLE语句，使用同一个连接
+    std::vector<std::string> failed_tables;
+    for (const auto& table : tables) {
+        logDebug("Creating stable table: " + table.first);
+        
+        TAOS_RES* result = taos_query(taos, table.second.c_str());
+        if (taos_errno(result) != 0) {
+            std::string error_msg = "Failed to create stable table " + table.first + ": " + std::string(taos_errstr(result));
+            logError(error_msg);
+            failed_tables.push_back(table.first);
+        } else {
+            logDebug("Successfully created stable table: " + table.first);
+        }
+        taos_free_result(result);
+    }
+    
+    if (!failed_tables.empty()) {
+        std::string failed_list;
+        for (size_t i = 0; i < failed_tables.size(); ++i) {
+            if (i > 0) failed_list += ", ";
+            failed_list += failed_tables[i];
+        }
+        logError("Failed to create stable tables: " + failed_list);
+        return false;
+    }
+    
+    logInfo("All resource stable tables created successfully");
     return true;
 }
 
@@ -229,31 +236,7 @@ bool ResourceStorage::executeQuery(const std::string& query) {
     return true;
 }
 
-TAOS_RES* ResourceStorage::executeSelectQuery(const std::string& query) {
-    if (!m_initialized) {
-        logError("ResourceStorage not initialized");
-        return nullptr;
-    }
-    
-    TDengineConnectionGuard guard(m_connection_pool);
-    if (!guard.isValid()) {
-        logError("Failed to get database connection from pool");
-        return nullptr;
-    }
-    
-    logDebug("Executing select query: " + query);
-    
-    TAOS* taos = guard->get();
-    TAOS_RES* result = taos_query(taos, query.c_str());
-    if (taos_errno(result) != 0) {
-        logError("SQL execution failed: " + std::string(taos_errstr(result)));
-        logError("SQL: " + query);
-        taos_free_result(result);
-        return nullptr;
-    }
-    
-    return result;
-}
+
 
 bool ResourceStorage::insertResourceData(const std::string& hostIp, const node::ResourceInfo& resourceData) {
     if (!m_initialized) {
@@ -261,256 +244,179 @@ bool ResourceStorage::insertResourceData(const std::string& hostIp, const node::
         return false;
     }
 
-    bool success = true;
-
-    // LogManager::getLogger()->info("Inserting resource data for host: {}", hostIp);
-
-    // Insert CPU data
-    success &= insertCpuData(hostIp, resourceData.resource.cpu);
-
-    // Insert Memory data
-    success &= insertMemoryData(hostIp, resourceData.resource.memory);
-
-    // Insert Network data
-    success &= insertNetworkData(hostIp, resourceData.resource.network);
-
-    // Insert Disk data
-    success &= insertDiskData(hostIp, resourceData.resource.disk);
-
-    // Insert GPU data
-    success &= insertGpuData(hostIp, resourceData.resource.gpu);
-
-    // Insert Node data
-    success &= insertNodeData(hostIp, resourceData.resource);
-
-    // Insert Container data
-    success &= insertContainerData(hostIp, resourceData.component);
-
-    return success;
-}
-
-bool ResourceStorage::insertCpuData(const std::string& hostIp, const node::CpuInfo& cpuData) {
-    // Create table if not exists (clean host IP for valid table names)
-    std::string tableName = cleanForTableName(hostIp);
-    std::string createTableSQL = "CREATE TABLE IF NOT EXISTS cpu_" + tableName + " USING cpu TAGS ('" + hostIp + "')";
-    if (!executeQuery(createTableSQL)) {
+    // 使用单个连接和批量INSERT语句
+    TDengineConnectionGuard guard(m_connection_pool);
+    if (!guard.isValid()) {
+        logError("Failed to get database connection from pool");
         return false;
     }
 
-    // Get current timestamp
+    TAOS* taos = guard->get();
+    std::string cleanTableName = cleanForTableName(hostIp);
+    
+    // 获取当前时间戳
     auto now = std::chrono::system_clock::now();
     auto timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
 
-    std::ostringstream oss;
-    oss << "INSERT INTO cpu_" << tableName << " VALUES ("
-        << timestamp << ", "
-        << cpuData.usage_percent << ", "
-        << cpuData.load_avg_1m << ", "
-        << cpuData.load_avg_5m << ", "
-        << cpuData.load_avg_15m << ", "
-        << cpuData.core_count << ", "
-        << cpuData.core_allocated << ", "
-        << cpuData.temperature << ", "
-        << cpuData.voltage << ", "
-        << cpuData.current << ", "
-        << cpuData.power << ")";
+    // 1. 先批量创建所有需要的子表
+    std::vector<std::string> createTableStatements;
+    
+    // CPU表
+    createTableStatements.push_back("CREATE TABLE IF NOT EXISTS cpu_" + cleanTableName + " USING cpu TAGS ('" + hostIp + "')");
+    
+    // Memory表  
+    createTableStatements.push_back("CREATE TABLE IF NOT EXISTS memory_" + cleanTableName + " USING memory TAGS ('" + hostIp + "')");
+    
+    // Node表
+    createTableStatements.push_back("CREATE TABLE IF NOT EXISTS node_" + cleanTableName + " USING node TAGS ('" + hostIp + "')");
+    
+    // Container表
+    createTableStatements.push_back("CREATE TABLE IF NOT EXISTS container_" + cleanTableName + " USING container TAGS ('" + hostIp + "')");
 
-    return executeQuery(oss.str());
-}
-
-bool ResourceStorage::insertMemoryData(const std::string& hostIp, const node::MemoryInfo& memoryData) {
-    // Create table if not exists (clean host IP for valid table names)
-    std::string tableName = cleanForTableName(hostIp);
-    std::string createTableSQL = "CREATE TABLE IF NOT EXISTS memory_" + tableName + " USING memory TAGS ('" + hostIp + "')";
-    if (!executeQuery(createTableSQL)) {
-        return false;
-    }
-
-    // Get current timestamp
-    auto now = std::chrono::system_clock::now();
-    auto timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
-
-    std::ostringstream oss;
-    oss << "INSERT INTO memory_" << tableName << " VALUES ("
-        << timestamp << ", "
-        << memoryData.total << ", "
-        << memoryData.used << ", "
-        << memoryData.free << ", "
-        << memoryData.usage_percent << ")";
-
-    return executeQuery(oss.str());
-}
-
-bool ResourceStorage::insertNetworkData(const std::string& hostIp, const std::vector<node::NetworkInfo>& networkData) {
-    bool success = true;
-    for (const auto& interface : networkData) {
+    // Network表（多个接口）
+    for (const auto& interface : resourceData.resource.network) {
         std::string interfaceName = interface.interface;
-        std::string hostTableName = cleanForTableName(hostIp);
         std::string interfaceTableName = cleanForTableName(interfaceName);
-        std::string tableName = "network_" + hostTableName + "_" + interfaceTableName;
-        
-        // Create table if not exists
-        std::string createTableSQL = "CREATE TABLE IF NOT EXISTS " + tableName + " USING network TAGS ('" + hostIp + "', '" + interfaceName + "')";
-        if (!executeQuery(createTableSQL)) {
-            success = false;
-            continue;
-        }
-
-        // Get current timestamp
-        auto now = std::chrono::system_clock::now();
-        auto timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
-
-        std::ostringstream oss;
-        oss << "INSERT INTO " << tableName << " VALUES ("
-            << timestamp << ", "
-            << interface.rx_bytes << ", "
-            << interface.tx_bytes << ", "
-            << interface.rx_packets << ", "
-            << interface.tx_packets << ", "
-            << interface.rx_errors << ", "
-            << interface.tx_errors << ", "
-            << interface.rx_rate << ", "
-            << interface.tx_rate << ")";
-
-        if (!executeQuery(oss.str())) {
-            success = false;
-        }
+        std::string tableName = "network_" + cleanTableName + "_" + interfaceTableName;
+        createTableStatements.push_back("CREATE TABLE IF NOT EXISTS " + tableName + " USING network TAGS ('" + hostIp + "', '" + interfaceName + "')");
     }
 
-    return success;
-}
-
-bool ResourceStorage::insertDiskData(const std::string& hostIp, const std::vector<node::DiskInfo>& diskData) {
-    bool success = true;
-    for (const auto& disk : diskData) {
+    // Disk表（多个磁盘）
+    for (const auto& disk : resourceData.resource.disk) {
         std::string device = disk.device;
         std::string mountPoint = disk.mount_point;
-        std::string hostTableName = cleanForTableName(hostIp);
         std::string deviceTableName = cleanForTableName(device);
-        std::string tableName = "disk_" + hostTableName + "_" + deviceTableName;
-        
-        // Create table if not exists
-        std::string createTableSQL = "CREATE TABLE IF NOT EXISTS " + tableName + " USING disk TAGS ('" + hostIp + "', '" + device + "', '" + mountPoint + "')";
-        if (!executeQuery(createTableSQL)) {
-            success = false;
-            continue;
-        }
-
-        // Get current timestamp
-        auto now = std::chrono::system_clock::now();
-        auto timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
-
-        std::ostringstream oss;
-        oss << "INSERT INTO " << tableName << " VALUES ("
-            << timestamp << ", "
-            << disk.total << ", "
-            << disk.used << ", "
-            << disk.free << ", "
-            << disk.usage_percent << ")";
-
-        if (!executeQuery(oss.str())) {
-            success = false;
-        }
+        std::string tableName = "disk_" + cleanTableName + "_" + deviceTableName;
+        createTableStatements.push_back("CREATE TABLE IF NOT EXISTS " + tableName + " USING disk TAGS ('" + hostIp + "', '" + device + "', '" + mountPoint + "')");
     }
 
-    return success;
-}
-
-bool ResourceStorage::insertGpuData(const std::string& hostIp, const std::vector<node::GpuResourceInfo>& gpuData) {
-    bool success = true;
-    for (const auto& gpu : gpuData) {
+    // GPU表（多个GPU）
+    for (const auto& gpu : resourceData.resource.gpu) {
         int gpuIndex = gpu.index;
         std::string gpuName = gpu.name;
-        std::string hostTableName = cleanForTableName(hostIp);
-        std::string tableName = "gpu_" + hostTableName + "_" + std::to_string(gpuIndex);
+        std::string tableName = "gpu_" + cleanTableName + "_" + std::to_string(gpuIndex);
+        createTableStatements.push_back("CREATE TABLE IF NOT EXISTS " + tableName + " USING gpu TAGS ('" + hostIp + "', " + std::to_string(gpuIndex) + ", '" + gpuName + "')");
+    }
+
+    // 执行所有CREATE TABLE语句
+    for (const auto& createSql : createTableStatements) {
+        TAOS_RES* result = taos_query(taos, createSql.c_str());
+        if (taos_errno(result) != 0) {
+            logError("Failed to create table: " + std::string(taos_errstr(result)));
+            logError("SQL: " + createSql);
+            taos_free_result(result);
+            return false;
+        }
+        taos_free_result(result);
+    }
+
+    // 2. 构建批量INSERT语句（TDengine多表插入语法）
+    std::ostringstream batchInsertSql;
+    batchInsertSql << "INSERT INTO ";
+
+    // CPU数据
+    batchInsertSql << "cpu_" << cleanTableName << " VALUES ("
+                   << timestamp << ", "
+                   << resourceData.resource.cpu.usage_percent << ", "
+                   << resourceData.resource.cpu.load_avg_1m << ", "
+                   << resourceData.resource.cpu.load_avg_5m << ", "
+                   << resourceData.resource.cpu.load_avg_15m << ", "
+                   << resourceData.resource.cpu.core_count << ", "
+                   << resourceData.resource.cpu.core_allocated << ", "
+                   << resourceData.resource.cpu.temperature << ", "
+                   << resourceData.resource.cpu.voltage << ", "
+                   << resourceData.resource.cpu.current << ", "
+                   << resourceData.resource.cpu.power << ") ";
+
+    // Memory数据
+    batchInsertSql << "memory_" << cleanTableName << " VALUES ("
+                   << timestamp << ", "
+                   << resourceData.resource.memory.total << ", "
+                   << resourceData.resource.memory.used << ", "
+                   << resourceData.resource.memory.free << ", "
+                   << resourceData.resource.memory.usage_percent << ") ";
+
+    // Node数据
+    batchInsertSql << "node_" << cleanTableName << " VALUES ("
+                   << timestamp << ", "
+                   << resourceData.resource.gpu_allocated << ", "
+                   << resourceData.resource.gpu_num << ") ";
+
+    // Container数据
+    int container_count = resourceData.component.size();
+    int paused_count = 0, running_count = 0, stopped_count = 0;
+    for (const auto& container : resourceData.component) {
+        if (container.state == "RUNNING") running_count++;
+        else if (container.state == "PAUSED") paused_count++;
+        else if (container.state == "STOPPED") stopped_count++;
+    }
+    
+    batchInsertSql << "container_" << cleanTableName << " VALUES ("
+                   << timestamp << ", "
+                   << container_count << ", "
+                   << paused_count << ", "
+                   << running_count << ", "
+                   << stopped_count << ") ";
+
+    // Network数据（多个接口）
+    for (const auto& interface : resourceData.resource.network) {
+        std::string interfaceTableName = cleanForTableName(interface.interface);
+        std::string tableName = "network_" + cleanTableName + "_" + interfaceTableName;
         
-        // Create table if not exists
-        std::string createTableSQL = "CREATE TABLE IF NOT EXISTS " + tableName + " USING gpu TAGS ('" + hostIp + "', " + std::to_string(gpuIndex) + ", '" + gpuName + "')";
-        if (!executeQuery(createTableSQL)) {
-            success = false;
-            continue;
-        }
-
-        // Get current timestamp
-        auto now = std::chrono::system_clock::now();
-        auto timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
-
-        std::ostringstream oss;
-        oss << "INSERT INTO " << tableName << " VALUES ("
-            << timestamp << ", "
-            << gpu.compute_usage << ", "
-            << gpu.mem_usage << ", "
-            << gpu.mem_used << ", "
-            << gpu.mem_total << ", "
-            << gpu.temperature << ", "
-            << gpu.power << ")";
-
-        if (!executeQuery(oss.str())) {
-            success = false;
-        }
+        batchInsertSql << tableName << " VALUES ("
+                       << timestamp << ", "
+                       << interface.rx_bytes << ", "
+                       << interface.tx_bytes << ", "
+                       << interface.rx_packets << ", "
+                       << interface.tx_packets << ", "
+                       << interface.rx_errors << ", "
+                       << interface.tx_errors << ", "
+                       << interface.rx_rate << ", "
+                       << interface.tx_rate << ") ";
     }
 
-    return success;
-}
+    // Disk数据（多个磁盘）
+    for (const auto& disk : resourceData.resource.disk) {
+        std::string deviceTableName = cleanForTableName(disk.device);
+        std::string tableName = "disk_" + cleanTableName + "_" + deviceTableName;
+        
+        batchInsertSql << tableName << " VALUES ("
+                       << timestamp << ", "
+                       << disk.total << ", "
+                       << disk.used << ", "
+                       << disk.free << ", "
+                       << disk.usage_percent << ") ";
+    }
 
-bool ResourceStorage::insertNodeData(const std::string& hostIp, const node::ResourceData& resourceData) {
-    // Create table if not exists (clean host IP for valid table names)
-    std::string tableName = cleanForTableName(hostIp);
-    std::string createTableSQL = "CREATE TABLE IF NOT EXISTS node_" + tableName + " USING node TAGS ('" + hostIp + "')";
-    if (!executeQuery(createTableSQL)) {
+    // GPU数据（多个GPU）
+    for (const auto& gpu : resourceData.resource.gpu) {
+        std::string tableName = "gpu_" + cleanTableName + "_" + std::to_string(gpu.index);
+        
+        batchInsertSql << tableName << " VALUES ("
+                       << timestamp << ", "
+                       << gpu.compute_usage << ", "
+                       << gpu.mem_usage << ", "
+                       << gpu.mem_used << ", "
+                       << gpu.mem_total << ", "
+                       << gpu.temperature << ", "
+                       << gpu.power << ") ";
+    }
+
+    // 执行批量插入
+    std::string finalSql = batchInsertSql.str();
+    logDebug("Executing batch insert: " + finalSql);
+    
+    TAOS_RES* result = taos_query(taos, finalSql.c_str());
+    if (taos_errno(result) != 0) {
+        logError("Batch insert failed: " + std::string(taos_errstr(result)));
+        logError("SQL: " + finalSql);
+        taos_free_result(result);
         return false;
     }
-
-    // Get current timestamp
-    auto now = std::chrono::system_clock::now();
-    auto timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
-
-    std::ostringstream oss;
-    oss << "INSERT INTO node_" << tableName << " VALUES ("
-        << timestamp << ", "
-        << resourceData.gpu_allocated << ", "
-        << resourceData.gpu_num << ")";
-
-    return executeQuery(oss.str());
-}
-
-bool ResourceStorage::insertContainerData(const std::string& hostIp, const std::vector<node::ComponentInfo>& containerData) {
-    // Create table if not exists (clean host IP for valid table names)
-    std::string tableName = cleanForTableName(hostIp);
-    std::string createTableSQL = "CREATE TABLE IF NOT EXISTS container_" + tableName + " USING container TAGS ('" + hostIp + "')";
-    if (!executeQuery(createTableSQL)) {
-        return false;
-    }
-
-    // Calculate container statistics
-    int container_count = containerData.size();
-    int paused_count = 0;
-    int running_count = 0;
-    int stopped_count = 0;
-
-    for (const auto& container : containerData) {
-        if (container.state == "RUNNING") {
-            running_count++;
-        } else if (container.state == "PAUSED") {
-            paused_count++;
-        } else if (container.state == "STOPPED") {
-            stopped_count++;
-        }
-    }
-
-    // Get current timestamp
-    auto now = std::chrono::system_clock::now();
-    auto timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
-
-    std::ostringstream oss;
-    oss << "INSERT INTO container_" << tableName << " VALUES ("
-        << timestamp << ", "
-        << container_count << ", "
-        << paused_count << ", "
-        << running_count << ", "
-        << stopped_count << ")";
-
-    return executeQuery(oss.str());
+    
+    taos_free_result(result);
+    logDebug("Batch insert completed successfully for host: " + hostIp);
+    return true;
 }
 
 std::vector<QueryResult> ResourceStorage::executeQuerySQL(const std::string& sql) {
@@ -571,7 +477,8 @@ std::vector<QueryResult> ResourceStorage::executeQuerySQL(const std::string& sql
                 }
             } else if (field_name == "host_ip" || field_name == "mount_point" || field_name == "device" || 
                       field_name == "interface" || field_name == "gpu_name" || field_name == "gpu_index" || 
-                      field_name == "value") {
+                      field_name == "sensor_seq" || field_name == "sensor_type" || field_name == "sensor_name" ||
+                      field_name == "value" || field_name == "table_type") {
                 // 标签字段
                 if (fields[i].type == TSDB_DATA_TYPE_NCHAR || fields[i].type == TSDB_DATA_TYPE_BINARY) {
                     result.labels[field_name] = std::string((char*)row[i], lengths[i]);
@@ -626,65 +533,173 @@ NodeResourceData ResourceStorage::getNodeResourceData(const std::string& hostIp)
         return nodeData;
     }
     
-    // Helper function to clean host IP for table names
-    auto cleanForTableName = [](const std::string& input) {
-        std::string cleaned = input;
-        std::replace(cleaned.begin(), cleaned.end(), '/', '_');
-        std::replace(cleaned.begin(), cleaned.end(), '-', '_');
-        std::replace(cleaned.begin(), cleaned.end(), '.', '_');
-        std::replace(cleaned.begin(), cleaned.end(), ':', '_');
-        std::replace(cleaned.begin(), cleaned.end(), ' ', '_');
-        return cleaned;
-    };
-    
-    std::string cleanHostIp = cleanForTableName(hostIp);
-    
     try {
-        // 获取CPU数据 - 使用LAST_ROW优化
-        std::string cpuSql = "SELECT LAST_ROW(ts) as ts, LAST_ROW(usage_percent) as usage_percent, LAST_ROW(load_avg_1m) as load_avg_1m, LAST_ROW(load_avg_5m) as load_avg_5m, LAST_ROW(load_avg_15m) as load_avg_15m, LAST_ROW(core_count) as core_count, LAST_ROW(core_allocated) as core_allocated, LAST_ROW(temperature) as temperature, LAST_ROW(voltage) as voltage, LAST_ROW(current) as current, LAST_ROW(power) as power FROM cpu WHERE host_ip = '" + hostIp + "'";
-        auto cpuResults = executeQuerySQL(cpuSql);
-        
-        if (!cpuResults.empty()) {
-            nodeData.cpu.has_data = true;
-            nodeData.cpu.timestamp = cpuResults[0].timestamp;
+        // 合并所有查询为一个UNION ALL语句，使用table_type字段标识数据来源
+        std::string combinedSql = 
+            // CPU数据
+            "SELECT 'cpu' as table_type, LAST_ROW(ts) as ts, "
+            "LAST_ROW(usage_percent) as usage_percent, LAST_ROW(load_avg_1m) as load_avg_1m, "
+            "LAST_ROW(load_avg_5m) as load_avg_5m, LAST_ROW(load_avg_15m) as load_avg_15m, "
+            "LAST_ROW(core_count) as core_count, LAST_ROW(core_allocated) as core_allocated, "
+            "LAST_ROW(temperature) as temperature, LAST_ROW(voltage) as voltage, "
+            "LAST_ROW(current) as current, LAST_ROW(power) as power, "
+            "NULL as device, NULL as mount_point, NULL as interface, "
+            "NULL as gpu_index, NULL as gpu_name, NULL as sensor_seq, NULL as sensor_type, NULL as sensor_name, "
+            "NULL as total, NULL as used, NULL as free, "
+            "NULL as rx_bytes, NULL as tx_bytes, NULL as rx_packets, NULL as tx_packets, "
+            "NULL as rx_errors, NULL as tx_errors, NULL as rx_rate, NULL as tx_rate, "
+            "NULL as compute_usage, NULL as mem_usage, NULL as mem_used, NULL as mem_total, "
+            "NULL as container_count, NULL as paused_count, NULL as running_count, NULL as stopped_count, "
+            "NULL as sensor_value, NULL as alarm_type "
+            "FROM cpu WHERE host_ip = '" + hostIp + "' "
             
-            // 现在每个 QueryResult 包含所有指标，直接使用第一个结果
-            const auto& cpuMetrics = cpuResults[0].metrics;
+            "UNION ALL "
             
-            nodeData.cpu.usage_percent = cpuMetrics.count("usage_percent") ? cpuMetrics.at("usage_percent") : 0.0;
-            nodeData.cpu.load_avg_1m = cpuMetrics.count("load_avg_1m") ? cpuMetrics.at("load_avg_1m") : 0.0;
-            nodeData.cpu.load_avg_5m = cpuMetrics.count("load_avg_5m") ? cpuMetrics.at("load_avg_5m") : 0.0;
-            nodeData.cpu.load_avg_15m = cpuMetrics.count("load_avg_15m") ? cpuMetrics.at("load_avg_15m") : 0.0;
-            nodeData.cpu.core_count = static_cast<int>(cpuMetrics.count("core_count") ? cpuMetrics.at("core_count") : 0);
-            nodeData.cpu.core_allocated = static_cast<int>(cpuMetrics.count("core_allocated") ? cpuMetrics.at("core_allocated") : 0);
-            nodeData.cpu.temperature = cpuMetrics.count("temperature") ? cpuMetrics.at("temperature") : 0.0;
-            nodeData.cpu.voltage = cpuMetrics.count("voltage") ? cpuMetrics.at("voltage") : 0.0;
-            nodeData.cpu.current = cpuMetrics.count("current") ? cpuMetrics.at("current") : 0.0;
-            nodeData.cpu.power = cpuMetrics.count("power") ? cpuMetrics.at("power") : 0.0;
-        }
-        
-        // 获取Memory数据 - 使用LAST_ROW优化
-        std::string memorySql = "SELECT LAST_ROW(ts) as ts, LAST_ROW(total) as total, LAST_ROW(used) as used, LAST_ROW(free) as free, LAST_ROW(usage_percent) as usage_percent FROM memory WHERE host_ip = '" + hostIp + "'";
-        auto memoryResults = executeQuerySQL(memorySql);
-        
-        if (!memoryResults.empty()) {
-            nodeData.memory.has_data = true;
-            nodeData.memory.timestamp = memoryResults[0].timestamp;
+            // Memory数据
+            "SELECT 'memory' as table_type, LAST_ROW(ts) as ts, "
+            "LAST_ROW(usage_percent) as usage_percent, NULL as load_avg_1m, "
+            "NULL as load_avg_5m, NULL as load_avg_15m, "
+            "NULL as core_count, NULL as core_allocated, "
+            "NULL as temperature, NULL as voltage, "
+            "NULL as current, NULL as power, "
+            "NULL as device, NULL as mount_point, NULL as interface, "
+            "NULL as gpu_index, NULL as gpu_name, NULL as sensor_seq, NULL as sensor_type, NULL as sensor_name, "
+            "LAST_ROW(total) as total, LAST_ROW(used) as used, LAST_ROW(free) as free, "
+            "NULL as rx_bytes, NULL as tx_bytes, NULL as rx_packets, NULL as tx_packets, "
+            "NULL as rx_errors, NULL as tx_errors, NULL as rx_rate, NULL as tx_rate, "
+            "NULL as compute_usage, NULL as mem_usage, NULL as mem_used, NULL as mem_total, "
+            "NULL as container_count, NULL as paused_count, NULL as running_count, NULL as stopped_count, "
+            "NULL as sensor_value, NULL as alarm_type "
+            "FROM memory WHERE host_ip = '" + hostIp + "' "
             
-            // 直接使用第一个结果的 metrics
-            const auto& memoryMetrics = memoryResults[0].metrics;
+            "UNION ALL "
             
-            nodeData.memory.total = static_cast<int64_t>(memoryMetrics.count("total") ? memoryMetrics.at("total") : 0);
-            nodeData.memory.used = static_cast<int64_t>(memoryMetrics.count("used") ? memoryMetrics.at("used") : 0);
-            nodeData.memory.free = static_cast<int64_t>(memoryMetrics.count("free") ? memoryMetrics.at("free") : 0);
-            nodeData.memory.usage_percent = memoryMetrics.count("usage_percent") ? memoryMetrics.at("usage_percent") : 0.0;
-        }
+            // Disk数据
+            "SELECT 'disk' as table_type, LAST_ROW(ts) as ts, "
+            "LAST_ROW(usage_percent) as usage_percent, NULL as load_avg_1m, "
+            "NULL as load_avg_5m, NULL as load_avg_15m, "
+            "NULL as core_count, NULL as core_allocated, "
+            "NULL as temperature, NULL as voltage, "
+            "NULL as current, NULL as power, "
+            "device, mount_point, NULL as interface, "
+            "NULL as gpu_index, NULL as gpu_name, NULL as sensor_seq, NULL as sensor_type, NULL as sensor_name, "
+            "LAST_ROW(total) as total, LAST_ROW(used) as used, LAST_ROW(free) as free, "
+            "NULL as rx_bytes, NULL as tx_bytes, NULL as rx_packets, NULL as tx_packets, "
+            "NULL as rx_errors, NULL as tx_errors, NULL as rx_rate, NULL as tx_rate, "
+            "NULL as compute_usage, NULL as mem_usage, NULL as mem_used, NULL as mem_total, "
+            "NULL as container_count, NULL as paused_count, NULL as running_count, NULL as stopped_count, "
+            "NULL as sensor_value, NULL as alarm_type "
+            "FROM disk WHERE host_ip = '" + hostIp + "' GROUP BY device, mount_point "
+            
+            "UNION ALL "
+            
+            // Network数据
+            "SELECT 'network' as table_type, LAST_ROW(ts) as ts, "
+            "NULL as usage_percent, NULL as load_avg_1m, "
+            "NULL as load_avg_5m, NULL as load_avg_15m, "
+            "NULL as core_count, NULL as core_allocated, "
+            "NULL as temperature, NULL as voltage, "
+            "NULL as current, NULL as power, "
+            "NULL as device, NULL as mount_point, interface, "
+            "NULL as gpu_index, NULL as gpu_name, NULL as sensor_seq, NULL as sensor_type, NULL as sensor_name, "
+            "NULL as total, NULL as used, NULL as free, "
+            "LAST_ROW(rx_bytes) as rx_bytes, LAST_ROW(tx_bytes) as tx_bytes, LAST_ROW(rx_packets) as rx_packets, LAST_ROW(tx_packets) as tx_packets, "
+            "LAST_ROW(rx_errors) as rx_errors, LAST_ROW(tx_errors) as tx_errors, LAST_ROW(rx_rate) as rx_rate, LAST_ROW(tx_rate) as tx_rate, "
+            "NULL as compute_usage, NULL as mem_usage, NULL as mem_used, NULL as mem_total, "
+            "NULL as container_count, NULL as paused_count, NULL as running_count, NULL as stopped_count, "
+            "NULL as sensor_value, NULL as alarm_type "
+            "FROM network WHERE host_ip = '" + hostIp + "' GROUP BY interface "
+            
+            "UNION ALL "
+            
+            // GPU数据
+            "SELECT 'gpu' as table_type, LAST_ROW(ts) as ts, "
+            "NULL as usage_percent, NULL as load_avg_1m, "
+            "NULL as load_avg_5m, NULL as load_avg_15m, "
+            "NULL as core_count, NULL as core_allocated, "
+            "LAST_ROW(temperature) as temperature, NULL as voltage, "
+            "NULL as current, LAST_ROW(power) as power, "
+            "NULL as device, NULL as mount_point, NULL as interface, "
+            "gpu_index, gpu_name, NULL as sensor_seq, NULL as sensor_type, NULL as sensor_name, "
+            "NULL as total, NULL as used, NULL as free, "
+            "NULL as rx_bytes, NULL as tx_bytes, NULL as rx_packets, NULL as tx_packets, "
+            "NULL as rx_errors, NULL as tx_errors, NULL as rx_rate, NULL as tx_rate, "
+            "LAST_ROW(compute_usage) as compute_usage, LAST_ROW(mem_usage) as mem_usage, LAST_ROW(mem_used) as mem_used, LAST_ROW(mem_total) as mem_total, "
+            "NULL as container_count, NULL as paused_count, NULL as running_count, NULL as stopped_count, "
+            "NULL as sensor_value, NULL as alarm_type "
+            "FROM gpu WHERE host_ip = '" + hostIp + "' GROUP BY gpu_index, gpu_name "
+            
+            "UNION ALL "
+            
+            // Container数据
+            "SELECT 'container' as table_type, LAST_ROW(ts) as ts, "
+            "NULL as usage_percent, NULL as load_avg_1m, "
+            "NULL as load_avg_5m, NULL as load_avg_15m, "
+            "NULL as core_count, NULL as core_allocated, "
+            "NULL as temperature, NULL as voltage, "
+            "NULL as current, NULL as power, "
+            "NULL as device, NULL as mount_point, NULL as interface, "
+            "NULL as gpu_index, NULL as gpu_name, NULL as sensor_seq, NULL as sensor_type, NULL as sensor_name, "
+            "NULL as total, NULL as used, NULL as free, "
+            "NULL as rx_bytes, NULL as tx_bytes, NULL as rx_packets, NULL as tx_packets, "
+            "NULL as rx_errors, NULL as tx_errors, NULL as rx_rate, NULL as tx_rate, "
+            "NULL as compute_usage, NULL as mem_usage, NULL as mem_used, NULL as mem_total, "
+            "LAST_ROW(container_count) as container_count, LAST_ROW(paused_count) as paused_count, LAST_ROW(running_count) as running_count, LAST_ROW(stopped_count) as stopped_count, "
+            "NULL as sensor_value, NULL as alarm_type "
+            "FROM container WHERE host_ip = '" + hostIp + "' "
+            
+            "UNION ALL "
+            
+            // Sensor数据
+            "SELECT 'sensor' as table_type, LAST_ROW(ts) as ts, "
+            "NULL as usage_percent, NULL as load_avg_1m, "
+            "NULL as load_avg_5m, NULL as load_avg_15m, "
+            "NULL as core_count, NULL as core_allocated, "
+            "NULL as temperature, NULL as voltage, "
+            "NULL as current, NULL as power, "
+            "NULL as device, NULL as mount_point, NULL as interface, "
+            "NULL as gpu_index, NULL as gpu_name, sensor_seq, sensor_type, sensor_name, "
+            "NULL as total, NULL as used, NULL as free, "
+            "NULL as rx_bytes, NULL as tx_bytes, NULL as rx_packets, NULL as tx_packets, "
+            "NULL as rx_errors, NULL as tx_errors, NULL as rx_rate, NULL as tx_rate, "
+            "NULL as compute_usage, NULL as mem_usage, NULL as mem_used, NULL as mem_total, "
+            "NULL as container_count, NULL as paused_count, NULL as running_count, NULL as stopped_count, "
+            "LAST_ROW(sensor_value) as sensor_value, LAST_ROW(alarm_type) as alarm_type "
+            "FROM bmc_sensor_super WHERE host_ip = '" + hostIp + "' GROUP BY sensor_seq, sensor_type, sensor_name";
         
-        // 获取Disk数据 - 使用LAST_ROW和GROUP BY优化
-        std::string diskSql = "SELECT LAST_ROW(ts) as ts, LAST_ROW(total) as total, LAST_ROW(used) as used, LAST_ROW(free) as free, LAST_ROW(usage_percent) as usage_percent, device, mount_point FROM disk WHERE host_ip = '" + hostIp + "' GROUP BY device, mount_point";
-        auto diskResults = executeQuerySQL(diskSql);
+        auto allResults = executeQuerySQL(combinedSql);
         
-        for (const auto& result : diskResults) {
+        // 根据table_type处理不同类型的数据
+        for (const auto& result : allResults) {
+            std::string tableType = result.labels.count("table_type") ? result.labels.at("table_type") : "";
+            
+            if (tableType == "cpu") {
+                nodeData.cpu.has_data = true;
+                nodeData.cpu.timestamp = result.timestamp;
+                const auto& metrics = result.metrics;
+                
+                nodeData.cpu.usage_percent = metrics.count("usage_percent") ? metrics.at("usage_percent") : 0.0;
+                nodeData.cpu.load_avg_1m = metrics.count("load_avg_1m") ? metrics.at("load_avg_1m") : 0.0;
+                nodeData.cpu.load_avg_5m = metrics.count("load_avg_5m") ? metrics.at("load_avg_5m") : 0.0;
+                nodeData.cpu.load_avg_15m = metrics.count("load_avg_15m") ? metrics.at("load_avg_15m") : 0.0;
+                nodeData.cpu.core_count = static_cast<int>(metrics.count("core_count") ? metrics.at("core_count") : 0);
+                nodeData.cpu.core_allocated = static_cast<int>(metrics.count("core_allocated") ? metrics.at("core_allocated") : 0);
+                nodeData.cpu.temperature = metrics.count("temperature") ? metrics.at("temperature") : 0.0;
+                nodeData.cpu.voltage = metrics.count("voltage") ? metrics.at("voltage") : 0.0;
+                nodeData.cpu.current = metrics.count("current") ? metrics.at("current") : 0.0;
+                nodeData.cpu.power = metrics.count("power") ? metrics.at("power") : 0.0;
+            }
+            else if (tableType == "memory") {
+                nodeData.memory.has_data = true;
+                nodeData.memory.timestamp = result.timestamp;
+                const auto& metrics = result.metrics;
+                
+                nodeData.memory.total = static_cast<int64_t>(metrics.count("total") ? metrics.at("total") : 0);
+                nodeData.memory.used = static_cast<int64_t>(metrics.count("used") ? metrics.at("used") : 0);
+                nodeData.memory.free = static_cast<int64_t>(metrics.count("free") ? metrics.at("free") : 0);
+                nodeData.memory.usage_percent = metrics.count("usage_percent") ? metrics.at("usage_percent") : 0.0;
+            }
+            else if (tableType == "disk") {
             NodeResourceData::DiskData diskData;
             diskData.device = result.labels.count("device") ? result.labels.at("device") : "unknown";
             diskData.mount_point = result.labels.count("mount_point") ? result.labels.at("mount_point") : "/";
@@ -696,12 +711,7 @@ NodeResourceData ResourceStorage::getNodeResourceData(const std::string& hostIp)
             
             nodeData.disks.push_back(diskData);
         }
-        
-        // 获取Network数据 - 使用LAST_ROW和GROUP BY优化
-        std::string networkSql = "SELECT LAST_ROW(ts) as ts, LAST_ROW(rx_bytes) as rx_bytes, LAST_ROW(tx_bytes) as tx_bytes, LAST_ROW(rx_packets) as rx_packets, LAST_ROW(tx_packets) as tx_packets, LAST_ROW(rx_errors) as rx_errors, LAST_ROW(tx_errors) as tx_errors, LAST_ROW(rx_rate) as rx_rate, LAST_ROW(tx_rate) as tx_rate, interface FROM network WHERE host_ip = '" + hostIp + "' GROUP BY interface";
-        auto networkResults = executeQuerySQL(networkSql);
-        
-        for (const auto& result : networkResults) {
+            else if (tableType == "network") {
             NodeResourceData::NetworkData networkData;
             networkData.interface = result.labels.count("interface") ? result.labels.at("interface") : "unknown";
             networkData.rx_bytes = static_cast<int64_t>(result.metrics.count("rx_bytes") ? result.metrics.at("rx_bytes") : 0);
@@ -716,12 +726,7 @@ NodeResourceData ResourceStorage::getNodeResourceData(const std::string& hostIp)
             
             nodeData.networks.push_back(networkData);
         }
-        
-        // 获取GPU数据 - 使用LAST_ROW和GROUP BY优化
-        std::string gpuSql = "SELECT LAST_ROW(ts) as ts, LAST_ROW(compute_usage) as compute_usage, LAST_ROW(mem_usage) as mem_usage, LAST_ROW(mem_used) as mem_used, LAST_ROW(mem_total) as mem_total, LAST_ROW(temperature) as temperature, LAST_ROW(power) as power, gpu_index, gpu_name FROM gpu WHERE host_ip = '" + hostIp + "' GROUP BY gpu_index, gpu_name";
-        auto gpuResults = executeQuerySQL(gpuSql);
-        
-        for (const auto& result : gpuResults) {
+            else if (tableType == "gpu") {
             NodeResourceData::GpuData gpuData;
             gpuData.index = result.labels.count("gpu_index") ? std::stoi(result.labels.at("gpu_index")) : 0;
             gpuData.name = result.labels.count("gpu_name") ? result.labels.at("gpu_name") : "Unknown GPU";
@@ -735,42 +740,31 @@ NodeResourceData ResourceStorage::getNodeResourceData(const std::string& hostIp)
             
             nodeData.gpus.push_back(gpuData);
         }
-
-        // 获取Container数据 - 使用LAST_ROW和GROUP BY优化
-        std::string containerSql = "SELECT LAST_ROW(ts) as ts, LAST_ROW(container_count) as container_count, LAST_ROW(paused_count) as paused_count, LAST_ROW(running_count) as running_count, LAST_ROW(stopped_count) as stopped_count FROM container WHERE host_ip = '" + hostIp + "'";
-        auto containerResults = executeQuerySQL(containerSql);
-        
-        if (!containerResults.empty()) {
-            nodeData.container.timestamp = containerResults[0].timestamp;
-            
-            // 直接使用第一个结果的 metrics
-            const auto& containerMetrics = containerResults[0].metrics;
-            
-            nodeData.container.container_count = static_cast<int>(containerMetrics.count("container_count") ? containerMetrics.at("container_count") : 0);
-            nodeData.container.paused_count = static_cast<int>(containerMetrics.count("paused_count") ? containerMetrics.at("paused_count") : 0);
-            nodeData.container.running_count = static_cast<int>(containerMetrics.count("running_count") ? containerMetrics.at("running_count") : 0);
-            nodeData.container.stopped_count = static_cast<int>(containerMetrics.count("stopped_count") ? containerMetrics.at("stopped_count") : 0);
-        }
-
-        // 获取Sensor数据 - 使用LAST_ROW和GROUP BY优化
-        std::string sensorSql = "SELECT LAST_ROW(ts) as ts, LAST_ROW(sensor_value) as sensor_value, LAST_ROW(alarm_type) as alarm_type, sensor_seq as sequence, sensor_type as type, sensor_name as name FROM bmc_sensor_super WHERE host_ip = '" + hostIp + "' GROUP BY sensor_seq, sensor_type, sensor_name";
-        auto sensorResults = executeQuerySQL(sensorSql);
-        
-        for (const auto& result : sensorResults) {
+            else if (tableType == "container") {
+                nodeData.container.timestamp = result.timestamp;
+                const auto& metrics = result.metrics;
+                
+                nodeData.container.container_count = static_cast<int>(metrics.count("container_count") ? metrics.at("container_count") : 0);
+                nodeData.container.paused_count = static_cast<int>(metrics.count("paused_count") ? metrics.at("paused_count") : 0);
+                nodeData.container.running_count = static_cast<int>(metrics.count("running_count") ? metrics.at("running_count") : 0);
+                nodeData.container.stopped_count = static_cast<int>(metrics.count("stopped_count") ? metrics.at("stopped_count") : 0);
+            }
+            else if (tableType == "sensor") {
             NodeResourceData::SensorData sensorData;
-            sensorData.sequence = result.labels.count("sequence") ? std::stoi(result.labels.at("sequence")) : 0;
-            sensorData.type = result.labels.count("type") ? std::stoi(result.labels.at("type")) : 0;
-            sensorData.name = result.labels.count("name") ? result.labels.at("name") : "Unknown Sensor";
+                sensorData.sequence = result.labels.count("sensor_seq") ? std::stoi(result.labels.at("sensor_seq")) : 0;
+                sensorData.type = result.labels.count("sensor_type") ? std::stoi(result.labels.at("sensor_type")) : 0;
+                sensorData.name = result.labels.count("sensor_name") ? result.labels.at("sensor_name") : "Unknown Sensor";
             sensorData.value = result.metrics.count("sensor_value") ? result.metrics.at("sensor_value") : 0.0;
             sensorData.alarm_type = result.metrics.count("alarm_type") ? result.metrics.at("alarm_type") : 0;
             sensorData.timestamp = result.timestamp;
             
             nodeData.sensors.push_back(sensorData);
+            }
         }
         
-        LogManager::getLogger()->debug("ResourceStorage: Retrieved resource data for node {}: CPU={}, Memory={}, Disks={}, Networks={}, GPUs={}", 
+        LogManager::getLogger()->debug("ResourceStorage: Retrieved resource data for node {}: CPU={}, Memory={}, Disks={}, Networks={}, GPUs={}, Sensors={}", 
                                      hostIp, nodeData.cpu.has_data, nodeData.memory.has_data, 
-                                     nodeData.disks.size(), nodeData.networks.size(), nodeData.gpus.size());
+                                     nodeData.disks.size(), nodeData.networks.size(), nodeData.gpus.size(), nodeData.sensors.size());
         
     } catch (const std::exception& e) {
         LogManager::getLogger()->error("ResourceStorage: Failed to get resource data for node {}: {}", hostIp, e.what());
@@ -937,52 +931,149 @@ NodeResourceRangeData ResourceStorage::getNodeResourceRangeData(const std::strin
     std::string cleanHostIp = cleanForTableName(hostIp);
     
     try {
+        // 如果没有指定指标类型，直接返回
+        if (metrics.empty()) {
+            return rangeData;
+        }
+        
+        // 构建合并的UNION ALL查询
+        std::ostringstream combinedSql;
+        bool firstQuery = true;
+        
         for (const std::string& metric : metrics) {
-            NodeResourceRangeData::TimeSeriesData timeSeriesData;
-            timeSeriesData.metric_type = metric;
+            if (!firstQuery) {
+                combinedSql << " UNION ALL ";
+            }
+            firstQuery = false;
             
             if (metric == "cpu") {
-                std::string sql = "SELECT * FROM cpu WHERE host_ip = '" + hostIp + "'" +
-                                " AND ts > NOW() - " + time_range + 
-                                " ORDER BY ts ASC";
-                timeSeriesData.data_points = executeQuerySQL(sql);
-                
+                combinedSql << "SELECT 'cpu' as table_type, ts, "
+                           << "usage_percent, load_avg_1m, load_avg_5m, load_avg_15m, "
+                           << "core_count, core_allocated, temperature, voltage, current, power, "
+                           << "NULL as device, NULL as mount_point, NULL as interface, "
+                           << "NULL as gpu_index, NULL as gpu_name, NULL as fan_seq, NULL as sensor_seq, "
+                           << "NULL as sensor_name, NULL as sensor_type, NULL as box_id, NULL as slot_id, "
+                           << "NULL as total, NULL as used, NULL as free, "
+                           << "NULL as rx_bytes, NULL as tx_bytes, NULL as rx_packets, NULL as tx_packets, "
+                           << "NULL as rx_errors, NULL as tx_errors, NULL as rx_rate, NULL as tx_rate, "
+                           << "NULL as compute_usage, NULL as mem_usage, NULL as mem_used, NULL as mem_total, "
+                           << "NULL as container_count, NULL as paused_count, NULL as running_count, NULL as stopped_count, "
+                           << "NULL as alarm_type, NULL as work_mode, NULL as speed, NULL as sensor_value "
+                           << "FROM cpu WHERE host_ip = '" << hostIp << "' AND ts > NOW() - " << time_range;
+                           
             } else if (metric == "memory") {
-                std::string sql = "SELECT * FROM memory WHERE host_ip = '" + hostIp + "'" +
-                                " AND ts > NOW() - " + time_range + 
-                                " ORDER BY ts ASC";
-                timeSeriesData.data_points = executeQuerySQL(sql);
-                
+                combinedSql << "SELECT 'memory' as table_type, ts, "
+                           << "usage_percent, NULL as load_avg_1m, NULL as load_avg_5m, NULL as load_avg_15m, "
+                           << "NULL as core_count, NULL as core_allocated, NULL as temperature, NULL as voltage, NULL as current, NULL as power, "
+                           << "NULL as device, NULL as mount_point, NULL as interface, "
+                           << "NULL as gpu_index, NULL as gpu_name, NULL as fan_seq, NULL as sensor_seq, "
+                           << "NULL as sensor_name, NULL as sensor_type, NULL as box_id, NULL as slot_id, "
+                           << "total, used, free, "
+                           << "NULL as rx_bytes, NULL as tx_bytes, NULL as rx_packets, NULL as tx_packets, "
+                           << "NULL as rx_errors, NULL as tx_errors, NULL as rx_rate, NULL as tx_rate, "
+                           << "NULL as compute_usage, NULL as mem_usage, NULL as mem_used, NULL as mem_total, "
+                           << "NULL as container_count, NULL as paused_count, NULL as running_count, NULL as stopped_count, "
+                           << "NULL as alarm_type, NULL as work_mode, NULL as speed, NULL as sensor_value "
+                           << "FROM memory WHERE host_ip = '" << hostIp << "' AND ts > NOW() - " << time_range;
+                           
             } else if (metric == "disk") {
-                std::string sql = "SELECT * FROM disk WHERE host_ip = '" + hostIp + "'" +
-                                " AND ts > NOW() - " + time_range + 
-                                " ORDER BY ts ASC";
-                timeSeriesData.data_points = executeQuerySQL(sql);
-                
+                combinedSql << "SELECT 'disk' as table_type, ts, "
+                           << "usage_percent, NULL as load_avg_1m, NULL as load_avg_5m, NULL as load_avg_15m, "
+                           << "NULL as core_count, NULL as core_allocated, NULL as temperature, NULL as voltage, NULL as current, NULL as power, "
+                           << "device, mount_point, NULL as interface, "
+                           << "NULL as gpu_index, NULL as gpu_name, NULL as fan_seq, NULL as sensor_seq, "
+                           << "NULL as sensor_name, NULL as sensor_type, NULL as box_id, NULL as slot_id, "
+                           << "total, used, free, "
+                           << "NULL as rx_bytes, NULL as tx_bytes, NULL as rx_packets, NULL as tx_packets, "
+                           << "NULL as rx_errors, NULL as tx_errors, NULL as rx_rate, NULL as tx_rate, "
+                           << "NULL as compute_usage, NULL as mem_usage, NULL as mem_used, NULL as mem_total, "
+                           << "NULL as container_count, NULL as paused_count, NULL as running_count, NULL as stopped_count, "
+                           << "NULL as alarm_type, NULL as work_mode, NULL as speed, NULL as sensor_value "
+                           << "FROM disk WHERE host_ip = '" << hostIp << "' AND ts > NOW() - " << time_range;
+                           
             } else if (metric == "network") {
-                std::string sql = "SELECT * FROM network WHERE host_ip = '" + hostIp + "'" +
-                                " AND ts > NOW() - " + time_range + 
-                                " ORDER BY ts ASC";
-                timeSeriesData.data_points = executeQuerySQL(sql);
-                
+                combinedSql << "SELECT 'network' as table_type, ts, "
+                           << "NULL as usage_percent, NULL as load_avg_1m, NULL as load_avg_5m, NULL as load_avg_15m, "
+                           << "NULL as core_count, NULL as core_allocated, NULL as temperature, NULL as voltage, NULL as current, NULL as power, "
+                           << "NULL as device, NULL as mount_point, interface, "
+                           << "NULL as gpu_index, NULL as gpu_name, NULL as fan_seq, NULL as sensor_seq, "
+                           << "NULL as sensor_name, NULL as sensor_type, NULL as box_id, NULL as slot_id, "
+                           << "NULL as total, NULL as used, NULL as free, "
+                           << "rx_bytes, tx_bytes, rx_packets, tx_packets, "
+                           << "rx_errors, tx_errors, rx_rate, tx_rate, "
+                           << "NULL as compute_usage, NULL as mem_usage, NULL as mem_used, NULL as mem_total, "
+                           << "NULL as container_count, NULL as paused_count, NULL as running_count, NULL as stopped_count, "
+                           << "NULL as alarm_type, NULL as work_mode, NULL as speed, NULL as sensor_value "
+                           << "FROM network WHERE host_ip = '" << hostIp << "' AND ts > NOW() - " << time_range;
+                           
             } else if (metric == "gpu") {
-                std::string sql = "SELECT * FROM gpu WHERE host_ip = '" + hostIp + "'" +
-                                " AND ts > NOW() - " + time_range + 
-                                " ORDER BY ts ASC";
-                timeSeriesData.data_points = executeQuerySQL(sql);
-            } else if (metric == "fan") {
-                std::string sql = "SELECT * FROM bmc_fan_super WHERE host_ip = '" + hostIp + "'" +
-                                " AND ts > NOW() - " + time_range + 
-                                " ORDER BY ts ASC";
-                timeSeriesData.data_points = executeQuerySQL(sql);
+                combinedSql << "SELECT 'gpu' as table_type, ts, "
+                           << "NULL as usage_percent, NULL as load_avg_1m, NULL as load_avg_5m, NULL as load_avg_15m, "
+                           << "NULL as core_count, NULL as core_allocated, temperature, NULL as voltage, NULL as current, power, "
+                           << "NULL as device, NULL as mount_point, NULL as interface, "
+                           << "gpu_index, gpu_name, NULL as fan_seq, NULL as sensor_seq, "
+                           << "NULL as sensor_name, NULL as sensor_type, NULL as box_id, NULL as slot_id, "
+                           << "NULL as total, NULL as used, NULL as free, "
+                           << "NULL as rx_bytes, NULL as tx_bytes, NULL as rx_packets, NULL as tx_packets, "
+                           << "NULL as rx_errors, NULL as tx_errors, NULL as rx_rate, NULL as tx_rate, "
+                           << "compute_usage, mem_usage, mem_used, mem_total, "
+                           << "NULL as container_count, NULL as paused_count, NULL as running_count, NULL as stopped_count, "
+                           << "NULL as alarm_type, NULL as work_mode, NULL as speed, NULL as sensor_value "
+                           << "FROM gpu WHERE host_ip = '" << hostIp << "' AND ts > NOW() - " << time_range;
+                           
+            } else if (metric == "container") {
+                combinedSql << "SELECT 'container' as table_type, ts, "
+                           << "NULL as usage_percent, NULL as load_avg_1m, NULL as load_avg_5m, NULL as load_avg_15m, "
+                           << "NULL as core_count, NULL as core_allocated, NULL as temperature, NULL as voltage, NULL as current, NULL as power, "
+                           << "NULL as device, NULL as mount_point, NULL as interface, "
+                           << "NULL as gpu_index, NULL as gpu_name, NULL as fan_seq, NULL as sensor_seq, "
+                           << "NULL as sensor_name, NULL as sensor_type, NULL as box_id, NULL as slot_id, "
+                           << "NULL as total, NULL as used, NULL as free, "
+                           << "NULL as rx_bytes, NULL as tx_bytes, NULL as rx_packets, NULL as tx_packets, "
+                           << "NULL as rx_errors, NULL as tx_errors, NULL as rx_rate, NULL as tx_rate, "
+                           << "NULL as compute_usage, NULL as mem_usage, NULL as mem_used, NULL as mem_total, "
+                           << "container_count, paused_count, running_count, stopped_count, "
+                           << "NULL as alarm_type, NULL as work_mode, NULL as speed, NULL as sensor_value "
+                           << "FROM container WHERE host_ip = '" << hostIp << "' AND ts > NOW() - " << time_range;
             } else if (metric == "sensor") {
-                std::string sql = "SELECT * FROM bmc_sensor_super WHERE host_ip = '" + hostIp + "'" +
-                                " AND ts > NOW() - " + time_range + 
-                                " ORDER BY ts ASC";
-                timeSeriesData.data_points = executeQuerySQL(sql);
+                combinedSql << "SELECT 'sensor' as table_type, ts, "
+                           << "NULL as usage_percent, NULL as load_avg_1m, NULL as load_avg_5m, NULL as load_avg_15m, "
+                           << "NULL as core_count, NULL as core_allocated, NULL as temperature, NULL as voltage, NULL as current, NULL as power, "
+                           << "NULL as device, NULL as mount_point, NULL as interface, "
+                           << "NULL as gpu_index, NULL as gpu_name, NULL as fan_seq, sensor_seq, "
+                           << "sensor_name, sensor_type, box_id, slot_id, "
+                           << "NULL as total, NULL as used, NULL as free, "
+                           << "NULL as rx_bytes, NULL as tx_bytes, NULL as rx_packets, NULL as tx_packets, "
+                           << "NULL as rx_errors, NULL as tx_errors, NULL as rx_rate, NULL as tx_rate, "
+                           << "NULL as compute_usage, NULL as mem_usage, NULL as mem_used, NULL as mem_total, "
+                           << "NULL as container_count, NULL as paused_count, NULL as running_count, NULL as stopped_count, "
+                           << "alarm_type, NULL as work_mode, NULL as speed, sensor_value "
+                           << "FROM bmc_sensor_super WHERE host_ip = '" << hostIp << "' AND ts > NOW() - " << time_range;
             }
-            
-            if (!timeSeriesData.data_points.empty()) {
+        }
+        
+        combinedSql << " ORDER BY ts ASC";
+        
+        // 执行合并查询
+        std::string finalSql = combinedSql.str();
+        logDebug("执行范围数据合并查询: " + finalSql);
+        auto allResults = executeQuerySQL(finalSql);
+        
+        // 按table_type分组处理结果
+        std::map<std::string, std::vector<QueryResult>> groupedResults;
+        for (const auto& result : allResults) {
+            std::string tableType = result.labels.count("table_type") ? result.labels.at("table_type") : "";
+            if (!tableType.empty()) {
+                groupedResults[tableType].push_back(result);
+            }
+        }
+        
+        // 为每个请求的指标类型创建时间序列数据
+        for (const std::string& metric : metrics) {
+            if (groupedResults.count(metric) && !groupedResults[metric].empty()) {
+                NodeResourceRangeData::TimeSeriesData timeSeriesData;
+                timeSeriesData.metric_type = metric;
+                timeSeriesData.data_points = groupedResults[metric];
                 rangeData.time_series.push_back(timeSeriesData);
             }
         }
@@ -1175,6 +1266,49 @@ nlohmann::json NodeResourceRangeData::to_json() const {
                 gpu_groups[gpu.first] = gpu.second;
             }
             metrics["gpu"] = gpu_groups;
+        } else if (ts.metric_type == "container") {
+            nlohmann::json container_array = nlohmann::json::array();
+
+            for (const auto& point : ts.data_points) {
+                nlohmann::json container_point;
+                for (const auto& metric : point.metrics) {
+                    if (metric.first == "timestamp") {
+                        container_point["timestamp"] = static_cast<int64_t>(metric.second);
+                    } else {
+                        container_point[metric.first] = metric.second;
+                    }
+                }
+                container_array.push_back(container_point);
+            }
+
+            metrics["container"] = container_array;
+        } else if (ts.metric_type == "sensor") {
+            // Sensor数据按传感器类型分组
+            nlohmann::json sensor_groups;
+            std::map<std::string, nlohmann::json> sensor_data;
+
+            for (const auto& point : ts.data_points) {
+                std::string sensor_key = point.labels.count("sensor_name") ? point.labels.at("sensor_name") : "sensor_0";
+
+                nlohmann::json sensor_point;
+                for (const auto& metric : point.metrics) {
+                    if (metric.first == "timestamp") {
+                        sensor_point["timestamp"] = static_cast<int64_t>(metric.second);
+                    } else {
+                        sensor_point[metric.first] = metric.second;
+                    }
+                }
+
+                if (sensor_data.find(sensor_key) == sensor_data.end()) {
+                    sensor_data[sensor_key] = nlohmann::json::array();
+                }
+                sensor_data[sensor_key].push_back(sensor_point);
+            }
+            
+            for (const auto& sensor : sensor_data) {
+                sensor_groups[sensor.first] = sensor.second;
+            }
+            metrics["sensor"] = sensor_groups;
         }
     }
     
@@ -1183,50 +1317,7 @@ nlohmann::json NodeResourceRangeData::to_json() const {
     return j;
 }
 
-// 新增的连接池相关方法
-TDengineConnectionPool::PoolStats ResourceStorage::getConnectionPoolStats() const {
-    if (!m_connection_pool) {
-        return TDengineConnectionPool::PoolStats{};
-    }
-    return m_connection_pool->getStats();
-}
 
-void ResourceStorage::updateConnectionPoolConfig(const TDenginePoolConfig& config) {
-    m_pool_config = config;
-    if (m_connection_pool) {
-        m_connection_pool->updateConfig(config);
-    }
-    logInfo("Connection pool configuration updated");
-}
-
-TDenginePoolConfig ResourceStorage::createDefaultPoolConfig() const {
-    TDenginePoolConfig config;
-    config.host = "localhost";
-    config.port = 6030;
-    config.user = "test";
-    config.password = "HZ715Net";
-    config.database = "resource";
-    config.locale = "C";
-    config.charset = "UTF-8";
-    config.timezone = "";
-    
-    // 连接池配置
-    config.min_connections = 2;
-    config.max_connections = 8;
-    config.initial_connections = 3;
-    
-    // 超时配置
-    config.connection_timeout = 30;
-    config.idle_timeout = 600;      // 10分钟
-    config.max_lifetime = 3600;     // 1小时
-    config.acquire_timeout = 10;
-    
-    // 健康检查配置
-    config.health_check_interval = 60;
-    config.health_check_query = "SELECT SERVER_VERSION()";
-    
-    return config;
-}
 
 // 日志辅助方法
 void ResourceStorage::logInfo(const std::string& message) const {

@@ -134,12 +134,6 @@ class ResourceStorage {
 public:
     // 连接池注入构造函数 - 推荐使用
     ResourceStorage(std::shared_ptr<TDengineConnectionPool> connection_pool);
-    
-    // 新的连接池构造函数
-    ResourceStorage(const TDenginePoolConfig& pool_config);
-    
-    // 兼容性构造函数 - 将旧参数转换为连接池配置
-    ResourceStorage(const std::string& host, const std::string& user, const std::string& password);
     ~ResourceStorage();
 
     bool initialize();
@@ -161,9 +155,7 @@ public:
                                                    const std::string& time_range,
                                                    const std::vector<std::string>& metrics);
     
-    // 连接池相关方法
-    TDengineConnectionPool::PoolStats getConnectionPoolStats() const;
-    void updateConnectionPoolConfig(const TDenginePoolConfig& config);
+
 
 private:
     TDenginePoolConfig m_pool_config;
@@ -172,19 +164,12 @@ private:
     bool m_owns_connection_pool;  // 标记是否拥有连接池的所有权
 
     bool executeQuery(const std::string& sql);
-    TAOS_RES* executeSelectQuery(const std::string& sql);
-    TDenginePoolConfig createDefaultPoolConfig() const;
     
     // 日志辅助方法
     void logInfo(const std::string& message) const;
     void logError(const std::string& message) const;
     void logDebug(const std::string& message) const;
     
-    bool insertCpuData(const std::string& hostIp, const node::CpuInfo& cpuData);
-    bool insertMemoryData(const std::string& hostIp, const node::MemoryInfo& memoryData);
-    bool insertNetworkData(const std::string& hostIp, const std::vector<node::NetworkInfo>& networkData);
-    bool insertDiskData(const std::string& hostIp, const std::vector<node::DiskInfo>& diskData);
-    bool insertGpuData(const std::string& hostIp, const std::vector<node::GpuResourceInfo>& gpuData);
-    bool insertNodeData(const std::string& hostIp, const node::ResourceData& resourceData);
-    bool insertContainerData(const std::string& hostIp, const std::vector<node::ComponentInfo>& containerData);
+    // 批量插入优化方法
+    bool insertResourceDataBatch(const std::string& hostIp, const node::ResourceInfo& resourceData);
 };

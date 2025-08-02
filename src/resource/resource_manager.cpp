@@ -65,7 +65,7 @@ HistoricalMetricsResponse ResourceManager::getHistoricalMetrics(const Historical
             NodeResourceRangeData::TimeSeriesData newTS;
             newTS.metric_type = ts.metric_type;
             
-            if (ts.metric_type == "cpu" || ts.metric_type == "memory") {
+            if (ts.metric_type == "cpu" || ts.metric_type == "memory" || ts.metric_type == "container") {
                 // CPU和Memory是单一数据源，直接转换
                 for (const auto& point : ts.data_points) {
                     QueryResult newPoint = point;
@@ -169,7 +169,7 @@ std::vector<std::string> ResourceManager::parseMetricsParam(const std::string& m
     
     if (metrics_param.empty()) {
         // 默认获取所有指标类型
-        return {"cpu", "memory", "disk", "network", "gpu"};
+        return {"cpu", "memory", "disk", "network", "gpu", "container", "sensor"};
     }
     
     // 分割逗号分隔的字符串
@@ -199,10 +199,10 @@ std::pair<bool, std::string> ResourceManager::validateRequest(const HistoricalMe
     }
     
     // 验证指标类型是否有效
-    const std::vector<std::string> valid_metrics = {"cpu", "memory", "disk", "network", "gpu"};
+    const std::vector<std::string> valid_metrics = {"cpu", "memory", "disk", "network", "gpu", "container", "sensor"};
     for (const auto& metric : request.metrics) {
         if (std::find(valid_metrics.begin(), valid_metrics.end(), metric) == valid_metrics.end()) {
-            return {false, "Invalid metric type: " + metric + ". Valid types are: cpu, memory, disk, network, gpu"};
+            return {false, "Invalid metric type: " + metric + ". Valid types are: cpu, memory, disk, network, gpu, container, sensor"};
         }
     }
     

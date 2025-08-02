@@ -104,19 +104,7 @@ public:
      */
     bool createBMCTables();
     
-    /**
-     * 存储风扇数据
-     * @param udp_info UdpInfo结构体数据
-     * @return 成功返回true，失败返回false
-     */
-    bool storeFanData(const UdpInfo& udp_info);
-    
-    /**
-     * 存储传感器数据
-     * @param udp_info UdpInfo结构体数据
-     * @return 成功返回true，失败返回false
-     */
-    bool storeSensorData(const UdpInfo& udp_info);
+
     
     /**
      * 存储完整的BMC数据（包括风扇和传感器）
@@ -124,6 +112,13 @@ public:
      * @return 成功返回true，失败返回false
      */
     bool storeBMCData(const UdpInfo& udp_info);
+    
+    /**
+     * 批量存储BMC数据（优化版本）
+     * @param udp_info UdpInfo结构体数据
+     * @return 成功返回true，失败返回false
+     */
+    bool storeBMCDataBatch(const UdpInfo& udp_info);
     
     /**
      * 从JSON字符串存储BMC数据
