@@ -299,12 +299,6 @@ bool AlarmSystem::initializeDatabase() {
         LogManager::getLogger()->info("📦 初始化资源存储...");
         resource_storage_ = std::make_shared<ResourceStorage>(tdengine_connection_pool_);
         
-        if (!resource_storage_->initialize()) {
-            std::lock_guard<std::mutex> lock(error_mutex_);
-            last_error_ = "资源存储初始化失败";
-            return false;
-        }
-        
         if (!resource_storage_->createDatabase(config_.resource_db)) {
             std::lock_guard<std::mutex> lock(error_mutex_);
             last_error_ = "创建资源数据库失败";

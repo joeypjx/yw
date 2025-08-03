@@ -9,7 +9,8 @@
 
 using json = nlohmann::json;
 
-const char* get_web_page_html() {
+const char *get_web_page_html()
+{
     return R"HTML(
 <!DOCTYPE html>
 <html lang="en">
@@ -886,8 +887,6 @@ const char* get_web_page_html() {
 )HTML";
 }
 
-
-
 HttpServer::HttpServer(std::shared_ptr<ResourceStorage> resource_storage,
                        std::shared_ptr<AlarmRuleStorage> alarm_rule_storage,
                        std::shared_ptr<AlarmManager> alarm_manager,
@@ -895,135 +894,125 @@ HttpServer::HttpServer(std::shared_ptr<ResourceStorage> resource_storage,
                        std::shared_ptr<ResourceManager> resource_manager,
                        std::shared_ptr<BMCStorage> bmc_storage,
                        std::shared_ptr<ChassisController> chassis_controller,
-                       const std::string& host, int port)
-    : m_resource_storage(resource_storage), m_alarm_rule_storage(alarm_rule_storage), 
-      m_alarm_manager(alarm_manager), m_node_storage(node_storage), 
+                       const std::string &host, int port)
+    : m_resource_storage(resource_storage), m_alarm_rule_storage(alarm_rule_storage),
+      m_alarm_manager(alarm_manager), m_node_storage(node_storage),
       m_resource_manager(resource_manager), m_bmc_storage(bmc_storage),
-      m_chassis_controller(chassis_controller), m_host(host), m_port(port) {
+      m_chassis_controller(chassis_controller), m_host(host), m_port(port)
+{
     setup_routes();
 }
 
-HttpServer::~HttpServer() {
+HttpServer::~HttpServer()
+{
     stop();
 }
 
-bool HttpServer::start() {
-    if (m_server.is_running()) {
+bool HttpServer::start()
+{
+    if (m_server.is_running())
+    {
         return true;
     }
 
-    m_server.set_default_headers({
-        {"Access-Control-Allow-Origin", "*"},
-        {"Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS"},
-        {"Access-Control-Allow-Headers", "Content-Type"}
-    });
+    m_server.set_default_headers({{"Access-Control-Allow-Origin", "*"},
+                                  {"Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS"},
+                                  {"Access-Control-Allow-Headers", "Content-Type"}});
 
-    m_server.Options(".*", [](const httplib::Request& req, httplib::Response& res) {
-        res.set_content("OK", "text/plain");
-    });
-    
-    m_server_thread = std::thread([this]() {
+    m_server.Options(".*", [](const httplib::Request &req, httplib::Response &res)
+                     { res.set_content("OK", "text/plain"); });
+
+    m_server_thread = std::thread([this]()
+                                  {
         LogManager::getLogger()->info("HTTP server starting on {}:{}", m_host, m_port);
         if (!m_server.listen(m_host.c_str(), m_port)) {
             LogManager::getLogger()->error("HTTP server failed to start.");
-        }
-    });
+        } });
 
     // Give the server a moment to start up
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
     return m_server.is_running();
 }
 
-void HttpServer::stop() {
-    if (m_server.is_running()) {
+void HttpServer::stop()
+{
+    if (m_server.is_running())
+    {
         m_server.stop();
-        if (m_server_thread.joinable()) {
+        if (m_server_thread.joinable())
+        {
             m_server_thread.join();
         }
         LogManager::getLogger()->info("HTTP server stopped.");
     }
 }
 
-void HttpServer::setup_routes() {
-    m_server.Get("/", [this](const httplib::Request&, httplib::Response& res) {
-        res.set_content(get_web_page_html(), "text/html");
-    });
+void HttpServer::setup_routes()
+{
+    m_server.Get("/", [this](const httplib::Request &, httplib::Response &res)
+                 { res.set_content(get_web_page_html(), "text/html"); });
 
     // 节点心跳路由
-    m_server.Post("/heartbeat", [this](const httplib::Request& req, httplib::Response& res) {
-        this->handle_heart(req, res);
-    });
+    m_server.Post("/heartbeat", [this](const httplib::Request &req, httplib::Response &res)
+                  { this->handle_heart(req, res); });
 
     // 节点资源数据路由
-    m_server.Post("/resource", [this](const httplib::Request& req, httplib::Response& res) {
-        this->handle_resource(req, res);
-    });
-    
-    // 节点数据查询路由
-    m_server.Get("/node", [this](const httplib::Request& req, httplib::Response& res) {
-        this->handle_nodes_list(req, res);
-    });
-    
-    // 节点指标查询路由
-    m_server.Get("/node/metrics", [this](const httplib::Request& req, httplib::Response& res) {
-        this->handle_node_metrics(req, res);
-    });
-    
-    // 节点历史指标查询路由
-    m_server.Get("/node/historical-metrics", [this](const httplib::Request& req, httplib::Response& res) {
-        this->handle_node_historical_metrics(req, res);
-    });
+    m_server.Post("/resource", [this](const httplib::Request &req, httplib::Response &res)
+                  { this->handle_resource(req, res); });
 
-    m_server.Get("/node/historical-bmc", [this](const httplib::Request& req, httplib::Response& res) {
-        this->handle_node_historical_bmc(req, res);
-    });
+    // 节点数据查询路由
+    m_server.Get("/node", [this](const httplib::Request &req, httplib::Response &res)
+                 { this->handle_nodes_list(req, res); });
+
+    // 节点指标查询路由
+    m_server.Get("/node/metrics", [this](const httplib::Request &req, httplib::Response &res)
+                 { this->handle_node_metrics(req, res); });
+
+    // 节点历史指标查询路由
+    m_server.Get("/node/historical-metrics", [this](const httplib::Request &req, httplib::Response &res)
+                 { this->handle_node_historical_metrics(req, res); });
+
+    m_server.Get("/node/historical-bmc", [this](const httplib::Request &req, httplib::Response &res)
+                 { this->handle_node_historical_bmc(req, res); });
 
     // 告警规则相关路由
-    m_server.Post("/alarm/rules", [this](const httplib::Request& req, httplib::Response& res) {
-        this->handle_alarm_rules_create(req, res);
-    });
-    
-    m_server.Get("/alarm/rules", [this](const httplib::Request& req, httplib::Response& res) {
-        this->handle_alarm_rules_list(req, res);
-    });
-    
-    m_server.Get(R"(/alarm/rules/([^/]+))", [this](const httplib::Request& req, httplib::Response& res) {
-        this->handle_alarm_rules_get(req, res);
-    });
-    
-    m_server.Post(R"(/alarm/rules/([^/]+)/update)", [this](const httplib::Request& req, httplib::Response& res) {
-        this->handle_alarm_rules_update(req, res);
-    });
-    
-    m_server.Post(R"(/alarm/rules/([^/]+)/delete)", [this](const httplib::Request& req, httplib::Response& res) {
-        this->handle_alarm_rules_delete(req, res);
-    });
-    
+    m_server.Post("/alarm/rules", [this](const httplib::Request &req, httplib::Response &res)
+                  { this->handle_alarm_rules_create(req, res); });
+
+    m_server.Get("/alarm/rules", [this](const httplib::Request &req, httplib::Response &res)
+                 { this->handle_alarm_rules_list(req, res); });
+
+    m_server.Get(R"(/alarm/rules/([^/]+))", [this](const httplib::Request &req, httplib::Response &res)
+                 { this->handle_alarm_rules_get(req, res); });
+
+    m_server.Post(R"(/alarm/rules/([^/]+)/update)", [this](const httplib::Request &req, httplib::Response &res)
+                  { this->handle_alarm_rules_update(req, res); });
+
+    m_server.Post(R"(/alarm/rules/([^/]+)/delete)", [this](const httplib::Request &req, httplib::Response &res)
+                  { this->handle_alarm_rules_delete(req, res); });
+
     // 告警事件相关路由
-    m_server.Get("/alarm/events", [this](const httplib::Request& req, httplib::Response& res) {
-        this->handle_alarm_events_list(req, res);
-    });
-    
-    m_server.Get("/alarm/events/count", [this](const httplib::Request& req, httplib::Response& res) {
-        this->handle_alarm_events_count(req, res);
-    });
-    
+    m_server.Get("/alarm/events", [this](const httplib::Request &req, httplib::Response &res)
+                 { this->handle_alarm_events_list(req, res); });
+
+    m_server.Get("/alarm/events/count", [this](const httplib::Request &req, httplib::Response &res)
+                 { this->handle_alarm_events_count(req, res); });
+
     // 机箱控制相关路由
-    m_server.Post("/chassis/reset", [this](const httplib::Request& req, httplib::Response& res) {
-        this->handle_chassis_reset(req, res);
-    });
-    
-    m_server.Post("/chassis/power-off", [this](const httplib::Request& req, httplib::Response& res) {
-        this->handle_chassis_power_off(req, res);
-    });
-    
-    m_server.Post("/chassis/power-on", [this](const httplib::Request& req, httplib::Response& res) {
-        this->handle_chassis_power_on(req, res);
-    });
+    m_server.Post("/chassis/reset", [this](const httplib::Request &req, httplib::Response &res)
+                  { this->handle_chassis_reset(req, res); });
+
+    m_server.Post("/chassis/power-off", [this](const httplib::Request &req, httplib::Response &res)
+                  { this->handle_chassis_power_off(req, res); });
+
+    m_server.Post("/chassis/power-on", [this](const httplib::Request &req, httplib::Response &res)
+                  { this->handle_chassis_power_on(req, res); });
 }
 
-void HttpServer::handle_alarm_rules_create(const httplib::Request& req, httplib::Response& res) {
-    try {
+void HttpServer::handle_alarm_rules_create(const httplib::Request &req, httplib::Response &res)
+{
+    try
+    {
         json body = json::parse(req.body);
 
         std::string id = m_alarm_rule_storage->insertAlarmRule(
@@ -1034,65 +1023,73 @@ void HttpServer::handle_alarm_rules_create(const httplib::Request& req, httplib:
             body["summary"].get<std::string>(),
             body["description"].get<std::string>(),
             body["alert_type"].get<std::string>(),
-            true
-        );
-        if (id.empty()) {
+            true);
+        if (id.empty())
+        {
             res.set_content("{\"error\":\"Failed to store alarm rules\"}", "application/json");
             res.status = 500;
             LogManager::getLogger()->error("Failed to store alarm rules");
             return;
         }
-        
+
         json response = {
             {"api_version", 1},
             {"status", "success"},
-            {"data", {
-                {"id", id}
-            }}
-        };
-        
+            {"data", {{"id", id}}}};
+
         res.set_content(response.dump(2), "application/json");
         res.status = 200;
         LogManager::getLogger()->info("Successfully processed alarm rules");
-    } catch (const json::parse_error& e) {
+    }
+    catch (const json::parse_error &e)
+    {
         res.set_content("{\"error\":\"Invalid JSON format\"}", "application/json");
         res.status = 400;
         LogManager::getLogger()->error("Exception in handle_alarm_rules_create: {}", e.what());
-    } catch (const std::exception& e) {
+    }
+    catch (const std::exception &e)
+    {
         res.set_content("{\"error\":\"An unexpected error occurred\"}", "application/json");
         res.status = 500;
         LogManager::getLogger()->error("Exception in handle_alarm_rules_create: {}", e.what());
     }
-}   
+}
 
-void HttpServer::handle_alarm_rules_list(const httplib::Request& req, httplib::Response& res) {
-    try {
+void HttpServer::handle_alarm_rules_list(const httplib::Request &req, httplib::Response &res)
+{
+    try
+    {
         // 获取查询参数
         std::string page_str = req.get_param_value("page");
         std::string page_size_str = req.get_param_value("page_size");
         std::string enabled_only_str = req.get_param_value("enabled_only");
-        
+
         // 检查是否使用分页模式
         bool use_pagination = !page_str.empty() || !page_size_str.empty();
-        
-        if (use_pagination) {
+
+        if (use_pagination)
+        {
             // 分页模式
             int page = page_str.empty() ? 1 : std::stoi(page_str);
             int page_size = page_size_str.empty() ? 20 : std::stoi(page_size_str);
             bool enabled_only = enabled_only_str == "true";
-            
+
             // 验证参数范围
-            if (page < 1) page = 1;
-            if (page_size < 1) page_size = 20;
-            if (page_size > 1000) page_size = 1000;
-            
+            if (page < 1)
+                page = 1;
+            if (page_size < 1)
+                page_size = 20;
+            if (page_size > 1000)
+                page_size = 1000;
+
             // 使用分页API
             auto paginated_result = m_alarm_rule_storage->getPaginatedAlarmRules(page, page_size, enabled_only);
-            
+
             json result_data = json::array();
-            
+
             // 直接添加规则数据到数组
-            for (const auto& rule : paginated_result.rules) {
+            for (const auto &rule : paginated_result.rules)
+            {
                 json rule_json = {
                     {"id", rule.id},
                     {"alert_name", rule.alert_name},
@@ -1104,11 +1101,10 @@ void HttpServer::handle_alarm_rules_list(const httplib::Request& req, httplib::R
                     {"alert_type", rule.alert_type},
                     {"enabled", rule.enabled},
                     {"created_at", rule.created_at},
-                    {"updated_at", rule.updated_at}
-                };
+                    {"updated_at", rule.updated_at}};
                 result_data.push_back(rule_json);
             }
-            
+
             // 通过HTTP头部传递分页信息
             res.set_header("X-Page", std::to_string(paginated_result.page));
             res.set_header("X-Page-Size", std::to_string(paginated_result.page_size));
@@ -1116,25 +1112,26 @@ void HttpServer::handle_alarm_rules_list(const httplib::Request& req, httplib::R
             res.set_header("X-Total-Pages", std::to_string(paginated_result.total_pages));
             res.set_header("X-Has-Next", paginated_result.has_next ? "true" : "false");
             res.set_header("X-Has-Prev", paginated_result.has_prev ? "true" : "false");
-            
+
             json response = {
                 {"api_version", 1},
                 {"status", "success"},
-                {"data", result_data}
-            };
-            
+                {"data", result_data}};
+
             res.set_content(response.dump(2), "application/json");
             res.status = 200;
-            LogManager::getLogger()->debug("Successfully retrieved {} alarm rules (page {}/{}, total: {})", 
-                paginated_result.rules.size(), paginated_result.page, 
-                paginated_result.total_pages, paginated_result.total_count);
-                
-        } else {
+            LogManager::getLogger()->debug("Successfully retrieved {} alarm rules (page {}/{}, total: {})",
+                                           paginated_result.rules.size(), paginated_result.page,
+                                           paginated_result.total_pages, paginated_result.total_count);
+        }
+        else
+        {
             // 兼容模式 - 使用旧的API
             auto rules = m_alarm_rule_storage->getAllAlarmRules();
-            
+
             json result_data = json::array();
-            for (const auto& rule : rules) {
+            for (const auto &rule : rules)
+            {
                 json rule_json = {
                     {"id", rule.id},
                     {"alert_name", rule.alert_name},
@@ -1146,42 +1143,44 @@ void HttpServer::handle_alarm_rules_list(const httplib::Request& req, httplib::R
                     {"alert_type", rule.alert_type},
                     {"enabled", rule.enabled},
                     {"created_at", rule.created_at},
-                    {"updated_at", rule.updated_at}
-                };
+                    {"updated_at", rule.updated_at}};
                 result_data.push_back(rule_json);
             }
-            
+
             json response = {
                 {"api_version", 1},
                 {"status", "success"},
-                {"data", result_data}
-            };
-            
+                {"data", result_data}};
+
             res.set_content(response.dump(2), "application/json");
             res.status = 200;
             LogManager::getLogger()->debug("Successfully retrieved {} alarm rules (legacy mode)", rules.size());
         }
-        
-    } catch (const std::exception& e) {
+    }
+    catch (const std::exception &e)
+    {
         res.set_content("{\"error\":\"Failed to retrieve alarm rules\"}", "application/json");
         res.status = 500;
         LogManager::getLogger()->error("Exception in handle_alarm_rules_list: {}", e.what());
     }
 }
 
-void HttpServer::handle_alarm_rules_get(const httplib::Request& req, httplib::Response& res) {
-    try {
+void HttpServer::handle_alarm_rules_get(const httplib::Request &req, httplib::Response &res)
+{
+    try
+    {
         std::string rule_id = req.matches[1];
-        
+
         AlarmRule rule = m_alarm_rule_storage->getAlarmRule(rule_id);
-        
-        if (rule.id.empty()) {
+
+        if (rule.id.empty())
+        {
             res.set_content("{\"error\":\"Alarm rule not found\"}", "application/json");
             res.status = 404;
             LogManager::getLogger()->warn("Alarm rule not found: {}", rule_id);
             return;
         }
-        
+
         json rule_data = {
             {"id", rule.id},
             {"alert_name", rule.alert_name},
@@ -1193,40 +1192,42 @@ void HttpServer::handle_alarm_rules_get(const httplib::Request& req, httplib::Re
             {"alert_type", rule.alert_type},
             {"enabled", rule.enabled},
             {"created_at", rule.created_at},
-            {"updated_at", rule.updated_at}
-        };
-        
+            {"updated_at", rule.updated_at}};
+
         json response = {
             {"api_version", 1},
             {"status", "success"},
-            {"data", rule_data}
-        };
-        
+            {"data", rule_data}};
+
         res.set_content(response.dump(2), "application/json");
         res.status = 200;
         LogManager::getLogger()->debug("Successfully retrieved alarm rule: {}", rule_id);
-        
-    } catch (const std::exception& e) {
+    }
+    catch (const std::exception &e)
+    {
         res.set_content("{\"error\":\"Failed to retrieve alarm rule\"}", "application/json");
         res.status = 500;
         LogManager::getLogger()->error("Exception in handle_alarm_rules_get: {}", e.what());
     }
 }
 
-void HttpServer::handle_alarm_rules_update(const httplib::Request& req, httplib::Response& res) {
-    try {
+void HttpServer::handle_alarm_rules_update(const httplib::Request &req, httplib::Response &res)
+{
+    try
+    {
         std::string rule_id = req.matches[1];
         json body = json::parse(req.body);
-        
+
         // 检查规则是否存在
         AlarmRule existing_rule = m_alarm_rule_storage->getAlarmRule(rule_id);
-        if (existing_rule.id.empty()) {
+        if (existing_rule.id.empty())
+        {
             res.set_content("{\"error\":\"Alarm rule not found\"}", "application/json");
             res.status = 404;
             LogManager::getLogger()->warn("Alarm rule not found for update: {}", rule_id);
             return;
         }
-        
+
         // 更新规则
         bool success = m_alarm_rule_storage->updateAlarmRule(
             rule_id,
@@ -1237,97 +1238,108 @@ void HttpServer::handle_alarm_rules_update(const httplib::Request& req, httplib:
             body["summary"].get<std::string>(),
             body["description"].get<std::string>(),
             body["alert_type"].get<std::string>(),
-            body.value("enabled", true)
-        );
-        
-        if (success) {
+            body.value("enabled", true));
+
+        if (success)
+        {
             json response = {
                 {"api_version", 1},
                 {"status", "success"},
-                {"data", {
-                    {"id", rule_id}
-                }}
-            };
-            
+                {"data", {{"id", rule_id}}}};
+
             res.set_content(response.dump(2), "application/json");
             res.status = 200;
             LogManager::getLogger()->info("Successfully updated alarm rule: {}", rule_id);
-        } else {
+        }
+        else
+        {
             res.set_content("{\"error\":\"Failed to update alarm rule\"}", "application/json");
             res.status = 500;
             LogManager::getLogger()->error("Failed to update alarm rule: {}", rule_id);
         }
-        
-    } catch (const json::parse_error& e) {
+    }
+    catch (const json::parse_error &e)
+    {
         res.set_content("{\"error\":\"Invalid JSON format\"}", "application/json");
         res.status = 400;
         LogManager::getLogger()->error("JSON parse error in handle_alarm_rules_update: {}", e.what());
-    } catch (const std::exception& e) {
+    }
+    catch (const std::exception &e)
+    {
         res.set_content("{\"error\":\"Failed to update alarm rule\"}", "application/json");
         res.status = 500;
         LogManager::getLogger()->error("Exception in handle_alarm_rules_update: {}", e.what());
     }
 }
 
-void HttpServer::handle_alarm_rules_delete(const httplib::Request& req, httplib::Response& res) {
-    try {
+void HttpServer::handle_alarm_rules_delete(const httplib::Request &req, httplib::Response &res)
+{
+    try
+    {
         std::string rule_id = req.matches[1];
-        
+
         // 检查规则是否存在
         AlarmRule existing_rule = m_alarm_rule_storage->getAlarmRule(rule_id);
-        if (existing_rule.id.empty()) {
+        if (existing_rule.id.empty())
+        {
             res.set_content("{\"error\":\"Alarm rule not found\"}", "application/json");
             res.status = 404;
             LogManager::getLogger()->warn("Alarm rule not found for deletion: {}", rule_id);
             return;
         }
-        
+
         // 删除规则
         bool success = m_alarm_rule_storage->deleteAlarmRule(rule_id);
-        
-        if (success) {
+
+        if (success)
+        {
             json response = {
                 {"api_version", 1},
                 {"status", "success"},
-                {"data", {
-                    {"id", rule_id}
-                }}
-            };
-            
+                {"data", {{"id", rule_id}}}};
+
             res.set_content(response.dump(2), "application/json");
             res.status = 200;
             LogManager::getLogger()->info("Successfully deleted alarm rule: {}", rule_id);
-        } else {
+        }
+        else
+        {
             res.set_content("{\"error\":\"Failed to delete alarm rule\"}", "application/json");
             res.status = 500;
             LogManager::getLogger()->error("Failed to delete alarm rule: {}", rule_id);
         }
-        
-    } catch (const std::exception& e) {
+    }
+    catch (const std::exception &e)
+    {
         res.set_content("{\"error\":\"Failed to delete alarm rule\"}", "application/json");
         res.status = 500;
         LogManager::getLogger()->error("Exception in handle_alarm_rules_delete: {}", e.what());
     }
 }
 
-void HttpServer::handle_resource(const httplib::Request& req, httplib::Response& res) {
-    try {
+void HttpServer::handle_resource(const httplib::Request &req, httplib::Response &res)
+{
+    try
+    {
         json body = json::parse(req.body);
 
-        if (!body.contains("data") || !body["data"].is_object()) {
+        if (!body.contains("data") || !body["data"].is_object())
+        {
             res.set_content("{\"error\":\"'data' field is missing or not an object\"}", "application/json");
             res.status = 400;
             return;
         }
-        const auto& data = body["data"];
+        const auto &data = body["data"];
 
-        if (!data.contains("host_ip") || !data["host_ip"].is_string()) {
+        if (!data.contains("host_ip") || !data["host_ip"].is_string())
+        {
             res.set_content("{\"error\":\"'host_ip' is missing or not a string\"}", "application/json");
             res.status = 400;
             return;
         }
 
-        if (!data.contains("resource") || !data["resource"].is_object()) {
+        if (!data.contains("resource") || !data["resource"].is_object())
+        {
             res.set_content("{\"error\":\"'resource' field is missing or not an object\"}", "application/json");
             res.status = 400;
             return;
@@ -1336,68 +1348,81 @@ void HttpServer::handle_resource(const httplib::Request& req, httplib::Response&
         // 将JSON数据反序列化为ResourceInfo结构体
         node::ResourceInfo resource_info = data.get<node::ResourceInfo>();
 
-        if (m_resource_storage->insertResourceData(resource_info.host_ip, resource_info)) {
+        if (m_resource_storage->insertResourceData(resource_info.host_ip, resource_info))
+        {
             json response = {
                 {"api_version", 1},
                 {"status", "success"},
-                {"data", {}}
-            };
-            
+                {"data", {}}};
+
             res.set_content(response.dump(2), "application/json");
             res.status = 200;
             LogManager::getLogger()->debug("Successfully processed resource data for host: {}", resource_info.host_ip);
-        } else {
+        }
+        else
+        {
             res.set_content("{\"error\":\"Failed to store resource data\"}", "application/json");
             res.status = 500;
             LogManager::getLogger()->error("Failed to store resource data for host: {}", resource_info.host_ip);
         }
-
-    } catch (const json::parse_error& e) {
+    }
+    catch (const json::parse_error &e)
+    {
         res.set_content("{\"error\":\"Invalid JSON format\"}", "application/json");
         res.status = 400;
         LogManager::getLogger()->error("JSON parse error in handle_resource: {}", e.what());
-    } catch (const std::exception& e) {
+    }
+    catch (const std::exception &e)
+    {
         res.set_content("{\"error\":\"An unexpected error occurred\"}", "application/json");
         res.status = 500;
         LogManager::getLogger()->error("Exception in handle_resource: {}", e.what());
     }
 }
 
-void HttpServer::handle_alarm_events_list(const httplib::Request& req, httplib::Response& res) {
-    try {
-        if (!m_alarm_manager) {
+void HttpServer::handle_alarm_events_list(const httplib::Request &req, httplib::Response &res)
+{
+    try
+    {
+        if (!m_alarm_manager)
+        {
             res.set_content("{\"error\":\"Alarm manager not available\"}", "application/json");
             res.status = 500;
             LogManager::getLogger()->error("Alarm manager not available");
             return;
         }
-        
+
         // 获取查询参数
         std::string status = req.get_param_value("status");
         std::string page_str = req.get_param_value("page");
         std::string page_size_str = req.get_param_value("page_size");
         std::string limit_str = req.get_param_value("limit"); // 兼容旧参数
-        
+
         // 检查是否使用分页模式
         bool use_pagination = !page_str.empty() || !page_size_str.empty();
-        
-        if (use_pagination) {
+
+        if (use_pagination)
+        {
             // 分页模式
             int page = page_str.empty() ? 1 : std::stoi(page_str);
             int page_size = page_size_str.empty() ? 20 : std::stoi(page_size_str);
-            
+
             // 验证参数范围
-            if (page < 1) page = 1;
-            if (page_size < 1) page_size = 20;
-            if (page_size > 1000) page_size = 1000;
-            
+            if (page < 1)
+                page = 1;
+            if (page_size < 1)
+                page_size = 20;
+            if (page_size > 1000)
+                page_size = 1000;
+
             // 使用分页API
             auto paginated_result = m_alarm_manager->getPaginatedAlarmEvents(page, page_size, status);
-            
+
             json result_data = json::array();
-            
+
             // 直接添加事件数据到数组
-            for (const auto& event : paginated_result.events) {
+            for (const auto &event : paginated_result.events)
+            {
                 json event_json = {
                     {"id", event.id},
                     {"fingerprint", event.fingerprint},
@@ -1408,11 +1433,10 @@ void HttpServer::handle_alarm_events_list(const httplib::Request& req, httplib::
                     {"ends_at", event.ends_at},
                     {"generator_url", event.generator_url},
                     {"created_at", event.created_at},
-                    {"updated_at", event.updated_at}
-                };
+                    {"updated_at", event.updated_at}};
                 result_data.push_back(event_json);
             }
-            
+
             // 通过HTTP头部传递分页信息
             res.set_header("X-Page", std::to_string(paginated_result.page));
             res.set_header("X-Page-Size", std::to_string(paginated_result.page_size));
@@ -1420,37 +1444,43 @@ void HttpServer::handle_alarm_events_list(const httplib::Request& req, httplib::
             res.set_header("X-Total-Pages", std::to_string(paginated_result.total_pages));
             res.set_header("X-Has-Next", paginated_result.has_next ? "true" : "false");
             res.set_header("X-Has-Prev", paginated_result.has_prev ? "true" : "false");
-            
+
             json response = {
                 {"api_version", 1},
                 {"status", "success"},
-                {"data", result_data}
-            };
-            
+                {"data", result_data}};
+
             res.set_content(response.dump(2), "application/json");
             res.status = 200;
-            LogManager::getLogger()->debug("Successfully retrieved {} alarm events (page {}/{}, total: {})", 
-                paginated_result.events.size(), paginated_result.page, 
-                paginated_result.total_pages, paginated_result.total_count);
-            
-        } else {
+            LogManager::getLogger()->debug("Successfully retrieved {} alarm events (page {}/{}, total: {})",
+                                           paginated_result.events.size(), paginated_result.page,
+                                           paginated_result.total_pages, paginated_result.total_count);
+        }
+        else
+        {
             // 兼容模式 - 使用旧的API
             std::vector<AlarmEventRecord> events;
-            
-            if (status == "active" || status == "firing") {
+
+            if (status == "active" || status == "firing")
+            {
                 // 获取活跃的告警事件
                 events = m_alarm_manager->getActiveAlarmEvents();
-            } else if (!limit_str.empty()) {
+            }
+            else if (!limit_str.empty())
+            {
                 // 获取最近的告警事件（带限制）
                 int limit = std::stoi(limit_str);
                 events = m_alarm_manager->getRecentAlarmEvents(limit);
-            } else {
+            }
+            else
+            {
                 // 获取最近的告警事件（默认限制100条）
                 events = m_alarm_manager->getRecentAlarmEvents(100);
             }
-            
+
             json result_data = json::array();
-            for (const auto& event : events) {
+            for (const auto &event : events)
+            {
                 json event_json = {
                     {"id", event.id},
                     {"fingerprint", event.fingerprint},
@@ -1461,75 +1491,81 @@ void HttpServer::handle_alarm_events_list(const httplib::Request& req, httplib::
                     {"ends_at", event.ends_at},
                     {"generator_url", event.generator_url},
                     {"created_at", event.created_at},
-                    {"updated_at", event.updated_at}
-                };
+                    {"updated_at", event.updated_at}};
                 result_data.push_back(event_json);
             }
-            
+
             json response = {
                 {"api_version", 1},
                 {"status", "success"},
-                {"data", result_data}
-            };
-            
+                {"data", result_data}};
+
             res.set_content(response.dump(2), "application/json");
             res.status = 200;
             LogManager::getLogger()->debug("Successfully retrieved {} alarm events (legacy mode)", events.size());
         }
-        
-    } catch (const std::exception& e) {
+    }
+    catch (const std::exception &e)
+    {
         res.set_content("{\"error\":\"Failed to retrieve alarm events\"}", "application/json");
         res.status = 500;
         LogManager::getLogger()->error("Exception in handle_alarm_events_list: {}", e.what());
     }
 }
 
-void HttpServer::handle_alarm_events_count(const httplib::Request& req, httplib::Response& res) {
-    try {
-        if (!m_alarm_manager) {
+void HttpServer::handle_alarm_events_count(const httplib::Request &req, httplib::Response &res)
+{
+    try
+    {
+        if (!m_alarm_manager)
+        {
             res.set_content("{\"error\":\"Alarm manager not available\"}", "application/json");
             res.status = 500;
             LogManager::getLogger()->error("Alarm manager not available");
             return;
         }
-        
+
         // 获取查询参数
         std::string status = req.get_param_value("status");
-        
+
         int count = 0;
-        if (status == "active" || status == "firing") {
+        if (status == "active" || status == "firing")
+        {
             // 获取活跃告警数量
             count = m_alarm_manager->getActiveAlarmCount();
             LogManager::getLogger()->debug("Successfully retrieved active alarm events count: {}", count);
-        } else {
+        }
+        else
+        {
             // 获取告警事件总数量
             count = m_alarm_manager->getTotalAlarmCount();
             LogManager::getLogger()->debug("Successfully retrieved total alarm events count: {}", count);
         }
-        
+
         json response = {
             {"api_version", 1},
             {"status", "success"},
-            {"data", {
-                {"count", count}
-            }}
-        };
-        
+            {"data", {{"count", count}}}};
+
         res.set_content(response.dump(2), "application/json");
         res.status = 200;
-        
-    } catch (const std::exception& e) {
+    }
+    catch (const std::exception &e)
+    {
         res.set_content("{\"error\":\"Failed to retrieve alarm events count\"}", "application/json");
         res.status = 500;
         LogManager::getLogger()->error("Exception in handle_alarm_events_count: {}", e.what());
     }
 }
 
-void HttpServer::handle_heart(const httplib::Request& req, httplib::Response& res) {
-    try {
+void HttpServer::handle_heart(const httplib::Request &req, httplib::Response &res)
+{
+    try
+    {
         json body = json::parse(req.body);
 
-        if (!body.contains("data") || !body["data"].is_object()) {
+        if (!body.contains("data") || !body["data"].is_object())
+        {
             res.set_content("{\"error\":\"'data' field is missing or not an object\"}", "application/json");
             res.status = 400;
             LogManager::getLogger()->warn("Heart request missing 'data' field");
@@ -1538,209 +1574,223 @@ void HttpServer::handle_heart(const httplib::Request& req, httplib::Response& re
 
         // 尝试反序列化为 node::BoxInfo
         node::BoxInfo node_info = body["data"].get<node::BoxInfo>();
-        
-        if (!m_node_storage) {
+
+        if (!m_node_storage)
+        {
             res.set_content("{\"error\":\"Node storage not available\"}", "application/json");
             res.status = 500;
             LogManager::getLogger()->error("Node storage not available for heart request");
             return;
         }
 
-        if (m_node_storage->storeBoxInfo(node_info)) {
+        if (m_node_storage->storeBoxInfo(node_info))
+        {
             json response = {
                 {"api_version", 1},
                 {"status", "success"},
-                {"data", {}}
-            };
-            
+                {"data", {}}};
+
             res.set_content(response.dump(2), "application/json");
             res.status = 200;
             LogManager::getLogger()->debug("Successfully processed heart data for node: {}", node_info.host_ip);
-        } else {
+        }
+        else
+        {
             res.set_content("{\"error\":\"Failed to store node data\"}", "application/json");
             res.status = 500;
             LogManager::getLogger()->error("Failed to store heart data for node: {}", node_info.host_ip);
         }
-
-    } catch (const json::parse_error& e) {
+    }
+    catch (const json::parse_error &e)
+    {
         res.set_content("{\"error\":\"Invalid JSON format\"}", "application/json");
         res.status = 400;
         LogManager::getLogger()->error("JSON parse error in handle_heart: {}", e.what());
-    } catch (const std::exception& e) {
+    }
+    catch (const std::exception &e)
+    {
         res.set_content("{\"error\":\"An unexpected error occurred\"}", "application/json");
         res.status = 500;
         LogManager::getLogger()->error("Exception in handle_heart: {}", e.what());
     }
 }
 
-void HttpServer::handle_nodes_list(const httplib::Request& req, httplib::Response& res) {
-    try {
-        if (!m_resource_manager) {
-            res.set_content("{\"error\":\"Resource manager not available\"}", "application/json");
-            res.status = 500;
-            LogManager::getLogger()->error("Resource manager not available for nodes list request");
-            return;
-        }
-
-        // 检查是否有host_ip参数，如果有则获取单个节点数据
+void HttpServer::handle_nodes_list(const httplib::Request &req, httplib::Response &res)
+{
+    try
+    {
         std::string host_ip = req.get_param_value("host_ip");
-        
-        if (!host_ip.empty()) {
-            // 使用ResourceManager获取单个节点数据
-            auto node_response = m_resource_manager->getNode(host_ip);
-            
-            if (node_response.success) {
-                res.set_content(node_response.data.dump(2), "application/json");
+        if (!host_ip.empty())
+        {
+            auto node = m_resource_manager->getNode(host_ip);
+
+            if (node)
+            {
+                nlohmann::json node_data = *node;
+                json response = {
+                    {"api_version", 1},
+                    {"data", node_data},
+                    {"status", "success"}
+                };
+                
+                res.set_content(response.dump(2), "application/json");
                 res.status = 200;
                 LogManager::getLogger()->debug("Successfully retrieved node data for host_ip: {} using ResourceManager", host_ip);
-            } else {
-                if (node_response.error_message == "Node not found") {
-                    res.set_content("{\"error\":\"" + node_response.error_message + "\"}", "application/json");
-                    res.status = 404;
-                } else {
-                    res.set_content("{\"error\":\"" + node_response.error_message + "\"}", "application/json");
-                    res.status = 500;
-                }
-                LogManager::getLogger()->error("ResourceManager failed to retrieve node data for host_ip: {}: {}", host_ip, node_response.error_message);
             }
-        } else {
-            // 使用ResourceManager获取节点列表数据
-            auto nodes_response = m_resource_manager->getNodesList();
-            
-            if (nodes_response.success) {
-                res.set_content(nodes_response.data.dump(2), "application/json");
-                res.status = 200;
-                LogManager::getLogger()->debug("Successfully retrieved nodes list using ResourceManager");
-            } else {
-                res.set_content("{\"error\":\"" + nodes_response.error_message + "\"}", "application/json");
-                res.status = 500;
-                LogManager::getLogger()->error("ResourceManager failed to retrieve nodes list: {}", nodes_response.error_message);
+            else
+            {
+                res.set_content("{\"error\":\"Node not found\"}", "application/json");
+                res.status = 404;
+                LogManager::getLogger()->error("ResourceManager failed to retrieve node data for host_ip: {}", host_ip);
             }
         }
-        
-    } catch (const std::exception& e) {
+        else
+        {
+            // 使用ResourceManager获取节点列表数据
+            auto node_list = m_resource_manager->getNodesList();
+
+            if (!node_list.nodes.empty())
+            {
+                // 直接使用NodeDataList的JSON序列化
+                json nodes_json = node_list.nodes;
+                
+                // 构建符合要求的响应格式
+                json response = {
+                    {"api_version", 1},
+                    {"data", {
+                        {"nodes", nodes_json}
+                    }},
+                    {"status", "success"}
+                };
+                
+                res.set_content(response.dump(2), "application/json");
+                res.status = 200;
+                LogManager::getLogger()->debug("Successfully retrieved {} nodes list using ResourceManager", node_list.nodes.size());
+            }
+            else
+            {
+                res.set_content("{\"error\":\"No nodes found\"}", "application/json");
+                res.status = 404;
+                LogManager::getLogger()->error("ResourceManager failed to retrieve nodes list: no nodes found");
+            }
+        }
+    }
+    catch (const std::exception &e)
+    {
         res.set_content("{\"error\":\"Failed to retrieve nodes data\"}", "application/json");
         res.status = 500;
         LogManager::getLogger()->error("Exception in handle_nodes_list: {}", e.what());
     }
 }
 
-void HttpServer::handle_node_metrics(const httplib::Request& req, httplib::Response& res) {
-    try {
-        if (!m_resource_manager) {
-            res.set_content("{\"error\":\"Resource manager not available\"}", "application/json");
-            res.status = 500;
-            LogManager::getLogger()->error("Resource manager not available for node metrics request");
-            return;
-        }
-
-        // 检查是否启用分页
+void HttpServer::handle_node_metrics(const httplib::Request &req, httplib::Response &res)
+{
+    try
+    {
         std::string page_str = req.get_param_value("page");
         std::string page_size_str = req.get_param_value("page_size");
-        
-        if (!page_str.empty() || !page_size_str.empty()) {
-            // 使用分页API
-            int page = page_str.empty() ? 1 : std::stoi(page_str);
-            int page_size = page_size_str.empty() ? 20 : std::stoi(page_size_str);
-            
-            auto paginated_result = m_resource_manager->getPaginatedCurrentMetrics(page, page_size);
-            
-            if (paginated_result.success) {
-                // 构建与兼容模式一致的响应格式
-                json response = {
-                    {"api_version", 1},
-                    {"data", {
-                        {"nodes_metrics", paginated_result.data}
-                    }},
-                    {"status", "success"}
-                };
-                
-                // 通过HTTP头部传递分页信息
-                res.set_header("X-Page", std::to_string(paginated_result.page));
-                res.set_header("X-Page-Size", std::to_string(paginated_result.page_size));
-                res.set_header("X-Total-Count", std::to_string(paginated_result.total_count));
-                res.set_header("X-Total-Pages", std::to_string(paginated_result.total_pages));
-                res.set_header("X-Has-Next", paginated_result.has_next ? "true" : "false");
-                res.set_header("X-Has-Prev", paginated_result.has_prev ? "true" : "false");
-                
-                res.set_content(response.dump(2), "application/json");
-                res.status = 200;
-                LogManager::getLogger()->debug("Successfully retrieved {} node metrics (page {}/{}, total: {})", 
-                    paginated_result.data.size(), paginated_result.page, 
-                    paginated_result.total_pages, paginated_result.total_count);
-            } else {
-                res.set_content("{\"error\":\"" + paginated_result.error_message + "\"}", "application/json");
-                res.status = 500;
-                LogManager::getLogger()->error("ResourceManager failed to retrieve paginated node metrics: {}", paginated_result.error_message);
-            }
-            
-        } else {
-            // 兼容模式 - 使用旧的API
-            auto metrics_response = m_resource_manager->getCurrentMetrics();
-            
-            if (metrics_response.success) {
-                res.set_content(metrics_response.data.dump(2), "application/json");
-                res.status = 200;
-                LogManager::getLogger()->debug("Successfully retrieved node metrics using ResourceManager (legacy mode)");
-            } else {
-                res.set_content("{\"error\":\"" + metrics_response.error_message + "\"}", "application/json");
-                res.status = 500;
-                LogManager::getLogger()->error("ResourceManager failed to retrieve node metrics: {}", metrics_response.error_message);
-            }
+
+        int page = page_str.empty() ? 1 : std::stoi(page_str);
+        int page_size = page_size_str.empty() ? 1000 : std::stoi(page_size_str);
+
+        auto paginated_result = m_resource_manager->getPaginatedCurrentMetrics(page, page_size);
+
+        if (paginated_result.success)
+        {
+            // 构建与兼容模式一致的响应格式
+            nlohmann::json json_data = paginated_result.data;
+            nlohmann::json pagination_data = paginated_result.pagination;
+            json response = {
+                {"api_version", 1},
+                {"data", {{"nodes_metrics", json_data["nodes_metrics"]}}},
+                {"pagination", pagination_data},
+                {"status", "success"}};
+
+            // 通过HTTP头部传递分页信息
+            res.set_header("X-Page", std::to_string(paginated_result.pagination.page));
+            res.set_header("X-Page-Size", std::to_string(paginated_result.pagination.page_size));
+            res.set_header("X-Total-Count", std::to_string(paginated_result.pagination.total_count));
+            res.set_header("X-Total-Pages", std::to_string(paginated_result.pagination.total_pages));
+            res.set_header("X-Has-Next", paginated_result.pagination.has_next ? "true" : "false");
+            res.set_header("X-Has-Prev", paginated_result.pagination.has_prev ? "true" : "false");
+
+            res.set_content(response.dump(2), "application/json");
+            res.status = 200;
+            LogManager::getLogger()->debug("Successfully retrieved {} node metrics (page {}/{}, total: {})",
+                                           paginated_result.data.nodes_metrics.size(), paginated_result.pagination.page,
+                                           paginated_result.pagination.total_pages, paginated_result.pagination.total_count);
         }
-        
-    } catch (const std::exception& e) {
+        else
+        {
+            res.set_content("{\"error\":\"" + paginated_result.error_message + "\"}", "application/json");
+            res.status = 500;
+            LogManager::getLogger()->error("ResourceManager failed to retrieve paginated node metrics: {}", paginated_result.error_message);
+        }
+    }
+    catch (const std::exception &e)
+    {
         res.set_content("{\"error\":\"Failed to retrieve node metrics\"}", "application/json");
         res.status = 500;
         LogManager::getLogger()->error("Exception in handle_node_metrics: {}", e.what());
     }
 }
 
-void HttpServer::handle_node_historical_metrics(const httplib::Request& req, httplib::Response& res) {
-    try {
-        if (!m_resource_manager) {
+void HttpServer::handle_node_historical_metrics(const httplib::Request &req, httplib::Response &res)
+{
+    try
+    {
+        if (!m_resource_manager)
+        {
             res.set_content("{\"error\":\"Resource manager not available\"}", "application/json");
             res.status = 500;
             LogManager::getLogger()->error("Resource manager not available for historical metrics request");
             return;
         }
-        
+
         // 构建请求对象
         HistoricalMetricsRequest request;
         request.host_ip = req.get_param_value("host_ip");
         request.time_range = req.get_param_value("time_range");
-        if (request.time_range.empty()) {
+        if (request.time_range.empty())
+        {
             request.time_range = "1h"; // 默认1小时
         }
-        
+
         // 解析metrics参数
         std::string metrics_param = req.get_param_value("metrics");
         request.metrics = m_resource_manager->parseMetricsParam(metrics_param);
-        
+
         // 调用ResourceManager获取历史数据
         auto response_data = m_resource_manager->getHistoricalMetrics(request);
-        
+
         // 格式化响应
         auto json_response = m_resource_manager->formatResponse(response_data);
-        
-        if (response_data.success) {
+
+        if (response_data.success)
+        {
             res.set_content(json_response.dump(2), "application/json");
             res.status = 200;
-        } else {
+        }
+        else
+        {
             res.set_content(json_response.dump(2), "application/json");
             res.status = 400;
         }
-        
-    } catch (const std::exception& e) {
+    }
+    catch (const std::exception &e)
+    {
         res.set_content("{\"error\":\"Failed to retrieve historical metrics\"}", "application/json");
         res.status = 500;
         LogManager::getLogger()->error("Exception in handle_node_historical_metrics: {}", e.what());
     }
 }
 
-void HttpServer::handle_node_historical_bmc(const httplib::Request& req, httplib::Response& res) {
-    try {
-        if (!m_resource_manager) {
+void HttpServer::handle_node_historical_bmc(const httplib::Request &req, httplib::Response &res)
+{
+    try
+    {
+        if (!m_resource_manager)
+        {
             res.set_content("{\"error\":\"Resource manager not available\"}", "application/json");
             res.status = 500;
             LogManager::getLogger()->error("Resource manager not available for historical bmc request");
@@ -1751,7 +1801,8 @@ void HttpServer::handle_node_historical_bmc(const httplib::Request& req, httplib
         HistoricalBMCRequest request;
         request.box_id = std::stoi(req.get_param_value("box_id"));
         request.time_range = req.get_param_value("time_range");
-        if (request.time_range.empty()) {
+        if (request.time_range.empty())
+        {
             request.time_range = "1h"; // 默认1小时
         }
 
@@ -1761,28 +1812,35 @@ void HttpServer::handle_node_historical_bmc(const httplib::Request& req, httplib
 
         // 调用ResourceManager获取历史数据
         auto response_data = m_resource_manager->getHistoricalBMC(request);
-        
+
         // 格式化响应
         auto json_response = response_data.data.to_json();
-        
-        if (response_data.success) {
+
+        if (response_data.success)
+        {
             res.set_content(json_response.dump(2), "application/json");
             res.status = 200;
-        } else {
+        }
+        else
+        {
             res.set_content(json_response.dump(2), "application/json");
             res.status = 400;
         }
-
-    } catch (const std::exception& e) {
+    }
+    catch (const std::exception &e)
+    {
         res.set_content("{\"error\":\"Failed to retrieve historical bmc\"}", "application/json");
         res.status = 500;
         LogManager::getLogger()->error("Exception in handle_node_historical_bmc: {}", e.what());
     }
 }
 
-void HttpServer::handle_chassis_reset(const httplib::Request& req, httplib::Response& res) {
-    try {
-        if (!m_chassis_controller) {
+void HttpServer::handle_chassis_reset(const httplib::Request &req, httplib::Response &res)
+{
+    try
+    {
+        if (!m_chassis_controller)
+        {
             res.set_content("{\"error\":\"Chassis controller not available\"}", "application/json");
             res.status = 500;
             LogManager::getLogger()->error("Chassis controller not available for reset request");
@@ -1792,7 +1850,8 @@ void HttpServer::handle_chassis_reset(const httplib::Request& req, httplib::Resp
         json body = json::parse(req.body);
 
         // 验证必需的字段
-        if (!body.contains("target_ip") || !body["target_ip"].is_string()) {
+        if (!body.contains("target_ip") || !body["target_ip"].is_string())
+        {
             res.set_content("{\"error\":\"'target_ip' field is required and must be a string\"}", "application/json");
             res.status = 400;
             return;
@@ -1802,28 +1861,36 @@ void HttpServer::handle_chassis_reset(const httplib::Request& req, httplib::Resp
         int req_id = body.value("request_id", 0);
 
         ChassisController::OperationResponse result;
-        
-        if (body.contains("slots") && body["slots"].is_array()) {
+
+        if (body.contains("slots") && body["slots"].is_array())
+        {
             // 多槽位操作
             std::vector<int> slot_numbers;
-            for (const auto& slot : body["slots"]) {
-                if (slot.is_number_integer()) {
+            for (const auto &slot : body["slots"])
+            {
+                if (slot.is_number_integer())
+                {
                     slot_numbers.push_back(slot.get<int>());
                 }
             }
-            
-            if (slot_numbers.empty()) {
+
+            if (slot_numbers.empty())
+            {
                 res.set_content("{\"error\":\"No valid slot numbers provided\"}", "application/json");
                 res.status = 400;
                 return;
             }
-            
+
             result = m_chassis_controller->resetChassisBoards(target_ip, slot_numbers, req_id);
-        } else if (body.contains("slot") && body["slot"].is_number_integer()) {
+        }
+        else if (body.contains("slot") && body["slot"].is_number_integer())
+        {
             // 单槽位操作
             int slot_number = body["slot"].get<int>();
             result = m_chassis_controller->resetChassisBoard(target_ip, slot_number, req_id);
-        } else {
+        }
+        else
+        {
             res.set_content("{\"error\":\"Either 'slot' (integer) or 'slots' (array) field is required\"}", "application/json");
             res.status = 400;
             return;
@@ -1831,74 +1898,77 @@ void HttpServer::handle_chassis_reset(const httplib::Request& req, httplib::Resp
 
         // 构建响应
         json slot_results = json::array();
-        for (const auto& slot_result : result.slot_results) {
+        for (const auto &slot_result : result.slot_results)
+        {
             json slot_json = {
                 {"slot_number", slot_result.slot_number},
                 {"status", static_cast<int>(slot_result.status)},
-                {"status_text", [&]() {
-                    switch (slot_result.status) {
-                        case ChassisController::SlotStatus::SUCCESS:
-                            return "success";
-                        case ChassisController::SlotStatus::FAILED:
-                            return "failed";
-                        case ChassisController::SlotStatus::REQUEST_OPERATION:
-                            return "requested";
-                        default:
-                            return "no_operation";
-                    }
-                }()}
-            };
+                {"status_text", [&]()
+                 {
+                     switch (slot_result.status)
+                     {
+                     case ChassisController::SlotStatus::SUCCESS:
+                         return "success";
+                     case ChassisController::SlotStatus::FAILED:
+                         return "failed";
+                     case ChassisController::SlotStatus::REQUEST_OPERATION:
+                         return "requested";
+                     default:
+                         return "no_operation";
+                     }
+                 }()}};
             slot_results.push_back(slot_json);
         }
 
         json response = {
             {"api_version", 1},
             {"status", "success"},
-            {"data", {
-                {"operation", "reset"},
-                {"target_ip", target_ip},
-                {"request_id", req_id},
-                {"result", static_cast<int>(result.result)},
-                {"result_text", [&]() {
-                    switch (result.result) {
-                        case ChassisController::OperationResult::SUCCESS:
-                            return "success";
-                        case ChassisController::OperationResult::PARTIAL_SUCCESS:
-                            return "partial_success";
-                        case ChassisController::OperationResult::NETWORK_ERROR:
-                            return "network_error";
-                        case ChassisController::OperationResult::TIMEOUT_ERROR:
-                            return "timeout_error";
-                        case ChassisController::OperationResult::INVALID_RESPONSE:
-                            return "invalid_response";
-                        default:
-                            return "unknown_error";
-                    }
-                }()},
-                {"message", result.message},
-                {"slot_results", slot_results},
-                {"raw_response_hex", TcpClient::binaryToHex(result.raw_response)}
-            }}
-        };
+            {"data", {{"operation", "reset"}, {"target_ip", target_ip}, {"request_id", req_id}, {"result", static_cast<int>(result.result)}, {"result_text", [&]()
+                                                                                                                                              {
+                                                                                                                                                  switch (result.result)
+                                                                                                                                                  {
+                                                                                                                                                  case ChassisController::OperationResult::SUCCESS:
+                                                                                                                                                      return "success";
+                                                                                                                                                  case ChassisController::OperationResult::PARTIAL_SUCCESS:
+                                                                                                                                                      return "partial_success";
+                                                                                                                                                  case ChassisController::OperationResult::NETWORK_ERROR:
+                                                                                                                                                      return "network_error";
+                                                                                                                                                  case ChassisController::OperationResult::TIMEOUT_ERROR:
+                                                                                                                                                      return "timeout_error";
+                                                                                                                                                  case ChassisController::OperationResult::INVALID_RESPONSE:
+                                                                                                                                                      return "invalid_response";
+                                                                                                                                                  default:
+                                                                                                                                                      return "unknown_error";
+                                                                                                                                                  }
+                                                                                                                                              }()},
+                      {"message", result.message},
+                      {"slot_results", slot_results},
+                      {"raw_response_hex", TcpClient::binaryToHex(result.raw_response)}}}};
 
         res.set_content(response.dump(2), "application/json");
         res.status = 200;
         LogManager::getLogger()->info("Successfully processed chassis reset request for target_ip: {}", target_ip);
-
-    } catch (const json::parse_error& e) {
+    }
+    catch (const json::parse_error &e)
+    {
         res.set_content("{\"error\":\"Invalid JSON format\"}", "application/json");
         res.status = 400;
         LogManager::getLogger()->error("JSON parse error in handle_chassis_reset: {}", e.what());
-    } catch (const std::exception& e) {
+    }
+    catch (const std::exception &e)
+    {
         res.set_content("{\"error\":\"Failed to execute chassis reset\"}", "application/json");
         res.status = 500;
         LogManager::getLogger()->error("Exception in handle_chassis_reset: {}", e.what());
     }
 }
 
-void HttpServer::handle_chassis_power_off(const httplib::Request& req, httplib::Response& res) {
-    try {
-        if (!m_chassis_controller) {
+void HttpServer::handle_chassis_power_off(const httplib::Request &req, httplib::Response &res)
+{
+    try
+    {
+        if (!m_chassis_controller)
+        {
             res.set_content("{\"error\":\"Chassis controller not available\"}", "application/json");
             res.status = 500;
             LogManager::getLogger()->error("Chassis controller not available for power-off request");
@@ -1908,7 +1978,8 @@ void HttpServer::handle_chassis_power_off(const httplib::Request& req, httplib::
         json body = json::parse(req.body);
 
         // 验证必需的字段
-        if (!body.contains("target_ip") || !body["target_ip"].is_string()) {
+        if (!body.contains("target_ip") || !body["target_ip"].is_string())
+        {
             res.set_content("{\"error\":\"'target_ip' field is required and must be a string\"}", "application/json");
             res.status = 400;
             return;
@@ -1918,28 +1989,36 @@ void HttpServer::handle_chassis_power_off(const httplib::Request& req, httplib::
         int req_id = body.value("request_id", 0);
 
         ChassisController::OperationResponse result;
-        
-        if (body.contains("slots") && body["slots"].is_array()) {
+
+        if (body.contains("slots") && body["slots"].is_array())
+        {
             // 多槽位操作
             std::vector<int> slot_numbers;
-            for (const auto& slot : body["slots"]) {
-                if (slot.is_number_integer()) {
+            for (const auto &slot : body["slots"])
+            {
+                if (slot.is_number_integer())
+                {
                     slot_numbers.push_back(slot.get<int>());
                 }
             }
-            
-            if (slot_numbers.empty()) {
+
+            if (slot_numbers.empty())
+            {
                 res.set_content("{\"error\":\"No valid slot numbers provided\"}", "application/json");
                 res.status = 400;
                 return;
             }
-            
+
             result = m_chassis_controller->powerOffChassisBoards(target_ip, slot_numbers, req_id);
-        } else if (body.contains("slot") && body["slot"].is_number_integer()) {
+        }
+        else if (body.contains("slot") && body["slot"].is_number_integer())
+        {
             // 单槽位操作
             int slot_number = body["slot"].get<int>();
             result = m_chassis_controller->powerOffChassisBoard(target_ip, slot_number, req_id);
-        } else {
+        }
+        else
+        {
             res.set_content("{\"error\":\"Either 'slot' (integer) or 'slots' (array) field is required\"}", "application/json");
             res.status = 400;
             return;
@@ -1947,74 +2026,77 @@ void HttpServer::handle_chassis_power_off(const httplib::Request& req, httplib::
 
         // 构建响应（复用reset的响应格式）
         json slot_results = json::array();
-        for (const auto& slot_result : result.slot_results) {
+        for (const auto &slot_result : result.slot_results)
+        {
             json slot_json = {
                 {"slot_number", slot_result.slot_number},
                 {"status", static_cast<int>(slot_result.status)},
-                {"status_text", [&]() {
-                    switch (slot_result.status) {
-                        case ChassisController::SlotStatus::SUCCESS:
-                            return "success";
-                        case ChassisController::SlotStatus::FAILED:
-                            return "failed";
-                        case ChassisController::SlotStatus::REQUEST_OPERATION:
-                            return "requested";
-                        default:
-                            return "no_operation";
-                    }
-                }()}
-            };
+                {"status_text", [&]()
+                 {
+                     switch (slot_result.status)
+                     {
+                     case ChassisController::SlotStatus::SUCCESS:
+                         return "success";
+                     case ChassisController::SlotStatus::FAILED:
+                         return "failed";
+                     case ChassisController::SlotStatus::REQUEST_OPERATION:
+                         return "requested";
+                     default:
+                         return "no_operation";
+                     }
+                 }()}};
             slot_results.push_back(slot_json);
         }
 
         json response = {
             {"api_version", 1},
             {"status", "success"},
-            {"data", {
-                {"operation", "power_off"},
-                {"target_ip", target_ip},
-                {"request_id", req_id},
-                {"result", static_cast<int>(result.result)},
-                {"result_text", [&]() {
-                    switch (result.result) {
-                        case ChassisController::OperationResult::SUCCESS:
-                            return "success";
-                        case ChassisController::OperationResult::PARTIAL_SUCCESS:
-                            return "partial_success";
-                        case ChassisController::OperationResult::NETWORK_ERROR:
-                            return "network_error";
-                        case ChassisController::OperationResult::TIMEOUT_ERROR:
-                            return "timeout_error";
-                        case ChassisController::OperationResult::INVALID_RESPONSE:
-                            return "invalid_response";
-                        default:
-                            return "unknown_error";
-                    }
-                }()},
-                {"message", result.message},
-                {"slot_results", slot_results},
-                {"raw_response_hex", TcpClient::binaryToHex(result.raw_response)}
-            }}
-        };
+            {"data", {{"operation", "power_off"}, {"target_ip", target_ip}, {"request_id", req_id}, {"result", static_cast<int>(result.result)}, {"result_text", [&]()
+                                                                                                                                                  {
+                                                                                                                                                      switch (result.result)
+                                                                                                                                                      {
+                                                                                                                                                      case ChassisController::OperationResult::SUCCESS:
+                                                                                                                                                          return "success";
+                                                                                                                                                      case ChassisController::OperationResult::PARTIAL_SUCCESS:
+                                                                                                                                                          return "partial_success";
+                                                                                                                                                      case ChassisController::OperationResult::NETWORK_ERROR:
+                                                                                                                                                          return "network_error";
+                                                                                                                                                      case ChassisController::OperationResult::TIMEOUT_ERROR:
+                                                                                                                                                          return "timeout_error";
+                                                                                                                                                      case ChassisController::OperationResult::INVALID_RESPONSE:
+                                                                                                                                                          return "invalid_response";
+                                                                                                                                                      default:
+                                                                                                                                                          return "unknown_error";
+                                                                                                                                                      }
+                                                                                                                                                  }()},
+                      {"message", result.message},
+                      {"slot_results", slot_results},
+                      {"raw_response_hex", TcpClient::binaryToHex(result.raw_response)}}}};
 
         res.set_content(response.dump(2), "application/json");
         res.status = 200;
         LogManager::getLogger()->info("Successfully processed chassis power-off request for target_ip: {}", target_ip);
-
-    } catch (const json::parse_error& e) {
+    }
+    catch (const json::parse_error &e)
+    {
         res.set_content("{\"error\":\"Invalid JSON format\"}", "application/json");
         res.status = 400;
         LogManager::getLogger()->error("JSON parse error in handle_chassis_power_off: {}", e.what());
-    } catch (const std::exception& e) {
+    }
+    catch (const std::exception &e)
+    {
         res.set_content("{\"error\":\"Failed to execute chassis power-off\"}", "application/json");
         res.status = 500;
         LogManager::getLogger()->error("Exception in handle_chassis_power_off: {}", e.what());
     }
 }
 
-void HttpServer::handle_chassis_power_on(const httplib::Request& req, httplib::Response& res) {
-    try {
-        if (!m_chassis_controller) {
+void HttpServer::handle_chassis_power_on(const httplib::Request &req, httplib::Response &res)
+{
+    try
+    {
+        if (!m_chassis_controller)
+        {
             res.set_content("{\"error\":\"Chassis controller not available\"}", "application/json");
             res.status = 500;
             LogManager::getLogger()->error("Chassis controller not available for power-on request");
@@ -2024,7 +2106,8 @@ void HttpServer::handle_chassis_power_on(const httplib::Request& req, httplib::R
         json body = json::parse(req.body);
 
         // 验证必需的字段
-        if (!body.contains("target_ip") || !body["target_ip"].is_string()) {
+        if (!body.contains("target_ip") || !body["target_ip"].is_string())
+        {
             res.set_content("{\"error\":\"'target_ip' field is required and must be a string\"}", "application/json");
             res.status = 400;
             return;
@@ -2034,28 +2117,36 @@ void HttpServer::handle_chassis_power_on(const httplib::Request& req, httplib::R
         int req_id = body.value("request_id", 0);
 
         ChassisController::OperationResponse result;
-        
-        if (body.contains("slots") && body["slots"].is_array()) {
+
+        if (body.contains("slots") && body["slots"].is_array())
+        {
             // 多槽位操作
             std::vector<int> slot_numbers;
-            for (const auto& slot : body["slots"]) {
-                if (slot.is_number_integer()) {
+            for (const auto &slot : body["slots"])
+            {
+                if (slot.is_number_integer())
+                {
                     slot_numbers.push_back(slot.get<int>());
                 }
             }
-            
-            if (slot_numbers.empty()) {
+
+            if (slot_numbers.empty())
+            {
                 res.set_content("{\"error\":\"No valid slot numbers provided\"}", "application/json");
                 res.status = 400;
                 return;
             }
-            
+
             result = m_chassis_controller->powerOnChassisBoards(target_ip, slot_numbers, req_id);
-        } else if (body.contains("slot") && body["slot"].is_number_integer()) {
+        }
+        else if (body.contains("slot") && body["slot"].is_number_integer())
+        {
             // 单槽位操作
             int slot_number = body["slot"].get<int>();
             result = m_chassis_controller->powerOnChassisBoard(target_ip, slot_number, req_id);
-        } else {
+        }
+        else
+        {
             res.set_content("{\"error\":\"Either 'slot' (integer) or 'slots' (array) field is required\"}", "application/json");
             res.status = 400;
             return;
@@ -2063,65 +2154,65 @@ void HttpServer::handle_chassis_power_on(const httplib::Request& req, httplib::R
 
         // 构建响应（复用reset的响应格式）
         json slot_results = json::array();
-        for (const auto& slot_result : result.slot_results) {
+        for (const auto &slot_result : result.slot_results)
+        {
             json slot_json = {
                 {"slot_number", slot_result.slot_number},
                 {"status", static_cast<int>(slot_result.status)},
-                {"status_text", [&]() {
-                    switch (slot_result.status) {
-                        case ChassisController::SlotStatus::SUCCESS:
-                            return "success";
-                        case ChassisController::SlotStatus::FAILED:
-                            return "failed";
-                        case ChassisController::SlotStatus::REQUEST_OPERATION:
-                            return "requested";
-                        default:
-                            return "no_operation";
-                    }
-                }()}
-            };
+                {"status_text", [&]()
+                 {
+                     switch (slot_result.status)
+                     {
+                     case ChassisController::SlotStatus::SUCCESS:
+                         return "success";
+                     case ChassisController::SlotStatus::FAILED:
+                         return "failed";
+                     case ChassisController::SlotStatus::REQUEST_OPERATION:
+                         return "requested";
+                     default:
+                         return "no_operation";
+                     }
+                 }()}};
             slot_results.push_back(slot_json);
         }
 
         json response = {
             {"api_version", 1},
             {"status", "success"},
-            {"data", {
-                {"operation", "power_on"},
-                {"target_ip", target_ip},
-                {"request_id", req_id},
-                {"result", static_cast<int>(result.result)},
-                {"result_text", [&]() {
-                    switch (result.result) {
-                        case ChassisController::OperationResult::SUCCESS:
-                            return "success";
-                        case ChassisController::OperationResult::PARTIAL_SUCCESS:
-                            return "partial_success";
-                        case ChassisController::OperationResult::NETWORK_ERROR:
-                            return "network_error";
-                        case ChassisController::OperationResult::TIMEOUT_ERROR:
-                            return "timeout_error";
-                        case ChassisController::OperationResult::INVALID_RESPONSE:
-                            return "invalid_response";
-                        default:
-                            return "unknown_error";
-                    }
-                }()},
-                {"message", result.message},
-                {"slot_results", slot_results},
-                {"raw_response_hex", TcpClient::binaryToHex(result.raw_response)}
-            }}
-        };
+            {"data", {{"operation", "power_on"}, {"target_ip", target_ip}, {"request_id", req_id}, {"result", static_cast<int>(result.result)}, {"result_text", [&]()
+                                                                                                                                                 {
+                                                                                                                                                     switch (result.result)
+                                                                                                                                                     {
+                                                                                                                                                     case ChassisController::OperationResult::SUCCESS:
+                                                                                                                                                         return "success";
+                                                                                                                                                     case ChassisController::OperationResult::PARTIAL_SUCCESS:
+                                                                                                                                                         return "partial_success";
+                                                                                                                                                     case ChassisController::OperationResult::NETWORK_ERROR:
+                                                                                                                                                         return "network_error";
+                                                                                                                                                     case ChassisController::OperationResult::TIMEOUT_ERROR:
+                                                                                                                                                         return "timeout_error";
+                                                                                                                                                     case ChassisController::OperationResult::INVALID_RESPONSE:
+                                                                                                                                                         return "invalid_response";
+                                                                                                                                                     default:
+                                                                                                                                                         return "unknown_error";
+                                                                                                                                                     }
+                                                                                                                                                 }()},
+                      {"message", result.message},
+                      {"slot_results", slot_results},
+                      {"raw_response_hex", TcpClient::binaryToHex(result.raw_response)}}}};
 
         res.set_content(response.dump(2), "application/json");
         res.status = 200;
         LogManager::getLogger()->info("Successfully processed chassis power-on request for target_ip: {}", target_ip);
-
-    } catch (const json::parse_error& e) {
+    }
+    catch (const json::parse_error &e)
+    {
         res.set_content("{\"error\":\"Invalid JSON format\"}", "application/json");
         res.status = 400;
         LogManager::getLogger()->error("JSON parse error in handle_chassis_power_on: {}", e.what());
-    } catch (const std::exception& e) {
+    }
+    catch (const std::exception &e)
+    {
         res.set_content("{\"error\":\"Failed to execute chassis power-on\"}", "application/json");
         res.status = 500;
         LogManager::getLogger()->error("Exception in handle_chassis_power_on: {}", e.what());

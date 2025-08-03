@@ -173,17 +173,17 @@ std::shared_ptr<NodeData> NodeStorage::getNodeData(const std::string& host_ip) {
     return nullptr;
 }
 
-std::vector<std::shared_ptr<NodeData>> NodeStorage::getAllNodes() {
+NodeDataList NodeStorage::getAllNodes() {
     std::lock_guard<std::mutex> lock(m_mutex);
     
-    std::vector<std::shared_ptr<NodeData>> nodes;
-    nodes.reserve(m_nodes.size());
+    NodeDataList node_list;
+    node_list.nodes.reserve(m_nodes.size());
     
     for (const auto& pair : m_nodes) {
-        nodes.push_back(pair.second);
+        node_list.nodes.push_back(*pair.second);
     }
     
-    return nodes;
+    return node_list;
 }
 
 std::vector<std::shared_ptr<NodeData>> NodeStorage::getActiveNodes() {

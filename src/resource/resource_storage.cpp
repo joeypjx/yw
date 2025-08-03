@@ -20,61 +20,17 @@ namespace {
     }
 }
 
-// 连接池注入构造函数 - 推荐使用
 ResourceStorage::ResourceStorage(std::shared_ptr<TDengineConnectionPool> connection_pool)
-    : m_connection_pool(connection_pool), m_initialized(false), m_owns_connection_pool(false) {
+    : m_connection_pool(connection_pool) {
     if (!m_connection_pool) {
         logError("Injected connection pool is null");
     }
 }
 
 ResourceStorage::~ResourceStorage() {
-    shutdown();
-}
-
-bool ResourceStorage::initialize() {
-    if (m_initialized) {
-        logInfo("ResourceStorage already initialized");
-        return true;
-    }
-    
-    if (!m_connection_pool) {
-        logError("Connection pool not created");
-        return false;
-    }
-    
-    // 只有当我们拥有连接池时才需要初始化它
-    if (m_owns_connection_pool) {
-        if (!m_connection_pool->initialize()) {
-            logError("Failed to initialize connection pool");
-            return false;
-        }
-    }
-    
-    m_initialized = true;
-    logInfo("ResourceStorage initialized successfully with connection pool");
-    return true;
-}
-
-void ResourceStorage::shutdown() {
-    if (!m_initialized) {
-        return;
-    }
-    
-    // 只有当我们拥有连接池时才关闭它
-    if (m_connection_pool && m_owns_connection_pool) {
-        m_connection_pool->shutdown();
-    }
-    
-    m_initialized = false;
-    logInfo("ResourceStorage shutdown completed");
 }
 
 bool ResourceStorage::createDatabase(const std::string& dbName) {
-    if (!m_initialized) {
-        logError("ResourceStorage not initialized");
-        return false;
-    }
     
     std::string query = "CREATE DATABASE IF NOT EXISTS " + dbName;
     if (!executeQuery(query)) {
@@ -96,12 +52,7 @@ bool ResourceStorage::createDatabase(const std::string& dbName) {
 }
 
 bool ResourceStorage::createResourceTable() {
-    if (!m_initialized) {
-        logError("ResourceStorage not initialized");
-        return false;
-    }
 
-    // 使用单个连接批量创建所有超级表，减少连接开销
     TDengineConnectionGuard guard(m_connection_pool);
     if (!guard.isValid()) {
         logError("Failed to get database connection from pool");
@@ -179,7 +130,6 @@ bool ResourceStorage::createResourceTable() {
             ") TAGS (host_ip NCHAR(16))"}
     };
     
-    // 批量执行CREATE STABLE语句，使用同一个连接
     std::vector<std::string> failed_tables;
     for (const auto& table : tables) {
         logDebug("Creating stable table: " + table.first);
@@ -210,10 +160,6 @@ bool ResourceStorage::createResourceTable() {
 }
 
 bool ResourceStorage::executeQuery(const std::string& query) {
-    if (!m_initialized) {
-        logError("ResourceStorage not initialized");
-        return false;
-    }
     
     TDengineConnectionGuard guard(m_connection_pool);
     if (!guard.isValid()) {
@@ -236,15 +182,8 @@ bool ResourceStorage::executeQuery(const std::string& query) {
     return true;
 }
 
-
-
 bool ResourceStorage::insertResourceData(const std::string& hostIp, const node::ResourceInfo& resourceData) {
-    if (!m_initialized) {
-        logError("ResourceStorage not initialized");
-        return false;
-    }
 
-    // 使用单个连接和批量INSERT语句
     TDengineConnectionGuard guard(m_connection_pool);
     if (!guard.isValid()) {
         logError("Failed to get database connection from pool");
@@ -422,11 +361,6 @@ bool ResourceStorage::insertResourceData(const std::string& hostIp, const node::
 std::vector<QueryResult> ResourceStorage::executeQuerySQL(const std::string& sql) {
     std::vector<QueryResult> results;
     
-    if (!m_initialized) {
-        logError("ResourceStorage not initialized");
-        return results;
-    }
-    
     logDebug("Executing query: " + sql);
     
     TDengineConnectionGuard guard(m_connection_pool);
@@ -459,7 +393,8 @@ std::vector<QueryResult> ResourceStorage::executeQuerySQL(const std::string& sql
         int* lengths = taos_fetch_lengths(res);
         
         QueryResult result;
-        result.timestamp = std::chrono::system_clock::now();
+        result.timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count();
         
         // 一次遍历：收集所有字段信息
         for (int i = 0; i < field_count; i++) {
@@ -470,10 +405,7 @@ std::vector<QueryResult> ResourceStorage::executeQuerySQL(const std::string& sql
             if (field_name == "ts") {
                 // 时间戳字段 - TDengine 通常返回毫秒精度
                 if (fields[i].type == TSDB_DATA_TYPE_TIMESTAMP) {
-                    int64_t timestamp = *(int64_t*)row[i];
-                    // TDengine 时间戳通常是毫秒精度
-                    result.timestamp = std::chrono::system_clock::from_time_t(timestamp / 1000) + 
-                                     std::chrono::milliseconds(timestamp % 1000);
+                    result.timestamp = *(int64_t*)row[i];
                 }
             } else if (field_name == "host_ip" || field_name == "mount_point" || field_name == "device" || 
                       field_name == "interface" || field_name == "gpu_name" || field_name == "gpu_index" || 
@@ -527,11 +459,6 @@ std::vector<QueryResult> ResourceStorage::executeQuerySQL(const std::string& sql
 NodeResourceData ResourceStorage::getNodeResourceData(const std::string& hostIp) {
     NodeResourceData nodeData;
     nodeData.host_ip = hostIp;
-    
-    if (!m_initialized) {
-        logError("ResourceStorage not initialized");
-        return nodeData;
-    }
     
     try {
         // 合并所有查询为一个UNION ALL语句，使用table_type字段标识数据来源
@@ -773,108 +700,6 @@ NodeResourceData ResourceStorage::getNodeResourceData(const std::string& hostIp)
     return nodeData;
 }
 
-// 将NodeResourceData转换为json
-nlohmann::json NodeResourceData::to_json() const {
-    nlohmann::json j;
-    
-    j["host_ip"] = host_ip;
-    
-    // CPU data
-    j["cpu"]["usage_percent"] = cpu.usage_percent;
-    j["cpu"]["load_avg_1m"] = cpu.load_avg_1m;
-    j["cpu"]["load_avg_5m"] = cpu.load_avg_5m;
-    j["cpu"]["load_avg_15m"] = cpu.load_avg_15m;
-    j["cpu"]["core_count"] = cpu.core_count;
-    j["cpu"]["core_allocated"] = cpu.core_allocated;
-    j["cpu"]["temperature"] = cpu.temperature;
-    j["cpu"]["voltage"] = cpu.voltage;
-    j["cpu"]["current"] = cpu.current;
-    j["cpu"]["power"] = cpu.power;
-    j["cpu"]["has_data"] = cpu.has_data;
-    if (cpu.has_data) {
-        j["cpu"]["timestamp"] = std::chrono::duration_cast<std::chrono::milliseconds>(cpu.timestamp.time_since_epoch()).count();
-    }
-    
-    // Memory data
-    j["memory"]["total"] = memory.total;
-    j["memory"]["used"] = memory.used;
-    j["memory"]["free"] = memory.free;
-    j["memory"]["usage_percent"] = memory.usage_percent;
-    j["memory"]["has_data"] = memory.has_data;
-    if (memory.has_data) {
-        j["memory"]["timestamp"] = std::chrono::duration_cast<std::chrono::milliseconds>(memory.timestamp.time_since_epoch()).count();
-    }
-    
-    // Disk data
-    j["disk"] = nlohmann::json::array();
-    for (const auto& disk : disks) {
-        nlohmann::json diskJson;
-        diskJson["device"] = disk.device;
-        diskJson["mount_point"] = disk.mount_point;
-        diskJson["total"] = disk.total;
-        diskJson["used"] = disk.used;
-        diskJson["free"] = disk.free;
-        diskJson["usage_percent"] = disk.usage_percent;
-        diskJson["timestamp"] = std::chrono::duration_cast<std::chrono::milliseconds>(disk.timestamp.time_since_epoch()).count();
-        j["disk"].push_back(diskJson);
-    }
-    
-    // Network data
-    j["network"] = nlohmann::json::array();
-    for (const auto& network : networks) {
-        nlohmann::json networkJson;
-        networkJson["interface"] = network.interface;
-        networkJson["rx_bytes"] = network.rx_bytes;
-        networkJson["tx_bytes"] = network.tx_bytes;
-        networkJson["rx_packets"] = network.rx_packets;
-        networkJson["tx_packets"] = network.tx_packets;
-        networkJson["rx_errors"] = network.rx_errors;
-        networkJson["tx_errors"] = network.tx_errors;
-        networkJson["rx_rate"] = network.rx_rate;
-        networkJson["tx_rate"] = network.tx_rate;
-        networkJson["timestamp"] = std::chrono::duration_cast<std::chrono::milliseconds>(network.timestamp.time_since_epoch()).count();
-        j["network"].push_back(networkJson);
-    }
-    
-    // GPU data
-    j["gpu"] = nlohmann::json::array();
-    for (const auto& gpu : gpus) {
-        nlohmann::json gpuJson;
-        gpuJson["index"] = gpu.index;
-        gpuJson["name"] = gpu.name;
-        gpuJson["compute_usage"] = gpu.compute_usage;
-        gpuJson["mem_usage"] = gpu.mem_usage;
-        gpuJson["mem_used"] = gpu.mem_used;
-        gpuJson["mem_total"] = gpu.mem_total;
-        gpuJson["temperature"] = gpu.temperature;
-        gpuJson["power"] = gpu.power;
-        gpuJson["timestamp"] = std::chrono::duration_cast<std::chrono::milliseconds>(gpu.timestamp.time_since_epoch()).count();
-        j["gpu"].push_back(gpuJson);
-    }
-
-    // Container data   
-    j["container"]["container_count"] = container.container_count;
-    j["container"]["paused_count"] = container.paused_count;
-    j["container"]["running_count"] = container.running_count;
-    j["container"]["stopped_count"] = container.stopped_count;
-    j["container"]["timestamp"] = std::chrono::duration_cast<std::chrono::milliseconds>(container.timestamp.time_since_epoch()).count();
-    
-    // Sensor data
-    j["sensor"] = nlohmann::json::array();
-    for (const auto& sensor : sensors) {
-        nlohmann::json sensorJson;
-        sensorJson["sequence"] = sensor.sequence;
-        sensorJson["type"] = sensor.type;
-        sensorJson["name"] = sensor.name;
-        sensorJson["value"] = sensor.value;
-        sensorJson["alarm_type"] = sensor.alarm_type;
-        sensorJson["timestamp"] = std::chrono::duration_cast<std::chrono::milliseconds>(sensor.timestamp.time_since_epoch()).count();
-        j["sensor"].push_back(sensorJson);
-    }
-    
-    return j;
-}
-
 // 时间范围解析辅助函数
 std::chrono::seconds parseTimeRange(const std::string& time_range) {
     if (time_range.empty()) {
@@ -917,15 +742,11 @@ NodeResourceRangeData ResourceStorage::getNodeResourceRangeData(const std::strin
     rangeData.time_range = time_range;
     rangeData.metrics_types = metrics;
     
-    if (!m_initialized) {
-        logError("ResourceStorage not initialized");
-        return rangeData;
-    }
-    
     // 记录查询时间范围
-    rangeData.end_time = std::chrono::system_clock::now();
+    rangeData.end_time = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
     auto duration = parseTimeRange(time_range);
-    rangeData.start_time = rangeData.end_time - duration;
+    rangeData.start_time = rangeData.end_time - std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
     
     // 清理hostIp用于表名
     std::string cleanHostIp = cleanForTableName(hostIp);
@@ -1071,7 +892,7 @@ NodeResourceRangeData ResourceStorage::getNodeResourceRangeData(const std::strin
         // 为每个请求的指标类型创建时间序列数据
         for (const std::string& metric : metrics) {
             if (groupedResults.count(metric) && !groupedResults[metric].empty()) {
-                NodeResourceRangeData::TimeSeriesData timeSeriesData;
+                TimeSeriesData timeSeriesData;
                 timeSeriesData.metric_type = metric;
                 timeSeriesData.data_points = groupedResults[metric];
                 rangeData.time_series.push_back(timeSeriesData);

@@ -15,7 +15,7 @@
 struct QueryResult {
     std::map<std::string, std::string> labels;   // 标签
     std::map<std::string, double> metrics;       // 指标名称到值的映射，如 'usage_percent' -> 85.5
-    std::chrono::system_clock::time_point timestamp;
+    int64_t timestamp;  // 毫秒时间戳
 };
 
 // 节点资源数据结构
@@ -34,7 +34,7 @@ struct NodeResourceData {
         double voltage = 0.0;
         double current = 0.0;
         double power = 0.0;
-        std::chrono::system_clock::time_point timestamp;
+        int64_t timestamp = 0;  // 毫秒时间戳
         bool has_data = false;
     } cpu;
     
@@ -44,7 +44,7 @@ struct NodeResourceData {
         int64_t used = 0;
         int64_t free = 0;
         double usage_percent = 0.0;
-        std::chrono::system_clock::time_point timestamp;
+        int64_t timestamp = 0;  // 毫秒时间戳
         bool has_data = false;
     } memory;
     
@@ -56,7 +56,7 @@ struct NodeResourceData {
         int64_t used = 0;
         int64_t free = 0;
         double usage_percent = 0.0;
-        std::chrono::system_clock::time_point timestamp;
+        int64_t timestamp = 0;  // 毫秒时间戳
     };
     std::vector<DiskData> disks;
     
@@ -71,7 +71,7 @@ struct NodeResourceData {
         int tx_errors = 0;
         int64_t rx_rate = 0;
         int64_t tx_rate = 0;
-        std::chrono::system_clock::time_point timestamp;
+        int64_t timestamp = 0;  // 毫秒时间戳
     };
     std::vector<NetworkData> networks;
     
@@ -85,7 +85,7 @@ struct NodeResourceData {
         int64_t mem_total = 0;
         double temperature = 0.0;
         double power = 0.0;
-        std::chrono::system_clock::time_point timestamp;
+        int64_t timestamp = 0;  // 毫秒时间戳
     };
     std::vector<GpuData> gpus;
 
@@ -95,7 +95,7 @@ struct NodeResourceData {
         int paused_count = 0;
         int running_count = 0;
         int stopped_count = 0;
-        std::chrono::system_clock::time_point timestamp;
+        int64_t timestamp = 0;  // 毫秒时间戳
     } container;
 
     // Sensor数据
@@ -105,11 +105,17 @@ struct NodeResourceData {
         std::string name;
         double value = 0.0;
         int alarm_type = 0;
-        std::chrono::system_clock::time_point timestamp;
+        int64_t timestamp = 0;  // 毫秒时间戳
     };
     std::vector<SensorData> sensors;
     
     nlohmann::json to_json() const;
+};
+
+// 时序数据结构
+struct TimeSeriesData {
+    std::string metric_type;  // cpu, memory, disk, network, gpu
+    std::vector<QueryResult> data_points;
 };
 
 // 节点时间段资源数据结构
@@ -117,14 +123,9 @@ struct NodeResourceRangeData {
     std::string host_ip;
     std::string time_range;
     std::vector<std::string> metrics_types;
-    std::chrono::system_clock::time_point start_time;
-    std::chrono::system_clock::time_point end_time;
+    int64_t start_time = 0;  // 毫秒时间戳
+    int64_t end_time = 0;    // 毫秒时间戳
     
-    // 时序数据，每个指标类型对应一个数据序列
-    struct TimeSeriesData {
-        std::string metric_type;  // cpu, memory, disk, network, gpu
-        std::vector<QueryResult> data_points;
-    };
     std::vector<TimeSeriesData> time_series;
     
     nlohmann::json to_json() const;
@@ -136,11 +137,8 @@ public:
     ResourceStorage(std::shared_ptr<TDengineConnectionPool> connection_pool);
     ~ResourceStorage();
 
-    bool initialize();
-    void shutdown();
     bool createDatabase(const std::string& dbName);
     bool createResourceTable();
-    bool isInitialized() const { return m_initialized; }
     // 插入资源数据
     bool insertResourceData(const std::string& hostIp, const node::ResourceInfo& resourceData);
     
@@ -160,8 +158,6 @@ public:
 private:
     TDenginePoolConfig m_pool_config;
     std::shared_ptr<TDengineConnectionPool> m_connection_pool;
-    std::atomic<bool> m_initialized;
-    bool m_owns_connection_pool;  // 标记是否拥有连接池的所有权
 
     bool executeQuery(const std::string& sql);
     
