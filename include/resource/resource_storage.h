@@ -107,9 +107,7 @@ struct NodeResourceData {
         int alarm_type = 0;
         int64_t timestamp = 0;  // 毫秒时间戳
     };
-    std::vector<SensorData> sensors;
-    
-    nlohmann::json to_json() const;
+    std::vector<SensorData> sensors;    
 };
 
 // 时序数据结构

@@ -207,28 +207,6 @@ std::pair<bool, std::string> ResourceManager::validateRequest(const HistoricalMe
     return {true, ""};
 }
 
-nlohmann::json ResourceManager::formatResponse(const NodeMetricsRangeDataResult& response) {
-    json result;
-    
-    if (response.success) {
-        result = {
-            {"api_version", 1},
-            {"status", "success"},
-            {"data", {
-                {"historical_metrics", response.data.to_json()}
-            }}
-        };
-    } else {
-        result = {
-            {"api_version", 1},
-            {"status", "error"},
-            {"error", response.error_message}
-        };
-    }
-    
-    return result;
-}
-
 NodeMetricsData ResourceManager::buildNodeMetricsData(const std::shared_ptr<NodeData>& node) {
     std::string host_ip = node->host_ip;
     auto current_timestamp = std::chrono::duration_cast<std::chrono::seconds>(
@@ -499,58 +477,4 @@ std::shared_ptr<NodeData> ResourceManager::getNode(const std::string& host_ip) {
         LogManager::getLogger()->error("ResourceManager: Exception in getNode: {}", e.what());
         return nullptr;
     }
-}
-
-nlohmann::json ResourceManager::convertNodeToJson(const std::shared_ptr<NodeData>& node) {
-    // Calculate time since last heartbeat
-    auto now = std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::system_clock::now().time_since_epoch()).count();
-    auto duration = now - node->last_heartbeat;
-    
-    // 计算节点状态：如果updated_at与当前时间差距大于5秒，则判断为离线
-    std::string node_status = (duration <= 5000) ? "online" : "offline";  // 5000毫秒 = 5秒
-    
-    // 获取时间戳（秒）
-    auto heartbeat_timestamp = node->last_heartbeat / 1000;
-    
-    // 转换GPU信息
-    json gpu_array = json::array();
-    for (const auto& gpu : node->gpu) {
-        gpu_array.push_back({
-            {"index", gpu.index},
-            {"name", gpu.name}
-        });
-    }
-    
-    // 构建节点数据，包含所有字段
-    json node_json = {
-        {"board_type", node->board_type},
-        {"box_id", node->box_id},
-        {"box_type", node->box_type},
-        {"cpu_arch", node->cpu_arch},
-        {"cpu_id", node->cpu_id},
-        {"cpu_type", node->cpu_type},
-        {"created_at", heartbeat_timestamp}, // 使用心跳时间作为创建时间
-        {"host_ip", node->host_ip},
-        {"hostname", node->hostname},
-        {"id", node->box_id}, // 使用box_id作为id
-        {"os_type", node->os_type},
-        {"resource_type", node->resource_type},
-        {"service_port", node->service_port},
-        {"slot_id", node->slot_id},
-        {"srio_id", node->srio_id},
-        {"status", node_status},
-        {"updated_at", heartbeat_timestamp}, // 使用心跳时间作为更新时间
-        
-        // BMC相关信息
-        {"ipmb_address", node->ipmb_address},
-        {"module_type", node->module_type},
-        {"bmc_company", node->bmc_company},
-        {"bmc_version", node->bmc_version},
-        
-        // GPU信息
-        {"gpu", gpu_array}
-    };
-    
-    return node_json;
 }

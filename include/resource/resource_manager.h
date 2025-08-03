@@ -232,12 +232,6 @@ public:
 
     // 单个节点查询
     std::shared_ptr<NodeData> getNode(const std::string &host_ip);
-
-    // 将历史数据转换为JSON响应格式
-    nlohmann::json formatResponse(const NodeMetricsRangeDataResult &response);
-    
-    // 节点数据转换为JSON
-    nlohmann::json convertNodeToJson(const std::shared_ptr<NodeData> &node);
 };
 
 // JSON序列化支持
