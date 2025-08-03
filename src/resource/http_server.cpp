@@ -1697,7 +1697,6 @@ void HttpServer::handle_node_metrics(const httplib::Request &req, httplib::Respo
 
         if (paginated_result.success)
         {
-            // 构建与兼容模式一致的响应格式
             nlohmann::json json_data = paginated_result.data;
             nlohmann::json pagination_data = paginated_result.pagination;
             json response = {
@@ -1753,7 +1752,7 @@ void HttpServer::handle_node_historical_metrics(const httplib::Request &req, htt
         request.time_range = req.get_param_value("time_range");
         if (request.time_range.empty())
         {
-            request.time_range = "1h"; // 默认1小时
+            request.time_range = "10m"; // 默认1小时
         }
 
         // 解析metrics参数
@@ -1763,18 +1762,23 @@ void HttpServer::handle_node_historical_metrics(const httplib::Request &req, htt
         // 调用ResourceManager获取历史数据
         auto response_data = m_resource_manager->getHistoricalMetrics(request);
 
-        // 格式化响应
-        auto json_response = m_resource_manager->formatResponse(response_data);
-
         if (response_data.success)
         {
-            res.set_content(json_response.dump(2), "application/json");
+            json json_response = response_data.data.to_json();
+            json response_data_json = {
+                {"api_version", 1},
+                {"status", "success"},
+                {"data", {
+                    {"historical_metrics", json_response}
+                }}
+            };
+            res.set_content(response_data_json.dump(2), "application/json");
             res.status = 200;
         }
         else
         {
-            res.set_content(json_response.dump(2), "application/json");
-            res.status = 400;
+            res.set_content("{\"error\":\"Failed to retrieve historical metrics\"}", "application/json");
+            res.status = 500;
         }
     }
     catch (const std::exception &e)

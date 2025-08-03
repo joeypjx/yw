@@ -30,16 +30,30 @@ ResourceStorage::ResourceStorage(std::shared_ptr<TDengineConnectionPool> connect
 ResourceStorage::~ResourceStorage() {
 }
 
+// 初始化
 bool ResourceStorage::createDatabase(const std::string& dbName) {
+
+    TDengineConnectionGuard guard(m_connection_pool);
+    if (!guard.isValid()) {
+        logError("Failed to get database connection from pool");
+        return false;
+    }
     
+    TAOS* taos = guard->get();
     std::string query = "CREATE DATABASE IF NOT EXISTS " + dbName;
-    if (!executeQuery(query)) {
+    TAOS_RES* result = taos_query(taos, query.c_str());
+    if (taos_errno(result) != 0) {
+        logError("Failed to create database: " + std::string(taos_errstr(result)));
+        taos_free_result(result);
         return false;
     }
     
     // 切换到新创建的数据库
     query = "USE " + dbName;
-    if (!executeQuery(query)) {
+    result = taos_query(taos, query.c_str());
+    if (taos_errno(result) != 0) {
+        logError("Failed to use database: " + std::string(taos_errstr(result)));
+        taos_free_result(result);
         return false;
     }
     
@@ -159,29 +173,13 @@ bool ResourceStorage::createResourceTable() {
     return true;
 }
 
-bool ResourceStorage::executeQuery(const std::string& query) {
-    
-    TDengineConnectionGuard guard(m_connection_pool);
-    if (!guard.isValid()) {
-        logError("Failed to get database connection from pool");
-        return false;
-    }
-    
-    logDebug("Executing query: " + query);
-    
-    TAOS* taos = guard->get();
-    TAOS_RES* result = taos_query(taos, query.c_str());
-    if (taos_errno(result) != 0) {
-        logError("SQL execution failed: " + std::string(taos_errstr(result)));
-        logError("SQL: " + query);
-        taos_free_result(result);
-        return false;
-    }
-    
-    taos_free_result(result);
-    return true;
-}
-
+/*
+ * 插入资源数据
+ * 
+ * 参数：
+ * - hostIp: 主机IP地址
+ * - resourceData: 资源数据
+ */
 bool ResourceStorage::insertResourceData(const std::string& hostIp, const node::ResourceInfo& resourceData) {
 
     TDengineConnectionGuard guard(m_connection_pool);
@@ -358,6 +356,12 @@ bool ResourceStorage::insertResourceData(const std::string& hostIp, const node::
     return true;
 }
 
+/*
+ * 执行查询SQL
+ * 
+ * 参数：
+ * - sql: 查询SQL语句
+ */
 std::vector<QueryResult> ResourceStorage::executeQuerySQL(const std::string& sql) {
     std::vector<QueryResult> results;
     
@@ -1137,8 +1141,6 @@ nlohmann::json NodeResourceRangeData::to_json() const {
     
     return j;
 }
-
-
 
 // 日志辅助方法
 void ResourceStorage::logInfo(const std::string& message) const {

@@ -43,11 +43,11 @@ NodeMetricsRangeDataResult ResourceManager::getHistoricalMetrics(const Historica
         int cpu_id = 1;
         int slot_id = 0;
         
-        for (const auto& node_data : node_list.nodes) {
-            if (node_data.host_ip == request.host_ip) {
-                box_id = node_data.box_id;
-                cpu_id = node_data.cpu_id;
-                slot_id = node_data.slot_id;
+        for (const auto& node_data : node_list) {
+            if (node_data->host_ip == request.host_ip) {
+                box_id = node_data->box_id;
+                cpu_id = node_data->cpu_id;
+                slot_id = node_data->slot_id;
                 break;
             }
         }
@@ -356,7 +356,7 @@ NodeMetricsData ResourceManager::buildNodeMetricsData(const std::shared_ptr<Node
     }
 
     // 计算节点状态：如果updated_at与当前时间差距大于5秒，则判断为离线
-    auto node_updated_at = std::chrono::duration_cast<std::chrono::seconds>(node->last_heartbeat.time_since_epoch()).count();
+    auto node_updated_at = node->last_heartbeat / 1000;  // 转换为秒级时间戳
     auto time_diff = current_timestamp - node_updated_at;
     std::string node_status = (time_diff <= 5) ? "online" : "offline";
     
@@ -411,7 +411,7 @@ NodeMetricsDataListPagination ResourceManager::getPaginatedCurrentMetrics(int pa
     
     try {
         auto node_list = m_node_storage->getAllNodes();
-        response.pagination.total_count = node_list.nodes.size();
+        response.pagination.total_count = node_list.size();
         
         // 计算总页数
         response.pagination.total_pages = (response.pagination.total_count + page_size - 1) / page_size;
@@ -429,13 +429,12 @@ NodeMetricsDataListPagination ResourceManager::getPaginatedCurrentMetrics(int pa
         
         // 计算起始和结束索引
         int start_index = (page - 1) * page_size;
-        int end_index = std::min(start_index + page_size, static_cast<int>(node_list.nodes.size()));
+        int end_index = std::min(start_index + page_size, static_cast<int>(node_list.size()));
         
         std::vector<NodeMetricsData> nodes_metrics;
         
         for (int i = start_index; i < end_index; ++i) {
-            const auto& node_data = node_list.nodes[i];
-            auto node_ptr = std::make_shared<NodeData>(node_data);
+            const auto& node_ptr = node_list[i];
             NodeMetricsData node_metrics_data = buildNodeMetricsData(node_ptr);
             nodes_metrics.push_back(node_metrics_data);
         }
@@ -463,7 +462,11 @@ NodeDataList ResourceManager::getNodesList() {
     }
     
     try {
-        auto node_list = m_node_storage->getAllNodes();
+        auto node_list_ptr = m_node_storage->getAllNodes();
+        NodeDataList node_list;
+        for (const auto& node_ptr : node_list_ptr) {
+            node_list.nodes.push_back(*node_ptr);
+        }
         
         LogManager::getLogger()->debug("ResourceManager: Successfully retrieved {} nodes data", node_list.nodes.size());
         return node_list;
@@ -500,15 +503,15 @@ std::shared_ptr<NodeData> ResourceManager::getNode(const std::string& host_ip) {
 
 nlohmann::json ResourceManager::convertNodeToJson(const std::shared_ptr<NodeData>& node) {
     // Calculate time since last heartbeat
-    auto now = std::chrono::system_clock::now();
-    auto duration = std::chrono::duration_cast<std::chrono::seconds>(now - node->last_heartbeat);
+    auto now = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+    auto duration = now - node->last_heartbeat;
     
     // 计算节点状态：如果updated_at与当前时间差距大于5秒，则判断为离线
-    std::string node_status = (duration.count() <= 5) ? "online" : "offline";
+    std::string node_status = (duration <= 5000) ? "online" : "offline";  // 5000毫秒 = 5秒
     
     // 获取时间戳（秒）
-    auto heartbeat_timestamp = std::chrono::duration_cast<std::chrono::seconds>(
-        node->last_heartbeat.time_since_epoch()).count();
+    auto heartbeat_timestamp = node->last_heartbeat / 1000;
     
     // 转换GPU信息
     json gpu_array = json::array();

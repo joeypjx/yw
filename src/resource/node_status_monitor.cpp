@@ -53,11 +53,11 @@ void NodeStatusMonitor::checkNodeStatus() {
     }
 
     auto node_list = m_node_storage->getAllNodes();
-    auto now = std::chrono::system_clock::now();
+    auto now = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
 
-    for (const auto& node_data : node_list.nodes) {
-        auto node = std::make_shared<NodeData>(node_data);
-        auto time_since_heartbeat = std::chrono::duration_cast<std::chrono::seconds>(now - node->last_heartbeat);
+    for (const auto& node : node_list) {
+        auto time_since_heartbeat = (now - node->last_heartbeat) / 1000;  // 转换为秒
         
         // 使用节点IP作为告警指纹的一部分，确保每个节点的离线告警是唯一的
         std::map<std::string, std::string> labels = {
@@ -67,7 +67,7 @@ void NodeStatusMonitor::checkNodeStatus() {
         std::string fingerprint = m_alarm_manager->calculateFingerprint("NodeOffline", labels);
 
         // 先判断节点当前应该的状态
-        std::string expected_status = (time_since_heartbeat <= m_offline_threshold) ? "online" : "offline";
+        std::string expected_status = (time_since_heartbeat <= m_offline_threshold.count()) ? "online" : "offline";
         
         // 如果状态发生变化
         if (node->status != expected_status) {
@@ -75,7 +75,7 @@ void NodeStatusMonitor::checkNodeStatus() {
             
             if (expected_status == "offline" && node->status == "online") {
                 // 节点从在线变为离线，触发告警
-                LogManager::getLogger()->warn("Node '{}' is offline. Last heartbeat {} seconds ago.", node->host_ip, time_since_heartbeat.count());                
+                LogManager::getLogger()->warn("Node '{}' is offline. Last heartbeat {} seconds ago.", node->host_ip, time_since_heartbeat);                
                 
                 // 调用状态变化回调
                 notifyStatusChange(node->host_ip, old_status, expected_status);

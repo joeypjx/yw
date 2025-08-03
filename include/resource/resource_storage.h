@@ -133,12 +133,12 @@ struct NodeResourceRangeData {
 
 class ResourceStorage {
 public:
-    // 连接池注入构造函数 - 推荐使用
     ResourceStorage(std::shared_ptr<TDengineConnectionPool> connection_pool);
     ~ResourceStorage();
 
     bool createDatabase(const std::string& dbName);
     bool createResourceTable();
+
     // 插入资源数据
     bool insertResourceData(const std::string& hostIp, const node::ResourceInfo& resourceData);
     
@@ -153,19 +153,12 @@ public:
                                                    const std::string& time_range,
                                                    const std::vector<std::string>& metrics);
     
-
-
 private:
     TDenginePoolConfig m_pool_config;
     std::shared_ptr<TDengineConnectionPool> m_connection_pool;
-
-    bool executeQuery(const std::string& sql);
     
     // 日志辅助方法
     void logInfo(const std::string& message) const;
     void logError(const std::string& message) const;
     void logDebug(const std::string& message) const;
-    
-    // 批量插入优化方法
-    bool insertResourceDataBatch(const std::string& hostIp, const node::ResourceInfo& resourceData);
 };

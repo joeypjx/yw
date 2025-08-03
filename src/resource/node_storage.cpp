@@ -59,7 +59,8 @@ bool NodeStorage::storeBoxInfo(const node::BoxInfo& node_info) {
         node->gpu = gpu_vector;
         
         // 更新心跳时间
-        node->last_heartbeat = std::chrono::system_clock::now();
+        node->last_heartbeat = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count();
         
         // 存储或更新节点数据
         m_nodes[host_ip] = node;
@@ -135,7 +136,8 @@ bool NodeStorage::storeUDPInfo(const UdpInfo& udp_info) {
             node->bmc_version = bmc_version;
             
             // 更新心跳时间
-            node->last_heartbeat = std::chrono::system_clock::now();
+            node->last_heartbeat = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count();
             
             // 存储或更新节点数据
             m_nodes[host_ip] = node;
@@ -173,14 +175,14 @@ std::shared_ptr<NodeData> NodeStorage::getNodeData(const std::string& host_ip) {
     return nullptr;
 }
 
-NodeDataList NodeStorage::getAllNodes() {
+std::vector<std::shared_ptr<NodeData>> NodeStorage::getAllNodes() {
     std::lock_guard<std::mutex> lock(m_mutex);
     
-    NodeDataList node_list;
-    node_list.nodes.reserve(m_nodes.size());
+    std::vector<std::shared_ptr<NodeData>> node_list;
+    node_list.reserve(m_nodes.size());
     
     for (const auto& pair : m_nodes) {
-        node_list.nodes.push_back(*pair.second);
+        node_list.push_back(pair.second);
     }
     
     return node_list;
@@ -190,13 +192,14 @@ std::vector<std::shared_ptr<NodeData>> NodeStorage::getActiveNodes() {
     std::lock_guard<std::mutex> lock(m_mutex);
     
     std::vector<std::shared_ptr<NodeData>> active_nodes;
-    auto now = std::chrono::system_clock::now();
-    auto timeout_duration = std::chrono::seconds(10); // 10秒超时
+    auto now = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+    auto timeout_duration = 10000; // 10秒超时（毫秒）
     
     for (const auto& pair : m_nodes) {
         const auto& node = pair.second;
         
-        // 计算时间差
+        // 计算时间差（毫秒）
         auto time_diff = now - node->last_heartbeat;
         
         // 如果时间差小于等于10秒，则认为节点活跃
