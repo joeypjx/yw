@@ -433,20 +433,15 @@ NodeMetricsDataListPagination ResourceManager::getPaginatedCurrentMetrics(int pa
     return response;
 }
 
-NodeDataList ResourceManager::getNodesList() {
+std::vector<std::shared_ptr<NodeData>> ResourceManager::getNodesList() {
     if (!m_node_storage) {
         LogManager::getLogger()->error("ResourceManager: Node storage not available for nodes list request");
         return {};
     }
     
     try {
-        auto node_list_ptr = m_node_storage->getAllNodes();
-        NodeDataList node_list;
-        for (const auto& node_ptr : node_list_ptr) {
-            node_list.nodes.push_back(*node_ptr);
-        }
-        
-        LogManager::getLogger()->debug("ResourceManager: Successfully retrieved {} nodes data", node_list.nodes.size());
+        auto node_list = m_node_storage->getAllNodes();
+        LogManager::getLogger()->debug("ResourceManager: Successfully retrieved {} nodes data", node_list.size());
         return node_list;
         
     } catch (const std::exception& e) {

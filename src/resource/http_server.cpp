@@ -1649,10 +1649,13 @@ void HttpServer::handle_nodes_list(const httplib::Request &req, httplib::Respons
             // 使用ResourceManager获取节点列表数据
             auto node_list = m_resource_manager->getNodesList();
 
-            if (!node_list.nodes.empty())
+            if (!node_list.empty())
             {
                 // 直接使用NodeDataList的JSON序列化
-                json nodes_json = node_list.nodes;
+                json nodes_json = json::array();
+                for (const auto& node : node_list) {
+                    nodes_json.push_back(*node);
+                }
                 
                 // 构建符合要求的响应格式
                 json response = {
@@ -1665,7 +1668,7 @@ void HttpServer::handle_nodes_list(const httplib::Request &req, httplib::Respons
                 
                 res.set_content(response.dump(2), "application/json");
                 res.status = 200;
-                LogManager::getLogger()->debug("Successfully retrieved {} nodes list using ResourceManager", node_list.nodes.size());
+                LogManager::getLogger()->debug("Successfully retrieved {} nodes list using ResourceManager", node_list.size());
             }
             else
             {

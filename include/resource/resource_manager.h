@@ -8,20 +8,6 @@
 #include <vector>
 #include <memory>
 
-struct HistoricalMetricsRequest
-{
-    std::string host_ip;
-    std::string time_range;
-    std::vector<std::string> metrics;
-};
-
-struct NodeMetricsRangeDataResult
-{
-    bool success = false;
-    std::string error_message;
-    NodeResourceRangeData data;
-};
-
 // CPU指标结构
 struct CPUMetrics
 {
@@ -197,6 +183,21 @@ struct NodeMetricsDataListPagination
     Pagination pagination;
 };
 
+// 历史指标查询请求结构
+struct HistoricalMetricsRequest
+{
+    std::string host_ip;
+    std::string time_range;
+    std::vector<std::string> metrics;
+};
+
+struct NodeMetricsRangeDataResult
+{
+    bool success = false;
+    std::string error_message;
+    NodeResourceRangeData data;
+};
+
 class ResourceManager
 {
 private:
@@ -215,6 +216,15 @@ public:
                     std::shared_ptr<NodeStorage> node_storage,
                     std::shared_ptr<BMCStorage> bmc_storage);
 
+    // 节点列表查询
+    std::vector<std::shared_ptr<NodeData>> getNodesList();
+
+    // 单个节点查询
+    std::shared_ptr<NodeData> getNode(const std::string &host_ip);
+
+    // 分页当前指标查询
+    NodeMetricsDataListPagination getPaginatedCurrentMetrics(int page, int page_size);
+
     // 历史指标查询
     NodeMetricsRangeDataResult getHistoricalMetrics(const HistoricalMetricsRequest &request);
 
@@ -223,15 +233,6 @@ public:
 
     // 指标参数解析
     std::vector<std::string> parseMetricsParam(const std::string &metrics_param);
-
-    // 分页当前指标查询
-    NodeMetricsDataListPagination getPaginatedCurrentMetrics(int page, int page_size);
-
-    // 节点列表查询
-    NodeDataList getNodesList();
-
-    // 单个节点查询
-    std::shared_ptr<NodeData> getNode(const std::string &host_ip);
 };
 
 // JSON序列化支持

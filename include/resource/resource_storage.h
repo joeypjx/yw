@@ -112,7 +112,7 @@ struct NodeResourceData {
 
 // 时序数据结构
 struct TimeSeriesData {
-    std::string metric_type;  // cpu, memory, disk, network, gpu
+    std::string metric_type;  // cpu, memory, disk, network, gpu, sensor, container
     std::vector<QueryResult> data_points;
 };
 
@@ -134,6 +134,7 @@ public:
     ResourceStorage(std::shared_ptr<TDengineConnectionPool> connection_pool);
     ~ResourceStorage();
 
+    // 创建数据库
     bool createDatabase(const std::string& dbName);
     bool createResourceTable();
 

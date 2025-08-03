@@ -58,12 +58,6 @@ struct NodeData {
 
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(NodeData, box_id, slot_id, cpu_id, srio_id, host_ip, hostname, service_port, box_type, board_type, cpu_type, os_type, resource_type, cpu_arch, gpu, ipmb_address, module_type, bmc_company, bmc_version, status, last_heartbeat);
 
-struct NodeDataList {
-    std::vector<NodeData> nodes;
-};
-
-NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(NodeDataList, nodes);
-
 class NodeStorage {
 private:
     //m_nodes 共享指针
