@@ -336,7 +336,7 @@ NodeMetricsData ResourceManager::buildNodeMetricsData(const std::shared_ptr<Node
     // 计算节点状态：如果updated_at与当前时间差距大于5秒，则判断为离线
     auto node_updated_at = node->last_heartbeat / 1000;  // 转换为秒级时间戳
     auto time_diff = current_timestamp - node_updated_at;
-    std::string node_status = (time_diff <= 5) ? "online" : "offline";
+    std::string node_status = (time_diff <= 20) ? "online" : "offline";
     
     // 构建节点数据
     NodeMetricsData node_data;
