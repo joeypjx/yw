@@ -134,15 +134,15 @@ struct SensorMetrics
 struct NodeMetricsData
 {
     std::string board_type;
-    std::string box_id;
+    int box_id;
     std::string box_type;
     std::string cpu_arch;
-    std::string cpu_id;
+    int cpu_id;
     std::string cpu_type;
     long long updated_at = 0;
     std::string host_ip;
     std::string hostname;
-    std::string id;
+    int id;
     CPUMetrics latest_cpu_metrics;
     DiskMetrics latest_disk_metrics;
     ContainerMetrics latest_container_metrics;
