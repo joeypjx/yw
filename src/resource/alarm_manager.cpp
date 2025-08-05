@@ -563,6 +563,9 @@ std::string AlarmManager::formatTimestamp(const std::chrono::system_clock::time_
     auto time_t = std::chrono::system_clock::to_time_t(tp);
     auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(tp.time_since_epoch()) % 1000;
     
+    // 添加8小时偏移量（中国时区 UTC+8）
+    time_t += 8 * 3600;
+    
     std::ostringstream oss;
     oss << std::put_time(std::gmtime(&time_t), "%Y-%m-%d %H:%M:%S");
     

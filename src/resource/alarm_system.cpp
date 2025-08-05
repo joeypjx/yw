@@ -32,12 +32,14 @@ AlarmSystem* AlarmSystem::s_instance = nullptr;
 // 辅助函数：格式化时间戳为ISO 8601字符串
 static std::string formatTimestamp(const std::chrono::system_clock::time_point& tp) {
     auto time_t = std::chrono::system_clock::to_time_t(tp);
+    
+    // 添加8小时偏移量（中国时区 UTC+8）
+    time_t += 8 * 3600;
+    
     std::ostringstream oss;
     oss << std::put_time(std::gmtime(&time_t), "%Y-%m-%d %H:%M:%S");
     return oss.str();
 }
-
-
 
 // AlarmSystem 类的实现
 
