@@ -900,6 +900,11 @@ NodeResourceRangeData ResourceStorage::getNodeResourceRangeData(const std::strin
                 timeSeriesData.metric_type = metric;
                 timeSeriesData.data_points = groupedResults[metric];
                 rangeData.time_series.push_back(timeSeriesData);
+            } else {
+                TimeSeriesData timeSeriesData;
+                timeSeriesData.metric_type = metric;
+                timeSeriesData.data_points = std::vector<QueryResult>();
+                rangeData.time_series.push_back(timeSeriesData);
             }
         }
         
