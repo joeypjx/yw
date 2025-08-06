@@ -127,7 +127,7 @@ MySQLConnectionPool::MySQLConnectionPool(const MySQLPoolConfig& config)
 }
 
 MySQLConnectionPool::~MySQLConnectionPool() {
-    shutdown();
+    shutdownForce();
 }
 
 bool MySQLConnectionPool::initialize() {
@@ -173,6 +173,51 @@ bool MySQLConnectionPool::initialize() {
     return true;
 }
 
+void MySQLConnectionPool::setShutdownTimeout(int timeout_ms) {
+    shutdown_timeout_ms_ = timeout_ms;
+    logInfo("设置关闭超时时间为 " + std::to_string(timeout_ms) + " 毫秒");
+}
+
+void MySQLConnectionPool::shutdownFast() {
+    std::unique_lock<std::mutex> lock(pool_mutex_);
+    
+    if (shutdown_) {
+        return;
+    }
+    
+    logInfo("正在快速关闭MySQL连接池...");
+    shutdown_ = true;
+    
+    // 停止健康检查线程
+    stop_health_check_ = true;
+    lock.unlock();
+    
+    if (health_check_thread_.joinable()) {
+        health_check_thread_.join();
+    }
+    
+    lock.lock();
+    
+    // 通知所有等待的线程
+    pool_condition_.notify_all();
+    
+    // 不等待活跃连接，直接清理
+    logInfo("跳过等待活跃连接，直接清理连接池");
+    
+    // 清理所有连接
+    while (!available_connections_.empty()) {
+        available_connections_.pop();
+    }
+    
+    total_connections_ = 0;
+    initialized_ = false;
+    
+    // 清理MySQL库
+    mysql_library_end();
+    
+    logInfo("MySQL连接池已快速关闭");
+}
+
 void MySQLConnectionPool::shutdown() {
     std::unique_lock<std::mutex> lock(pool_mutex_);
     
@@ -196,10 +241,19 @@ void MySQLConnectionPool::shutdown() {
     // 通知所有等待的线程
     pool_condition_.notify_all();
     
-    // 等待所有活跃连接返回
+    // 等待所有活跃连接返回，但设置超时
+    auto start_wait = std::chrono::steady_clock::now();
     while (active_connections_ > 0) {
-        logDebug("等待 " + std::to_string(active_connections_.load()) + " 个活跃连接返回...");
-        pool_condition_.wait_for(lock, std::chrono::seconds(1));
+        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - start_wait).count();
+        
+        if (elapsed >= shutdown_timeout_ms_) {
+            logWarning("关闭超时，仍有 " + std::to_string(active_connections_.load()) + " 个活跃连接未返回");
+            break;
+        }
+        
+        logDebug("等待 " + std::to_string(active_connections_.load()) + " 个活跃连接返回... (已等待 " + std::to_string(elapsed) + "ms)");
+        pool_condition_.wait_for(lock, std::chrono::milliseconds(100));  // 减少等待间隔到100ms
     }
     
     // 清理所有连接
@@ -214,6 +268,44 @@ void MySQLConnectionPool::shutdown() {
     mysql_library_end();
     
     logInfo("MySQL连接池已关闭");
+}
+
+void MySQLConnectionPool::shutdownForce() {
+    std::unique_lock<std::mutex> lock(pool_mutex_);
+    
+    if (shutdown_) {
+        return;
+    }
+    
+    logInfo("正在强制关闭MySQL连接池...");
+    shutdown_ = true;
+    
+    // 立即停止健康检查线程（不等待）
+    stop_health_check_ = true;
+    lock.unlock();
+    
+    // 强制分离健康检查线程
+    if (health_check_thread_.joinable()) {
+        health_check_thread_.detach();
+    }
+    
+    lock.lock();
+    
+    // 通知所有等待的线程
+    pool_condition_.notify_all();
+    
+    // 立即清理所有连接
+    while (!available_connections_.empty()) {
+        available_connections_.pop();
+    }
+    
+    total_connections_ = 0;
+    initialized_ = false;
+    
+    // 清理MySQL库
+    mysql_library_end();
+    
+    logInfo("MySQL连接池已强制关闭");
 }
 
 std::unique_ptr<MySQLConnection> MySQLConnectionPool::getConnection(int timeout_ms) {
@@ -591,6 +683,16 @@ void MySQLConnectionPool::logDebug(const std::string& message) const {
     // 同时使用项目的日志系统
     if (LogManager::getLogger()) {
         LogManager::getLogger()->debug("[MySQL连接池] {}", message);
+    }
+}
+
+void MySQLConnectionPool::logWarning(const std::string& message) const {
+    if (log_callback_) {
+        log_callback_("WARNING", message);
+    }
+    // 同时使用项目的日志系统
+    if (LogManager::getLogger()) {
+        LogManager::getLogger()->warn("[MySQL连接池] {}", message);
     }
 }
 

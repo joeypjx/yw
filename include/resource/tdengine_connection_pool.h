@@ -134,6 +134,18 @@ public:
     // 日志回调设置
     void setLogCallback(std::function<void(const std::string&, const std::string&)> callback);
 
+    // 快速关闭连接池（不等待活跃连接）
+    void shutdownFast();
+    
+    // 强制关闭连接池（立即关闭，可能有风险）
+    void shutdownForce();
+    
+    // 设置关闭超时时间（毫秒）
+    void setShutdownTimeout(int timeout_ms);
+    
+    // 获取关闭超时时间
+    int getShutdownTimeout() const { return shutdown_timeout_ms_; }
+
 private:
     TDenginePoolConfig config_;
     mutable std::mutex pool_mutex_;
@@ -161,6 +173,9 @@ private:
     // 日志回调
     std::function<void(const std::string&, const std::string&)> log_callback_;
     
+    // 关闭超时时间（毫秒）
+    int shutdown_timeout_ms_ = 5000;  // 默认5秒
+    
     // 私有方法
     std::unique_ptr<TDengineConnection> createConnection();
     bool testConnection(TAOS* taos);
@@ -172,6 +187,7 @@ private:
     void logInfo(const std::string& message) const;
     void logError(const std::string& message) const;
     void logDebug(const std::string& message) const;
+    void logWarning(const std::string& message) const;
 };
 
 //=============================================================================
