@@ -1345,6 +1345,17 @@ void HttpServer::handle_resource(const httplib::Request &req, httplib::Response 
             return;
         }
 
+        if (data.contains("component"))
+        {
+            std::vector<node::ComponentInfo> component_info = data["component"].get<std::vector<node::ComponentInfo>>();
+            if (!m_node_storage->storeComponentInfo(data["host_ip"].get<std::string>(), component_info))
+            {
+                res.set_content("{\"error\":\"Failed to store component info\"}", "application/json");
+                res.status = 500;
+                LogManager::getLogger()->error("Failed to store component info for host: {}", data["host_ip"].get<std::string>());
+            }
+        }
+
         // 将JSON数据反序列化为ResourceInfo结构体
         node::ResourceInfo resource_info = data.get<node::ResourceInfo>();
 

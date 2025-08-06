@@ -13,6 +13,23 @@
 #include "utils.h"
 #include "json.hpp"
 
+// Component信息结构体
+struct ComponentInfo {
+    std::string instance_id;
+    std::string uuid;
+    int index;
+    std::string name;
+    std::string id;
+    std::string state;
+    double load;
+    double mem_used;
+    double mem_limit;
+    double tx;
+    double rx;
+};
+
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(ComponentInfo, instance_id, uuid, index, name, id, state, load, mem_used, mem_limit, tx, rx);
+
 // GPU信息结构体
 struct GpuInfo {
     int index;
@@ -40,6 +57,9 @@ struct NodeData {
     std::string resource_type;
     std::string cpu_arch;
     std::vector<GpuInfo> gpu;
+
+    // 组件信息
+    std::vector<node::ComponentInfo> component;
     
     // BMC相关信息
     int ipmb_address;
@@ -56,7 +76,7 @@ struct NodeData {
                  ipmb_address(0), module_type(0), bmc_company(0) {}
 };
 
-NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(NodeData, box_id, slot_id, cpu_id, srio_id, host_ip, hostname, service_port, box_type, board_type, cpu_type, os_type, resource_type, cpu_arch, gpu, ipmb_address, module_type, bmc_company, bmc_version, status, last_heartbeat);
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(NodeData, box_id, slot_id, cpu_id, srio_id, host_ip, hostname, service_port, box_type, board_type, cpu_type, os_type, resource_type, cpu_arch, gpu, component, ipmb_address, module_type, bmc_company, bmc_version, status, last_heartbeat);
 
 class NodeStorage {
 private:
@@ -73,6 +93,9 @@ public:
     
     // 存储UDP信息
     bool storeUDPInfo(const UdpInfo& udp_info);
+
+    // 存储组件信息
+    bool storeComponentInfo(const std::string& host_ip, const std::vector<node::ComponentInfo>& component_info);
     
     // 获取节点数据
     std::shared_ptr<NodeData> getNodeData(const std::string& host_ip);

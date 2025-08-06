@@ -164,6 +164,17 @@ bool NodeStorage::storeUDPInfo(const UdpInfo& udp_info) {
     }
 }
 
+bool NodeStorage::storeComponentInfo(const std::string& host_ip, const std::vector<node::ComponentInfo>& component_info) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    
+    auto it = m_nodes.find(host_ip);
+    if (it != m_nodes.end()) {
+        it->second->component = component_info;
+        return true;
+    }
+    return false;
+}
+
 std::shared_ptr<NodeData> NodeStorage::getNodeData(const std::string& host_ip) {
     std::lock_guard<std::mutex> lock(m_mutex);
     
