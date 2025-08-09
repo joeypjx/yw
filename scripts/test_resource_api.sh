@@ -18,6 +18,14 @@ CYCLE_DURATION=300    # Total cycle duration in seconds (5 minutes)
 HOST_IP="192.168.1.100"
 HOSTNAME="test-node-$(date +%s)"
 
+# Stable component identifiers for consistent monitoring across requests
+INSTANCE_BASE="test-$(date +%s)"
+COMP1_INSTANCE_ID="${INSTANCE_BASE}-1"
+COMP2_INSTANCE_ID="${INSTANCE_BASE}-2"
+UUID_BASE="uuid-$(date +%s)"
+COMP1_UUID="${UUID_BASE}-1"
+COMP2_UUID="${UUID_BASE}-2"
+
 echo "========================================================"
 echo "Resource API Test Script"
 echo "========================================================"
@@ -69,6 +77,19 @@ is_high_load_period() {
         return 0  # true
     else
         return 1  # false
+    fi
+}
+
+# Function to determine if component 1 is in a failure window
+# Simulate a sustained FAILED period (e.g., from 120s to 200s in each cycle)
+is_component_failure_period() {
+    local current_time=$(date +%s)
+    local elapsed=$((current_time - start_time))
+    local cycle_pos=$((elapsed % CYCLE_DURATION))
+    if [ $cycle_pos -ge 120 ] && [ $cycle_pos -lt 200 ]; then
+        return 0  # true -> FAILED
+    else
+        return 1  # false -> non-FAILED
     fi
 }
 
@@ -333,15 +354,25 @@ generate_component_data() {
     fi
     
     mem_used=$((mem_limit * mem_usage_factor / 100))
-    instance_id="test-$(date +%s)-$(random_range 1000 9999)"
-    uuid="uuid-$(date +%s)-$(random_range 100000 999999)"
+    # Use stable IDs for consistent component tracking
+    instance_id="$COMP1_INSTANCE_ID"
+    uuid="$COMP1_UUID"
     container_id="$(date +%s | md5sum | cut -c1-32)"
     
     # Second container values
     cpu_load2=$((cpu_load / 2))
     mem_used2=$((mem_used / 3))
     mem_limit2=$((mem_limit / 2))
+    instance_id2="$COMP2_INSTANCE_ID"
+    uuid2="$COMP2_UUID"
     container_id2="$(echo "${container_id}2" | md5sum | cut -c1-32)"
+
+    # Determine component states with simulated failure window for component 1
+    state1="RUNNING"
+    if is_component_failure_period; then
+        state1="FAILED"
+    fi
+    state2="RUNNING"
     
     cat <<EOF
         "component": [
@@ -353,7 +384,7 @@ generate_component_data() {
                     "name": "nginx:latest",
                     "id": "$container_id"
                 },
-                "state": "RUNNING",
+                "state": "$state1",
                 "resource": {
                     "cpu": {
                         "load": $cpu_load
@@ -369,14 +400,14 @@ generate_component_data() {
                 }
             },
             {
-                "instance_id": "$instance_id-2",
-                "uuid": "$uuid-2",
+                "instance_id": "$instance_id2",
+                "uuid": "$uuid2",
                 "index": 2,
                 "config": {
                     "name": "redis:alpine",
                     "id": "$container_id2"
                 },
-                "state": "RUNNING",
+                "state": "$state2",
                 "resource": {
                     "cpu": {
                         "load": $cpu_load2

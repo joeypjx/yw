@@ -1,5 +1,7 @@
 #include "component_status_monitor.h"
 #include "log_manager.h"
+#include "alarm_manager.h"           // 实现文件包含，避免头文件传播依赖
+#include "alarm_rule_engine.h"       // 为 AlarmEvent 提供类型定义
 #include <sstream>
 #include <algorithm>
 
@@ -75,10 +77,8 @@ void ComponentStatusMonitor::checkComponentStatus() {
         return;
     }
 
-    auto node_list = m_node_storage->getAllNodes();
-    auto now = std::chrono::system_clock::now();
-    
-    std::lock_guard<std::mutex> history_lock(m_history_mutex);
+    auto node_list = m_node_storage->getAllNodesReadonly();
+    auto now = std::chrono::steady_clock::now();
     
     for (const auto& node : node_list) {
         // 检查节点的组件状态
@@ -88,116 +88,50 @@ void ComponentStatusMonitor::checkComponentStatus() {
                                                           component.uuid, 
                                                           component.index);
             
-            auto history_it = m_component_history.find(component_key);
+            // 读取与更新历史需要最小化持锁
             std::string current_state = component.state;
-            
-            if (history_it == m_component_history.end()) {
-                // 新组件，记录初始状态
-                ComponentStateHistory history;
-                history.state = current_state;
-                history.last_update = now;
-                history.alarm_triggered = false;
-                m_component_history[component_key] = history;
-                
-                LogManager::getLogger()->debug("New component detected: {} (state: {})", component_key, current_state);
-                continue;
-            }
-            
-            auto& history = history_it->second;
-            std::string old_state = history.state;
-            
-            // 检查状态是否发生变化
-            if (old_state != current_state) {
-                LogManager::getLogger()->info("Component state changed: {} ({} -> {})", 
-                                            component_key, old_state, current_state);
-                
-                // 通知状态变化
-                notifyStatusChange(node->host_ip, component.instance_id, component.uuid, 
-                                 component.index, old_state, current_state);
-                
-                // 更新历史记录
-                history.state = current_state;
-                history.last_update = now;
-                history.alarm_triggered = false;  // 重置告警状态
-            }
-            
-            // 检查FAILED状态是否需要触发告警
-            if (current_state == "FAILED" && !history.alarm_triggered) {
-                auto time_since_failed = std::chrono::duration_cast<std::chrono::seconds>(
-                    now - history.last_update).count();
-                
-                if (time_since_failed >= m_failed_threshold.count()) {
-                    // 触发FAILED状态告警
-                    std::map<std::string, std::string> labels = {
-                        {"host_ip", node->host_ip},
-                        {"instance_id", component.instance_id},
-                        {"uuid", component.uuid},
-                        {"index", std::to_string(component.index)},
-                        {"component_name", component.name},
-                        {"component_id", component.id}
-                    };
-                    
-                    std::string fingerprint = m_alarm_manager->calculateFingerprint("ComponentFailed", labels);
-                    
-                    // 创建告警事件
-                    AlarmEventRecord event;
-                    event.fingerprint = fingerprint;
-                    event.status = "firing";
-                    event.labels_json = nlohmann::json(labels).dump();
-                    
-                    std::map<std::string, std::string> annotations = {
-                        {"summary", "Component " + component.name + " is in FAILED state"},
-                        {"description", "Component " + component.name + " (ID: " + component.id + 
-                         ") on host " + node->host_ip + " has been in FAILED state for " + 
-                         std::to_string(time_since_failed) + " seconds"},
-                        {"severity", "critical"}
-                    };
-                    event.annotations_json = nlohmann::json(annotations).dump();
-                    
-                    event.starts_at = std::chrono::duration_cast<std::chrono::seconds>(
-                        now.time_since_epoch()).count();
-                    
-                    // 添加到告警管理器
-                    m_alarm_manager->addAlarmEvent(event);
-                    
-                    LogManager::getLogger()->warn("Component FAILED alarm triggered: {} (failed for {} seconds)", 
-                                                component_key, time_since_failed);
-                    
-                    // 标记已触发告警
-                    history.alarm_triggered = true;
+            bool should_notify_change = false;
+            std::string old_state;
+            // 仅用于判断与触发回调，不在此处写数据库
+            {
+                std::lock_guard<std::mutex> history_lock(m_history_mutex);
+                auto it = m_component_history.find(component_key);
+                if (it == m_component_history.end()) {
+                    ComponentStateHistory hist{current_state, now, false};
+                    m_component_history.emplace(component_key, hist);
+                    LogManager::getLogger()->debug("New component detected: {} (state: {})", component_key, current_state);
+                } else {
+                    auto& hist = it->second;
+                    old_state = hist.state;
+                    if (old_state != current_state) {
+                        should_notify_change = true;
+                        // 更新历史
+                        hist.state = current_state;
+                        hist.last_update = now;
+                        hist.alarm_triggered = (current_state == "FAILED");
+                    }
                 }
-            } else if (current_state != "FAILED" && history.alarm_triggered) {
-                // 如果状态从FAILED恢复，解决告警
-                std::map<std::string, std::string> labels = {
-                    {"host_ip", node->host_ip},
-                    {"instance_id", component.instance_id},
-                    {"uuid", component.uuid},
-                    {"index", std::to_string(component.index)},
-                    {"component_name", component.name},
-                    {"component_id", component.id}
-                };
-                
-                std::string fingerprint = m_alarm_manager->calculateFingerprint("ComponentFailed", labels);
-                
-                // 解决告警
-                m_alarm_manager->resolveAlarmEvent(fingerprint);
-                
-                LogManager::getLogger()->info("Component FAILED alarm resolved: {} (state: {})", 
-                                            component_key, current_state);
-                
-                // 重置告警状态
-                history.alarm_triggered = false;
             }
+
+            if (should_notify_change) {
+                LogManager::getLogger()->debug("Component state changed: {} ({} -> {})", component_key, old_state, current_state);
+                notifyStatusChange(node->host_ip, component.instance_id, component.uuid, component.index, old_state, current_state);
+            }
+
+            // DB写入逻辑迁移到上层回调，由AlarmSystem处理
         }
     }
     
     // 清理过期的历史记录（超过1小时没有更新的记录）
-    auto one_hour_ago = now - std::chrono::hours(1);
-    for (auto it = m_component_history.begin(); it != m_component_history.end();) {
-        if (it->second.last_update < one_hour_ago) {
-            it = m_component_history.erase(it);
-        } else {
-            ++it;
+    {
+        std::lock_guard<std::mutex> history_lock(m_history_mutex);
+        auto one_hour_ago = now - std::chrono::hours(1);
+        for (auto it = m_component_history.begin(); it != m_component_history.end();) {
+            if (it->second.last_update < one_hour_ago) {
+                it = m_component_history.erase(it);
+            } else {
+                ++it;
+            }
         }
     }
 }
@@ -208,28 +142,19 @@ void ComponentStatusMonitor::notifyStatusChange(const std::string& host_ip,
                                               int index,
                                               const std::string& old_state, 
                                               const std::string& new_state) {
-    std::lock_guard<std::mutex> lock(m_callback_mutex);
-    
-    if (m_status_change_callback) {
-        try {
-            // 在单独的线程中异步调用回调，避免阻塞监控线程
-            std::thread callback_thread([this, host_ip, instance_id, uuid, index, old_state, new_state]() {
-                try {
-                    m_status_change_callback(host_ip, instance_id, uuid, index, old_state, new_state);
-                } catch (const std::exception& e) {
-                    LogManager::getLogger()->error("Exception in ComponentStatusMonitor callback: {}", e.what());
-                } catch (...) {
-                    LogManager::getLogger()->error("Unknown exception in ComponentStatusMonitor callback");
-                }
-            });
-            
-            // 分离线程，让其在后台运行
-            callback_thread.detach();
-            
-            LogManager::getLogger()->debug("ComponentStatusMonitor callback invoked for component {}:{}:{}:{} ({}->{})", 
-                                         host_ip, instance_id, uuid, index, old_state, new_state);
-        } catch (const std::exception& e) {
-            LogManager::getLogger()->error("Failed to invoke ComponentStatusMonitor callback: {}", e.what());
-        }
+    ComponentStatusChangeCallback cb;
+    {
+        std::lock_guard<std::mutex> lock(m_callback_mutex);
+        cb = m_status_change_callback;
+    }
+    if (!cb) return;
+    try {
+        cb(host_ip, instance_id, uuid, index, old_state, new_state);
+        LogManager::getLogger()->debug("ComponentStatusMonitor callback invoked for component {}:{}:{}:{} ({}->{})", 
+                                       host_ip, instance_id, uuid, index, old_state, new_state);
+    } catch (const std::exception& e) {
+        LogManager::getLogger()->error("Exception in ComponentStatusMonitor callback: {}", e.what());
+    } catch (...) {
+        LogManager::getLogger()->error("Unknown exception in ComponentStatusMonitor callback");
     }
 } 

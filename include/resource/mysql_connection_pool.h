@@ -175,6 +175,9 @@ public:
     // 获取关闭超时时间
     int getShutdownTimeout() const { return shutdown_timeout_ms_; }
 
+    // 获取配置
+    const MySQLPoolConfig& getConfig() const { return config_; }
+
 private:
     MySQLPoolConfig config_;
     

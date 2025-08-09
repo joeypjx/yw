@@ -20,31 +20,11 @@
 
 // 连接池注入构造函数 - 推荐使用
 AlarmManager::AlarmManager(std::shared_ptr<MySQLConnectionPool> connection_pool)
-    : m_connection_pool(connection_pool), m_initialized(false), m_owns_connection_pool(false) {
+    : m_connection_pool(connection_pool), m_initialized(false) {
     if (!m_connection_pool) {
         logError("Injected connection pool is null");
     }
 }
-
-// // 新的连接池构造函数
-// AlarmManager::AlarmManager(const MySQLPoolConfig& pool_config)
-//     : m_pool_config(pool_config), m_initialized(false), m_owns_connection_pool(true) {
-//     m_connection_pool = std::make_shared<MySQLConnectionPool>(m_pool_config);
-// }
-
-// // 兼容性构造函数 - 将旧参数转换为连接池配置
-// AlarmManager::AlarmManager(const std::string& host, int port, const std::string& user,
-//                            const std::string& password, const std::string& database)
-//     : m_initialized(false), m_owns_connection_pool(true) {
-//     m_pool_config = createDefaultPoolConfig();
-//     m_pool_config.host = host;
-//     m_pool_config.port = port;
-//     m_pool_config.user = user;
-//     m_pool_config.password = password;
-//     m_pool_config.database = database;
-    
-//     m_connection_pool = std::make_shared<MySQLConnectionPool>(m_pool_config);
-// }
 
 AlarmManager::~AlarmManager() {
     shutdown();
@@ -61,12 +41,9 @@ bool AlarmManager::initialize() {
         return false;
     }
     
-    // 只有当我们拥有连接池时才需要初始化它
-    if (m_owns_connection_pool) {
-        if (!m_connection_pool->initialize()) {
-            logError("Failed to initialize connection pool");
-            return false;
-        }
+    if (!m_connection_pool->initialize()) {
+        logError("Failed to initialize connection pool");
+        return false;
     }
     
     m_initialized = true;
@@ -79,10 +56,7 @@ void AlarmManager::shutdown() {
         return;
     }
     
-    // 只有当我们拥有连接池时才关闭它
-    if (m_connection_pool && m_owns_connection_pool) {
-        m_connection_pool->shutdown();
-    }
+    m_connection_pool->shutdown();
     
     m_initialized = false;
     logInfo("AlarmManager shutdown completed");
@@ -94,16 +68,15 @@ bool AlarmManager::createDatabase() {
         return false;
     }
     
-    std::string query = "CREATE DATABASE IF NOT EXISTS " + m_pool_config.database + 
+    std::string query = "CREATE DATABASE IF NOT EXISTS " + m_connection_pool->getConfig().database + 
                        " CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci";
-    
     if (!executeQuery(query)) {
-        logError("Failed to create database: " + m_pool_config.database);
+        logError("Failed to create database: " + m_connection_pool->getConfig().database);
         return false;
     }
     
     // 注意: 数据库选择已经在连接池连接时完成
-    logInfo("Database created: " + m_pool_config.database);
+    logInfo("Database created: " + m_connection_pool->getConfig().database);
     return true;
 }
 
@@ -708,57 +681,6 @@ bool AlarmManager::executeQuery(const std::string& query) {
     return true;
 }
 
-// 旧 executeSelectQuery 已废弃（已改为PreparedStatement路径）
-
-// std::string AlarmManager::escapeString(const std::string& str) {
-//     if (!m_initialized) {
-//         // 如果未初始化，返回简单转义的字符串
-//         std::string escaped = str;
-//         size_t pos = 0;
-//         while ((pos = escaped.find("'", pos)) != std::string::npos) {
-//             escaped.replace(pos, 1, "\\'");
-//             pos += 2;
-//         }
-//         return escaped;
-//     }
-    
-//     MySQLConnectionGuard guard(m_connection_pool);
-//     if (!guard.isValid()) {
-//         // 如果无法获取连接，使用简单转义
-//         std::string escaped = str;
-//         size_t pos = 0;
-//         while ((pos = escaped.find("'", pos)) != std::string::npos) {
-//             escaped.replace(pos, 1, "\\'");
-//             pos += 2;
-//         }
-//         return escaped;
-//     }
-    
-//     return escapeStringWithConnection(str, guard.get());
-// }
-
-// std::string AlarmManager::escapeStringWithConnection(const std::string& str, MySQLConnection* connection) {
-//     if (!connection || !connection->get()) {
-//         // 如果没有提供连接，返回简单转义的字符串
-//         std::string escaped = str;
-//         size_t pos = 0;
-//         while ((pos = escaped.find("'", pos)) != std::string::npos) {
-//             escaped.replace(pos, 1, "\\'");
-//             pos += 2;
-//         }
-//         return escaped;
-//     }
-    
-//     MYSQL* mysql = connection->get();
-//     char* escaped = new char[str.length() * 2 + 1];
-//     mysql_real_escape_string(mysql, escaped, str.c_str(), str.length());
-    
-//     std::string result(escaped);
-//     delete[] escaped;
-    
-//     return result;
-// }
-
 std::string AlarmManager::generateEventId() {
     uuid_t uuid;
     uuid_generate(uuid);
@@ -768,60 +690,6 @@ std::string AlarmManager::generateEventId() {
     
     return std::string(uuid_str);
 }
-
-// 新增的连接池相关方法
-// MySQLConnectionPool::PoolStats AlarmManager::getConnectionPoolStats() const {
-//     if (!m_connection_pool) {
-//         return MySQLConnectionPool::PoolStats{};
-//     }
-//     return m_connection_pool->getStats();
-// }
-
-// void AlarmManager::updateConnectionPoolConfig(const MySQLPoolConfig& config) {
-//     m_pool_config = config;
-//     // 注意：实际应用中，这里可能需要重新创建连接池
-//     logInfo("Connection pool configuration updated");
-// }
-
-// MySQLPoolConfig AlarmManager::createDefaultPoolConfig() const {
-//     MySQLPoolConfig config;
-//     config.host = "localhost";
-//     config.port = 3306;
-//     config.user = "root";
-//     config.password = "";
-//     config.database = "";
-//     config.charset = "utf8mb4";
-    
-//     // 连接池配置
-//     config.min_connections = 3;
-//     config.max_connections = 10;
-//     config.initial_connections = 5;
-    
-//     // 超时配置
-//     config.connection_timeout = 30;
-//     config.idle_timeout = 600;      // 10分钟
-//     config.max_lifetime = 3600;     // 1小时
-//     config.acquire_timeout = 10;
-    
-//     // 健康检查配置
-//     config.health_check_interval = 60;
-//     config.health_check_query = "SELECT 1";
-    
-//     return config;
-// }
-
-// std::string AlarmManager::getCurrentTimestamp() {
-//     auto now = std::chrono::system_clock::now();
-//     return formatTimestamp(now);
-// }
-
-// std::string AlarmManager::formatTimestamp(const std::chrono::system_clock::time_point& tp) {
-//     // 输出UTC时间，避免手工时区偏移
-//     auto time_t = std::chrono::system_clock::to_time_t(tp);
-//     std::ostringstream oss;
-//     oss << std::put_time(std::gmtime(&time_t), "%Y-%m-%d %H:%M:%S");
-//     return oss.str();
-// }
 
 void AlarmManager::logInfo(const std::string& message) {
     LogManager::getLogger()->info("AlarmManager: {}", message);
@@ -848,12 +716,6 @@ std::string AlarmManager::calculateFingerprint(const std::string& alert_name, co
     
     return fingerprint.str();
 }
-
-// 旧API createOrUpdateAlarm/resolveAlarm 已由直接提交 AlarmEvent 取代
-
-// 旧的连接管理方法已移除，改为使用连接池
-
-// 旧基于字符串SQL读取的辅助已移除，保留PreparedStatement实现
 
 // 错误处理和验证方法实现
 bool AlarmManager::validateAlarmEvent(const AlarmEvent& event) {
@@ -904,87 +766,3 @@ bool AlarmManager::handleMySQLError(const std::string& operation) {
     logError(operation + " failed: Connection pool will handle connection issues automatically");
     return false;
 }
-
-// // 批量操作方法实现
-// bool AlarmManager::batchInsertAlarmEvents(const std::vector<AlarmEvent>& events) {
-//     if (events.empty()) {
-//         logDebug("No events to insert in batch");
-//         return true;
-//     }
-    
-//     if (!m_initialized) {
-//         logError("AlarmManager not initialized for batch insert");
-//         return false;
-//     }
-    
-//     // 验证所有事件
-//     for (const auto& event : events) {
-//         if (!validateAlarmEvent(event)) {
-//             return false;
-//         }
-//     }
-//     logInfo("Batch inserting " + std::to_string(events.size()) + " alarm events");
-//     MySQLConnectionGuard guard(m_connection_pool);
-//     if (!guard.isValid()) {
-//         logError("Failed to get database connection from pool");
-//         return false;
-//     }
-//     const char* sql = "INSERT INTO alarm_events (id, fingerprint, status, labels_json, annotations_json, starts_at, generator_url) VALUES (?, ?, ?, ?, ?, NOW(), ?)";
-//     MYSQL* mysql = guard->get();
-//     MYSQL_STMT* stmt = mysql_stmt_init(mysql);
-//     if (!stmt) return false;
-//     if (mysql_stmt_prepare(stmt, sql, static_cast<unsigned long>(strlen(sql))) != 0) { mysql_stmt_close(stmt); return false; }
-//     for (const auto& ev : events) {
-//         std::string id = generateEventId();
-//         std::string fingerprint = ev.fingerprint;
-//         std::string status = ev.status;
-//         std::string labels_str = nlohmann::json(ev.labels).dump();
-//         std::string annotations_str = nlohmann::json(ev.annotations).dump();
-//         std::string generator_url = ev.generator_url;
-//         unsigned long id_len = id.size(), fp_len = fingerprint.size(), st_len = status.size(), labels_len = labels_str.size(), ann_len = annotations_str.size(), url_len = generator_url.size();
-//         MYSQL_BIND binds[6]{}; memset(binds, 0, sizeof(binds));
-//         binds[0].buffer_type = MYSQL_TYPE_STRING; binds[0].buffer = const_cast<char*>(id.c_str()); binds[0].buffer_length = id_len; binds[0].length = &id_len;
-//         binds[1].buffer_type = MYSQL_TYPE_STRING; binds[1].buffer = const_cast<char*>(fingerprint.c_str()); binds[1].buffer_length = fp_len; binds[1].length = &fp_len;
-//         binds[2].buffer_type = MYSQL_TYPE_STRING; binds[2].buffer = const_cast<char*>(status.c_str()); binds[2].buffer_length = st_len; binds[2].length = &st_len;
-//         binds[3].buffer_type = MYSQL_TYPE_STRING; binds[3].buffer = const_cast<char*>(labels_str.c_str()); binds[3].buffer_length = labels_len; binds[3].length = &labels_len;
-//         binds[4].buffer_type = MYSQL_TYPE_STRING; binds[4].buffer = const_cast<char*>(annotations_str.c_str()); binds[4].buffer_length = ann_len; binds[4].length = &ann_len;
-//         binds[5].buffer_type = MYSQL_TYPE_STRING; binds[5].buffer = const_cast<char*>(generator_url.c_str()); binds[5].buffer_length = url_len; binds[5].length = &url_len;
-//         if (mysql_stmt_bind_param(stmt, binds) != 0) { mysql_stmt_close(stmt); return false; }
-//         if (mysql_stmt_execute(stmt) != 0) { mysql_stmt_close(stmt); return false; }
-//     }
-//     mysql_stmt_close(stmt);
-//     logInfo("Successfully batch inserted " + std::to_string(events.size()) + " alarm events");
-//     return true;
-// }
-
-// bool AlarmManager::batchUpdateAlarmEventsToResolved(const std::vector<std::string>& fingerprints) {
-//     if (fingerprints.empty()) {
-//         logDebug("No fingerprints to update in batch");
-//         return true;
-//     }
-    
-//     if (!m_initialized) {
-//         logError("AlarmManager not initialized for batch update");
-//         return false;
-//     }
-    
-//     logInfo("Batch resolving " + std::to_string(fingerprints.size()) + " alarm events");
-//     MySQLConnectionGuard guard(m_connection_pool);
-//     if (!guard.isValid()) { logError("Failed to get database connection from pool"); return false; }
-//     const char* sql = "UPDATE alarm_events SET status = 'resolved', ends_at = NOW() WHERE status = 'firing' AND fingerprint = ?";
-//     MYSQL* mysql = guard->get();
-//     MYSQL_STMT* stmt = mysql_stmt_init(mysql);
-//     if (!stmt) return false;
-//     if (mysql_stmt_prepare(stmt, sql, static_cast<unsigned long>(strlen(sql))) != 0) { mysql_stmt_close(stmt); return false; }
-//     my_ulonglong total_affected = 0;
-//     for (const auto& fp_src : fingerprints) {
-//         std::string fp = fp_src; unsigned long fp_len = static_cast<unsigned long>(fp.size());
-//         MYSQL_BIND param{}; memset(&param, 0, sizeof(param)); param.buffer_type = MYSQL_TYPE_STRING; param.buffer = const_cast<char*>(fp.c_str()); param.buffer_length = fp_len; param.length = &fp_len;
-//         if (mysql_stmt_bind_param(stmt, &param) != 0) { mysql_stmt_close(stmt); return false; }
-//         if (mysql_stmt_execute(stmt) != 0) { mysql_stmt_close(stmt); return false; }
-//         total_affected += mysql_stmt_affected_rows(stmt);
-//     }
-//     mysql_stmt_close(stmt);
-//     logInfo("Batch update executed, affected_rows=" + std::to_string(total_affected));
-//     return true;
-// }

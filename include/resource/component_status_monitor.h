@@ -8,8 +8,11 @@
 #include <chrono>
 #include <string>
 #include <vector>
+#include <unordered_map>
 #include "node_storage.h"
-#include "alarm_manager.h"
+
+// 前向声明，避免传播重型依赖
+class AlarmManager;
 
 // 组件状态变化回调函数类型
 using ComponentStatusChangeCallback = std::function<void(const std::string& host_ip, 
@@ -28,14 +31,14 @@ private:
     std::mutex m_callback_mutex;
     ComponentStatusChangeCallback m_status_change_callback;
     
-    bool m_running;
+    std::atomic<bool> m_running;
     std::chrono::seconds m_check_interval;
     std::chrono::seconds m_failed_threshold;  // FAILED状态持续多久后触发告警
     
     // 记录每个组件的状态历史，避免重复告警
     struct ComponentStateHistory {
         std::string state;
-        std::chrono::system_clock::time_point last_update;
+        std::chrono::steady_clock::time_point last_update;
         bool alarm_triggered;  // 是否已经触发过告警
     };
     

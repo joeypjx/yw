@@ -8,9 +8,10 @@
 #include <mutex>
 #include <vector>
 #include <map>
-#include <mysql.h>
 #include "json.hpp"
-#include "mysql_connection_pool.h"
+
+// 前向声明以避免传播MySQL重依赖
+class MySQLConnectionPool;
 
 // 告警事件 (从 alarm_rule_engine.h 复制定义)
 struct AlarmEvent;
@@ -53,12 +54,6 @@ public:
 
     // 连接池注入构造函数 - 推荐使用
     AlarmManager(std::shared_ptr<MySQLConnectionPool> connection_pool);
-    
-    // // 构造函数 - 使用连接池配置
-    // AlarmManager(const MySQLPoolConfig& pool_config);
-    // // 兼容性构造函数 - 将单连接参数转换为连接池配置
-    // AlarmManager(const std::string& host, int port, const std::string& user, 
-    //              const std::string& password, const std::string& database);
     ~AlarmManager();
 
     // 数据库连接管理 - 使用连接池
@@ -67,8 +62,17 @@ public:
     bool createDatabase();
     bool createEventTable();
     
-    // 获取连接池统计信息
-    MySQLConnectionPool::PoolStats getConnectionPoolStats() const;
+    // 获取连接池统计信息（去耦合的轻量结构）
+    struct ConnectionPoolStats {
+        int total_connections = 0;
+        int active_connections = 0;
+        int idle_connections = 0;
+        int pending_requests = 0;
+        int created_connections = 0;
+        int destroyed_connections = 0;
+        double average_wait_time = 0.0;
+    };
+    ConnectionPoolStats getConnectionPoolStats() const;
 
     // 核心功能：处理告警事件
     bool processAlarmEvent(const AlarmEvent& event);
@@ -87,24 +91,13 @@ public:
     
     // 节点状态监控相关方法
     std::string calculateFingerprint(const std::string& alert_name, const std::map<std::string, std::string>& labels);
-    // 旧API已由直接提交AlarmEvent替代
-
-    // 连接池配置方法 - 用于调整连接池参数
-    void updateConnectionPoolConfig(const MySQLPoolConfig& config);
-    bool isInitialized() const { return m_initialized; }
 
 private:
-    // 连接池配置和实例
-    MySQLPoolConfig m_pool_config;
     std::shared_ptr<MySQLConnectionPool> m_connection_pool;
     std::atomic<bool> m_initialized;
-    bool m_owns_connection_pool;  // 标记是否拥有连接池的所有权
     
-    // 数据库操作辅助函数 - 使用连接池
+    // 数据库操作辅助函数 - 使用连接池（实现细节隐藏在cpp中）
     bool executeQuery(const std::string& query);
-    MYSQL_RES* executeSelectQuery(const std::string& query);
-    std::string escapeString(const std::string& str);
-    std::string escapeStringWithConnection(const std::string& str, MySQLConnection* connection);
     
     // 告警事件处理
     bool insertAlarmEvent(const AlarmEvent& event);
@@ -113,56 +106,15 @@ private:
     
     // 工具函数
     std::string generateEventId();
-    std::string getCurrentTimestamp();
-    std::string formatTimestamp(const std::chrono::system_clock::time_point& tp);
     
     // 日志函数
     void logInfo(const std::string& message);
     void logError(const std::string& message);
     void logDebug(const std::string& message);
-    
-    // 连接池辅助方法
-    MySQLPoolConfig createDefaultPoolConfig() const;
-    
-    // RAII包装器用于MySQL结果集
-    class MySQLResultRAII {
-    public:
-        explicit MySQLResultRAII(MYSQL_RES* res) : result(res) {}
-        ~MySQLResultRAII() { if (result) mysql_free_result(result); }
-        MYSQL_RES* get() const { return result; }
-        MYSQL_RES* release() { MYSQL_RES* r = result; result = nullptr; return r; }
-    private:
-        MYSQL_RES* result;
-        MySQLResultRAII(const MySQLResultRAII&) = delete;
-        MySQLResultRAII& operator=(const MySQLResultRAII&) = delete;
-    };
-    
-    // 预编译语句帮助方法
-    class PreparedStatementRAII {
-    public:
-        explicit PreparedStatementRAII(MYSQL* mysql, const std::string& query);
-        ~PreparedStatementRAII();
-        MYSQL_STMT* get() const { return stmt; }
-        bool isValid() const { return stmt != nullptr; }
-        bool bindParams(MYSQL_BIND* binds);
-        bool execute();
-        MYSQL_RES* getResult();
-    private:
-        MYSQL_STMT* stmt;
-        PreparedStatementRAII(const PreparedStatementRAII&) = delete;
-        PreparedStatementRAII& operator=(const PreparedStatementRAII&) = delete;
-    };
-    
-    // 优化的查询方法
-    AlarmEventRecord parseRowToAlarmEventRecord(MYSQL_ROW row);
-    
+        
     // 错误处理和验证方法
     bool validateAlarmEvent(const AlarmEvent& event);
     bool validatePaginationParams(int& page, int& page_size);
     void logQueryError(const std::string& query, const std::string& error_msg);
     bool handleMySQLError(const std::string& operation);
-    
-    // 批量操作方法
-    bool batchInsertAlarmEvents(const std::vector<AlarmEvent>& events);
-    bool batchUpdateAlarmEventsToResolved(const std::vector<std::string>& fingerprints);
 };

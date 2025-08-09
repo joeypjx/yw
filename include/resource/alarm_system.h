@@ -19,6 +19,7 @@ class MulticastSender;
 class NodeStorage;
 class ResourceManager;
 class NodeStatusMonitor;
+class ComponentStatusMonitor;
 class BMCListener;
 class BMCStorage;
 class WebSocketServer;
@@ -211,6 +212,7 @@ private:
     std::shared_ptr<NodeStorage> node_storage_;
     std::shared_ptr<ResourceManager> resource_manager_;
     std::shared_ptr<NodeStatusMonitor> node_status_monitor_;
+    std::shared_ptr<ComponentStatusMonitor> component_status_monitor_;
     std::shared_ptr<BMCListener> bmc_listener_;
     std::shared_ptr<BMCStorage> bmc_storage_;
     std::shared_ptr<WebSocketServer> websocket_server_;

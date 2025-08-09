@@ -5,6 +5,7 @@
 #include "log_manager.h"
 #include "resource_storage.h"
 #include "node_status_monitor.h"
+#include "component_status_monitor.h"
 #include "resource_manager.h"
 #include "alarm_rule_storage.h"
 #include "alarm_rule_engine.h"
@@ -488,7 +489,7 @@ bool AlarmSystem::initializeServices() {
                 event.status = "firing";
                 event.starts_at = std::chrono::system_clock::now();
                 event.labels = {
-                    {"alert_name", "节点离线"},
+                    {"alert_name", "NodeOffline"},
                     {"host_ip", host_ip},
                     {"severity", "严重"},
                     {"alert_type", "硬件资源"}
@@ -522,6 +523,74 @@ bool AlarmSystem::initializeServices() {
         });
         node_status_monitor_->start();
         LogManager::getLogger()->info("✅ 节点状态监控器启动成功");
+
+        // 7.1 初始化组件状态监控器
+        LogManager::getLogger()->info("🔧 初始化组件状态监控器...");
+        // 组件状态监控器检查组件状态变更与FAILED持续超时，并推送/解决告警
+        component_status_monitor_ = std::make_shared<ComponentStatusMonitor>(node_storage_, alarm_manager_);
+        // 可根据需要读取配置设置检查周期与失败阈值
+        // component_status_monitor_->setCheckInterval(std::chrono::seconds(30));
+        // component_status_monitor_->setFailedThreshold(std::chrono::seconds(60));
+
+        component_status_monitor_->setComponentStatusChangeCallback([this](const std::string& host_ip,
+                                                                           const std::string& instance_id,
+                                                                           const std::string& uuid,
+                                                                           int index,
+                                                                           const std::string& old_state,
+                                                                           const std::string& new_state) {
+            try {
+                // 日志与对外通知
+                LogManager::getLogger()->info("Component state changed on {}: {}:{}:{} ({} -> {})",
+                                             host_ip, instance_id, uuid, index, old_state, new_state);
+                if (websocket_server_) {
+                    nlohmann::json msg = {
+                        {"type", "component_state_change"},
+                        {"host_ip", host_ip},
+                        {"instance_id", instance_id},
+                        {"uuid", uuid},
+                        {"index", index},
+                        {"old_state", old_state},
+                        {"new_state", new_state}
+                    };
+                    websocket_server_->broadcast(msg.dump());
+                }
+
+                // 即刻写数据库（进入FAILED -> firing；FAILED恢复 -> resolved）
+                if (!alarm_manager_) return;
+                std::map<std::string, std::string> labels = {
+                    {"host_ip", host_ip},
+                    {"instance_id", instance_id},
+                    {"uuid", uuid},
+                    {"index", std::to_string(index)},
+                    {"severity", "严重"},
+                    {"alert_type", "业务链路"},
+                    {"alert_name", "ComponentFailed"}
+                };
+                std::string fingerprint = alarm_manager_->calculateFingerprint("ComponentFailed", labels);
+                if (new_state == "FAILED") {
+                    AlarmEvent event;
+                    event.fingerprint = fingerprint;
+                    event.status = "firing";
+                    event.starts_at = std::chrono::system_clock::now();
+                    event.labels = labels;
+                    event.annotations = {
+                        {"summary", "组件进入FAILED状态"},
+                        {"description", "组件 (" + instance_id + "/" + uuid + ") 在主机 " + host_ip + " 进入FAILED状态"}
+                    };
+                    alarm_manager_->processAlarmEvent(event);
+                } else if (old_state == "FAILED" && new_state != "FAILED") {
+                    AlarmEvent event;
+                    event.fingerprint = fingerprint;
+                    event.status = "resolved";
+                    event.ends_at = std::chrono::system_clock::now();
+                    alarm_manager_->processAlarmEvent(event);
+                }
+            } catch (const std::exception& e) {
+                LogManager::getLogger()->error("Component status change callback error: {}", e.what());
+            }
+        });
+        component_status_monitor_->start();
+        LogManager::getLogger()->info("✅ 组件状态监控器启动成功");
         
         // 6. 启动BMC监听器
         LogManager::getLogger()->info("🔊 初始化BMC监听器...");
