@@ -1,6 +1,7 @@
 #include "node_storage.h"
 #include "log_manager.h"
 #include <chrono>
+#include <algorithm>
 
 NodeStorage::NodeStorage() {
     LogManager::getLogger()->info("NodeStorage initialized");
@@ -50,6 +51,7 @@ bool NodeStorage::storeBoxInfo(const node::BoxInfo& node_info) {
         
         // 更新GPU信息
         std::vector<GpuInfo> gpu_vector;
+        gpu_vector.reserve(node_info.gpu.size());
         for (const auto& gpu : node_info.gpu) {
             GpuInfo gpu_info;
             gpu_info.index = gpu.index;
@@ -58,9 +60,10 @@ bool NodeStorage::storeBoxInfo(const node::BoxInfo& node_info) {
         }
         node->gpu = gpu_vector;
         
-        // 更新心跳时间
+        // 更新心跳时间（使用steady_clock避免系统时钟回拨影响）
         node->last_heartbeat = std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::system_clock::now().time_since_epoch()).count();
+            std::chrono::steady_clock::now().time_since_epoch()).count();
+        node->status = "online";
         
         // 存储或更新节点数据
         m_nodes[host_ip] = node;
@@ -81,9 +84,10 @@ bool NodeStorage::storeUDPInfo(const UdpInfo& udp_info) {
         
         int box_id = static_cast<int>(udp_info.boxid);
         bool has_updated = false;
+        constexpr int kMaxBoards = 14; // 固定板卡数量
         
         // 遍历所有board，为每个有效的board创建或更新节点数据
-        for (int board_index = 0; board_index < 14; board_index++) {
+        for (int board_index = 0; board_index < kMaxBoards; board_index++) {
             const auto& board = udp_info.board[board_index];
             
             // 检查board是否有效（通过检查moduletype是否为0）
@@ -135,9 +139,10 @@ bool NodeStorage::storeUDPInfo(const UdpInfo& udp_info) {
             }
             node->bmc_version = bmc_version;
             
-            // 更新心跳时间
+            // 更新心跳时间（使用steady_clock避免系统时钟回拨影响）
             node->last_heartbeat = std::chrono::duration_cast<std::chrono::milliseconds>(
-                std::chrono::system_clock::now().time_since_epoch()).count();
+                std::chrono::steady_clock::now().time_since_epoch()).count();
+            node->status = "online";
             
             // 存储或更新节点数据
             m_nodes[host_ip] = node;
@@ -150,7 +155,7 @@ bool NodeStorage::storeUDPInfo(const UdpInfo& udp_info) {
         
         if (has_updated) {
             LogManager::getLogger()->debug("UDP info processed for box_id: {} ({} boards updated)", box_id, 
-                                         std::count_if(udp_info.board, udp_info.board + 14, 
+                                         std::count_if(udp_info.board, udp_info.board + kMaxBoards, 
                                                      [](const UdpBoardInfo& board) { return board.moduletype != 0; }));
         } else {
             LogManager::getLogger()->warn("No valid boards found in UDP info for box_id: {}", box_id);
@@ -186,6 +191,15 @@ std::shared_ptr<NodeData> NodeStorage::getNodeData(const std::string& host_ip) {
     return nullptr;
 }
 
+std::shared_ptr<const NodeData> NodeStorage::getNodeDataReadonly(const std::string& host_ip) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    auto it = m_nodes.find(host_ip);
+    if (it != m_nodes.end()) {
+        return std::shared_ptr<const NodeData>(it->second);
+    }
+    return nullptr;
+}
+
 std::vector<std::shared_ptr<NodeData>> NodeStorage::getAllNodes() {
     std::lock_guard<std::mutex> lock(m_mutex);
     
@@ -199,19 +213,32 @@ std::vector<std::shared_ptr<NodeData>> NodeStorage::getAllNodes() {
     return node_list;
 }
 
+std::vector<std::shared_ptr<const NodeData>> NodeStorage::getAllNodesReadonly() {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    std::vector<std::shared_ptr<const NodeData>> node_list;
+    node_list.reserve(m_nodes.size());
+    for (const auto& pair : m_nodes) {
+        node_list.push_back(std::shared_ptr<const NodeData>(pair.second));
+    }
+    return node_list;
+}
+
 std::vector<std::shared_ptr<NodeData>> NodeStorage::getActiveNodes() {
     std::lock_guard<std::mutex> lock(m_mutex);
     
     std::vector<std::shared_ptr<NodeData>> active_nodes;
     auto now = std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::system_clock::now().time_since_epoch()).count();
-    auto timeout_duration = 10000; // 10秒超时（毫秒）
+        std::chrono::steady_clock::now().time_since_epoch()).count();
+    const auto timeout_duration = m_active_timeout_ms; // 超时时长（毫秒）
     
     for (const auto& pair : m_nodes) {
         const auto& node = pair.second;
         
         // 计算时间差（毫秒）
         auto time_diff = now - node->last_heartbeat;
+        if (time_diff < 0) {
+            continue; // 保护：时间异常
+        }
         
         // 如果时间差小于等于10秒，则认为节点活跃
         if (time_diff <= timeout_duration) {
@@ -222,6 +249,25 @@ std::vector<std::shared_ptr<NodeData>> NodeStorage::getActiveNodes() {
     LogManager::getLogger()->debug("Found {} active nodes out of {} total nodes", 
                                   active_nodes.size(), m_nodes.size());
     
+    return active_nodes;
+}
+
+std::vector<std::shared_ptr<const NodeData>> NodeStorage::getActiveNodesReadonly() {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    std::vector<std::shared_ptr<const NodeData>> active_nodes;
+    auto now = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
+    const auto timeout_duration = m_active_timeout_ms;
+    for (const auto& pair : m_nodes) {
+        const auto& node = pair.second;
+        auto time_diff = now - node->last_heartbeat;
+        if (time_diff < 0) {
+            continue;
+        }
+        if (time_diff <= timeout_duration) {
+            active_nodes.push_back(std::shared_ptr<const NodeData>(node));
+        }
+    }
     return active_nodes;
 }
 
@@ -249,10 +295,23 @@ std::vector<std::string> NodeStorage::getActiveNodeIPs() {
     
     std::vector<std::string> ips;
     ips.reserve(m_nodes.size());
-    
+    auto now = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
+    const auto timeout_duration = m_active_timeout_ms;
     for (const auto& pair : m_nodes) {
-        ips.push_back(pair.first);
+        const auto& node = pair.second;
+        auto time_diff = now - node->last_heartbeat;
+        if (time_diff < 0) {
+            continue;
+        }
+        if (time_diff <= timeout_duration) {
+            ips.push_back(pair.first);
+        }
     }
-    
     return ips;
+}
+
+void NodeStorage::setActiveTimeoutMs(int64_t timeout_ms) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_active_timeout_ms = timeout_ms;
 }

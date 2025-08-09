@@ -13,23 +13,6 @@
 #include "utils.h"
 #include "json.hpp"
 
-// Component信息结构体
-struct ComponentInfo {
-    std::string instance_id;
-    std::string uuid;
-    int index;
-    std::string name;
-    std::string id;
-    std::string state;
-    double load;
-    double mem_used;
-    double mem_limit;
-    double tx;
-    double rx;
-};
-
-NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(ComponentInfo, instance_id, uuid, index, name, id, state, load, mem_used, mem_limit, tx, rx);
-
 // GPU信息结构体
 struct GpuInfo {
     int index;
@@ -83,6 +66,8 @@ private:
     //m_nodes 共享指针
     std::unordered_map<std::string, std::shared_ptr<NodeData>> m_nodes;
     mutable std::mutex m_mutex;
+    // 活跃节点判定超时时长（毫秒）
+    int64_t m_active_timeout_ms = 10000; // 默认10秒
 
 public:
     NodeStorage();
@@ -99,12 +84,18 @@ public:
     
     // 获取节点数据
     std::shared_ptr<NodeData> getNodeData(const std::string& host_ip);
+    // 获取节点数据（只读）
+    std::shared_ptr<const NodeData> getNodeDataReadonly(const std::string& host_ip);
     
     // 获取所有节点
     std::vector<std::shared_ptr<NodeData>> getAllNodes();
+    // 获取所有节点（只读）
+    std::vector<std::shared_ptr<const NodeData>> getAllNodesReadonly();
     
     // 获取活跃节点（10秒内有心跳的节点）
     std::vector<std::shared_ptr<NodeData>> getActiveNodes();
+    // 获取活跃节点（只读）
+    std::vector<std::shared_ptr<const NodeData>> getActiveNodesReadonly();
     
     // 删除节点
     bool removeNode(const std::string& host_ip);
@@ -114,6 +105,9 @@ public:
     
     // 获取活跃节点IP列表
     std::vector<std::string> getActiveNodeIPs();
+
+    // 设置活跃节点判定超时时长（毫秒）
+    void setActiveTimeoutMs(int64_t timeout_ms);
 };
 
 #endif // NODE_STORAGE_H
