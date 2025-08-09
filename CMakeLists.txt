@@ -83,7 +83,9 @@ else()
     message(FATAL_ERROR "UUID library not found. Please install UUID library.")
 endif()
 
-file(GLOB_RECURSE SOURCES "src/*.cpp" "src/resource/*.cpp")
+file(GLOB_RECURSE SOURCES
+    "src/*.cpp"
+)
 file(GLOB_RECURSE HEADERS "include/*.h" "include/resource/*.h")
 
 add_executable(${PROJECT_NAME} ${SOURCES} ${HEADERS})
