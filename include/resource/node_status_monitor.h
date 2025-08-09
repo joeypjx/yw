@@ -7,7 +7,9 @@
 #include <string>
 #include <mutex>
 #include "node_storage.h"
-#include "alarm_manager.h"
+
+// 前向声明，避免传播重型依赖
+class AlarmManager;
 
 class NodeStatusMonitor {
 public:

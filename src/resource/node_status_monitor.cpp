@@ -1,6 +1,7 @@
 #include "node_status_monitor.h"
 #include "log_manager.h"
 #include <chrono>
+#include <thread>
 
 NodeStatusMonitor::NodeStatusMonitor(std::shared_ptr<NodeStorage> node_storage, std::shared_ptr<AlarmManager> alarm_manager)
     : m_node_storage(node_storage), m_alarm_manager(alarm_manager), m_running(false) {
@@ -48,23 +49,21 @@ void NodeStatusMonitor::run() {
 }
 
 void NodeStatusMonitor::checkNodeStatus() {
-    if (!m_node_storage || !m_alarm_manager) {
+    if (!m_node_storage) {
         return;
     }
 
-    auto node_list = m_node_storage->getAllNodes();
+    auto node_list = m_node_storage->getAllNodesReadonly();
     auto now = std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::system_clock::now().time_since_epoch()).count();
+        std::chrono::steady_clock::now().time_since_epoch()).count();
 
     for (const auto& node : node_list) {
-        auto time_since_heartbeat = (now - node->last_heartbeat) / 1000;  // 转换为秒
-        
-        // 使用节点IP作为告警指纹的一部分，确保每个节点的离线告警是唯一的
-        std::map<std::string, std::string> labels = {
-            {"host_ip", node->host_ip},
-            {"hostname", node->hostname}
-        };
-        std::string fingerprint = m_alarm_manager->calculateFingerprint("NodeOffline", labels);
+        auto diff_ms = now - node->last_heartbeat;
+        if (diff_ms < 0) {
+            // 保护：时间异常，跳过
+            continue;
+        }
+        auto time_since_heartbeat = diff_ms / 1000;  // 转换为秒
 
         // 先判断节点当前应该的状态
         std::string expected_status = (time_since_heartbeat <= m_offline_threshold.count()) ? "online" : "offline";
@@ -88,35 +87,29 @@ void NodeStatusMonitor::checkNodeStatus() {
                 notifyStatusChange(node->host_ip, old_status, expected_status);
             }
             
-            // 更新节点状态
-            node->status = expected_status;
+            // 更新节点状态（通过NodeStorage线程安全接口）
+            m_node_storage->updateNodeStatus(node->host_ip, expected_status);
         }
     }
 }
 
 void NodeStatusMonitor::notifyStatusChange(const std::string& host_ip, const std::string& old_status, const std::string& new_status) {
-    std::lock_guard<std::mutex> lock(m_callback_mutex);
-    
-    if (m_status_change_callback) {
-        try {
-            // 在单独的线程中异步调用回调，避免阻塞监控线程
-            std::thread callback_thread([this, host_ip, old_status, new_status]() {
-                try {
-                    m_status_change_callback(host_ip, old_status, new_status);
-                } catch (const std::exception& e) {
-                    LogManager::getLogger()->error("Exception in NodeStatusMonitor callback: {}", e.what());
-                } catch (...) {
-                    LogManager::getLogger()->error("Unknown exception in NodeStatusMonitor callback");
-                }
-            });
-            
-            // 分离线程，让其在后台运行
-            callback_thread.detach();
-            
-            LogManager::getLogger()->debug("NodeStatusMonitor callback invoked for node {} ({}->{})", 
-                                         host_ip, old_status, new_status);
-        } catch (const std::exception& e) {
-            LogManager::getLogger()->error("Failed to invoke NodeStatusMonitor callback: {}", e.what());
-        }
+    NodeStatusChangeCallback callback_copy;
+    {
+        std::lock_guard<std::mutex> lock(m_callback_mutex);
+        callback_copy = m_status_change_callback;
+    }
+    if (!callback_copy) {
+        return;
+    }
+    try {
+        // 直接在当前监控线程调用复制的回调，避免分离线程带来的生命周期风险
+        callback_copy(host_ip, old_status, new_status);
+        LogManager::getLogger()->debug("NodeStatusMonitor callback invoked for node {} ({}->{})", 
+                                       host_ip, old_status, new_status);
+    } catch (const std::exception& e) {
+        LogManager::getLogger()->error("Exception in NodeStatusMonitor callback: {}", e.what());
+    } catch (...) {
+        LogManager::getLogger()->error("Unknown exception in NodeStatusMonitor callback");
     }
 }

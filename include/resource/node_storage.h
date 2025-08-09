@@ -108,6 +108,9 @@ public:
 
     // 设置活跃节点判定超时时长（毫秒）
     void setActiveTimeoutMs(int64_t timeout_ms);
+
+    // 更新节点状态（线程安全）
+    void updateNodeStatus(const std::string& host_ip, const std::string& status);
 };
 
 #endif // NODE_STORAGE_H
