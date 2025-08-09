@@ -211,6 +211,8 @@ NodeMetricsData ResourceManager::buildNodeMetricsData(const std::shared_ptr<Node
     std::string host_ip = node->host_ip;
     auto current_timestamp = std::chrono::duration_cast<std::chrono::seconds>(
         std::chrono::system_clock::now().time_since_epoch()).count();
+    auto steady_now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
     
     // 使用 getNodeResourceData 方法获取所有资源数据
     auto resourceData = m_resource_storage->getNodeResourceData(host_ip);
@@ -333,9 +335,14 @@ NodeMetricsData ResourceManager::buildNodeMetricsData(const std::shared_ptr<Node
         sensor_metrics.sensors.push_back(sensor_info);
     }
 
-    // 计算节点状态：如果updated_at与当前时间差距大于5秒，则判断为离线
-    auto node_updated_at = node->last_heartbeat / 1000;  // 转换为秒级时间戳
-    auto time_diff = current_timestamp - node_updated_at;
+    // 计算节点状态：使用与NodeStorage一致的steady_clock时间源进行差值计算
+    auto delta_ms = steady_now_ms - node->last_heartbeat;
+    if (delta_ms < 0) {
+        delta_ms = 0; // 保护：避免负值导致错误判断
+    }
+    auto time_diff = static_cast<long long>(delta_ms / 1000);
+    // 将steady时间差投影到system_clock，得到近似的最近更新时间（秒）
+    auto node_updated_at = current_timestamp - time_diff;
     std::string node_status = (time_diff <= 20) ? "online" : "offline";
     
     // 构建节点数据
