@@ -86,14 +86,18 @@ bool MySQLConnection::healthCheck(const std::string& query) {
         return false;
     }
     
-    // 执行健康检查查询
-    if (mysql_query(mysql_, query.c_str()) != 0) {
-        return false;
-    }
-    
-    MYSQL_RES* result = mysql_store_result(mysql_);
-    if (result) {
-        mysql_free_result(result);
+    // 执行健康检查查询（可选）
+    if (!query.empty()) {
+        if (mysql_query(mysql_, query.c_str()) != 0) {
+            return false;
+        }
+        MYSQL_RES* result = mysql_store_result(mysql_);
+        if (mysql_field_count(mysql_) > 0 && !result) {
+            return false;
+        }
+        if (result) {
+            mysql_free_result(result);
+        }
     }
     
     updateLastUsed();
@@ -424,9 +428,10 @@ void MySQLConnectionPool::releaseConnection(std::unique_ptr<MySQLConnection> con
         return;
     }
     
-    // 检查连接是否有效且未过期
+    // 检查连接是否有效且未过期/未空闲超时
     if (connection->isValid() && 
         !connection->isExpired(config_.max_lifetime) &&
+        !connection->isIdleTimeout(config_.idle_timeout) &&
         total_connections_ <= config_.max_connections) {
         
         // 连接有效，放回连接池
@@ -504,8 +509,19 @@ std::unique_ptr<MySQLConnection> MySQLConnectionPool::createConnection() {
         mysql_options(mysql, MYSQL_SET_CHARSET_NAME, config_.charset.c_str());
     }
     
-    // 设置最大包大小
-    mysql_options(mysql, MYSQL_OPT_MAX_ALLOWED_PACKET, &config_.max_allowed_packet);
+    // 设置最大包大小（按API要求的类型）
+    unsigned long max_packet = static_cast<unsigned long>(config_.max_allowed_packet);
+    mysql_options(mysql, MYSQL_OPT_MAX_ALLOWED_PACKET, &max_packet);
+    
+    // 可选：启用SSL
+    if (config_.use_ssl) {
+#ifdef MYSQL_OPT_SSL_MODE
+        // 要求SSL
+        enum ssl_mode mode = SSL_MODE_REQUIRED;
+        mysql_options(mysql, MYSQL_OPT_SSL_MODE, &mode);
+#endif
+        // 旧API可选：mysql_ssl_set(mysql, nullptr, nullptr, nullptr, nullptr, nullptr);
+    }
     
     // 连接到数据库
     if (!mysql_real_connect(mysql, 
@@ -515,7 +531,7 @@ std::unique_ptr<MySQLConnection> MySQLConnectionPool::createConnection() {
                            config_.database.empty() ? nullptr : config_.database.c_str(),
                            config_.port,
                            nullptr,
-                           CLIENT_MULTI_STATEMENTS)) {
+                           0)) {
         std::string error_msg = "连接MySQL失败: ";
         error_msg += mysql_error(mysql);
         logError(error_msg);
