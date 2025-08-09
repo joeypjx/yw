@@ -63,7 +63,7 @@ bool NodeStorage::storeBoxInfo(const node::BoxInfo& node_info) {
         // 更新心跳时间（使用steady_clock避免系统时钟回拨影响）
         node->last_heartbeat = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now().time_since_epoch()).count();
-        node->status = "online";
+        // node->status = "online"; // 不设置状态，由NodeStatusMonitor设置
         
         // 存储或更新节点数据
         m_nodes[host_ip] = node;
@@ -142,7 +142,7 @@ bool NodeStorage::storeUDPInfo(const UdpInfo& udp_info) {
             // 更新心跳时间（使用steady_clock避免系统时钟回拨影响）
             node->last_heartbeat = std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::steady_clock::now().time_since_epoch()).count();
-            node->status = "online";
+            // node->status = "online"; // 不设置状态，由NodeStatusMonitor设置
             
             // 存储或更新节点数据
             m_nodes[host_ip] = node;

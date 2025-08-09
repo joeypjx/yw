@@ -482,35 +482,41 @@ bool AlarmSystem::initializeServices() {
             });
 
             if (new_status == "offline") {
-                
-
-                nlohmann::json labels_json = {
+                // 1) 直接构造 AlarmEvent 并提交给 AlarmManager
+                AlarmEvent event;
+                event.fingerprint = fingerprint;
+                event.status = "firing";
+                event.starts_at = std::chrono::system_clock::now();
+                event.labels = {
                     {"alert_name", "节点离线"},
                     {"host_ip", host_ip},
                     {"severity", "严重"},
                     {"alert_type", "硬件资源"}
                 };
-                
-                nlohmann::json annotations = {
+                event.annotations = {
                     {"summary", "节点离线"},
-                    {"description", "与节点 " + host_ip + " 失联。"}
+                    {"description", std::string("与节点 ") + host_ip + " 失联。"}
                 };
-                
-                // 创建或更新告警，状态为 "firing"
-                alarm_manager_->createOrUpdateAlarm(fingerprint, labels_json, annotations);
+                alarm_manager_->processAlarmEvent(event);
 
-                // 将告警事件转换为JSON格式
+                // 2) 仍保留原有的WebSocket广播
+                nlohmann::json labels_json = event.labels;
+                nlohmann::json annotations = event.annotations;
                 nlohmann::json alarm_json = {
                     {"labels", labels_json},
                     {"annotations", annotations}
                 };
-                
-                // 广播告警事件
                 websocket_server_->broadcast(alarm_json.dump());
 
                 LogManager::getLogger()->warn("Node '{}' is offline.", host_ip);
             } else if (new_status == "online") {
-                alarm_manager_->resolveAlarm(fingerprint);
+                // 直接构造已解决的 AlarmEvent 并提交
+                AlarmEvent event;
+                event.fingerprint = fingerprint;
+                event.status = "resolved";
+                event.ends_at = std::chrono::system_clock::now();
+                alarm_manager_->processAlarmEvent(event);
+
                 LogManager::getLogger()->info("Node '{}' is back online.", host_ip);
             }
         });

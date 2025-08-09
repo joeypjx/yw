@@ -6,9 +6,9 @@
 #include <atomic>
 #include <thread>
 #include <mutex>
+#include <vector>
+#include <map>
 #include <mysql.h>
-#include <mysqld_error.h>
-#include <errmsg.h>
 #include "json.hpp"
 #include "mysql_connection_pool.h"
 
@@ -54,11 +54,11 @@ public:
     // 连接池注入构造函数 - 推荐使用
     AlarmManager(std::shared_ptr<MySQLConnectionPool> connection_pool);
     
-    // 构造函数 - 使用连接池配置
-    AlarmManager(const MySQLPoolConfig& pool_config);
-    // 兼容性构造函数 - 将单连接参数转换为连接池配置
-    AlarmManager(const std::string& host, int port, const std::string& user, 
-                 const std::string& password, const std::string& database);
+    // // 构造函数 - 使用连接池配置
+    // AlarmManager(const MySQLPoolConfig& pool_config);
+    // // 兼容性构造函数 - 将单连接参数转换为连接池配置
+    // AlarmManager(const std::string& host, int port, const std::string& user, 
+    //              const std::string& password, const std::string& database);
     ~AlarmManager();
 
     // 数据库连接管理 - 使用连接池
@@ -75,7 +75,6 @@ public:
     
     // 查询功能
     std::vector<AlarmEventRecord> getActiveAlarmEvents();
-    std::vector<AlarmEventRecord> getAlarmEventsByFingerprint(const std::string& fingerprint);
     std::vector<AlarmEventRecord> getRecentAlarmEvents(int limit = 100);
     AlarmEventRecord getAlarmEventById(const std::string& id);
     
@@ -88,8 +87,7 @@ public:
     
     // 节点状态监控相关方法
     std::string calculateFingerprint(const std::string& alert_name, const std::map<std::string, std::string>& labels);
-    bool createOrUpdateAlarm(const std::string& fingerprint, const nlohmann::json& labels, const nlohmann::json& annotations);
-    bool resolveAlarm(const std::string& fingerprint);
+    // 旧API已由直接提交AlarmEvent替代
 
     // 连接池配置方法 - 用于调整连接池参数
     void updateConnectionPoolConfig(const MySQLPoolConfig& config);
@@ -157,7 +155,6 @@ private:
     
     // 优化的查询方法
     AlarmEventRecord parseRowToAlarmEventRecord(MYSQL_ROW row);
-    std::vector<AlarmEventRecord> executeSelectAlarmEvents(const std::string& query);
     
     // 错误处理和验证方法
     bool validateAlarmEvent(const AlarmEvent& event);
