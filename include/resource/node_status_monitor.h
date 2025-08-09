@@ -46,7 +46,4 @@ private:
     // 节点状态变化回调函数
     NodeStatusChangeCallback m_status_change_callback;
     std::mutex m_callback_mutex; // 保护回调函数的互斥锁
-
-    const std::chrono::seconds m_check_interval{1}; // 每秒检查一次
-    const std::chrono::seconds m_offline_threshold{20}; // 20秒无心跳则认为离线
 }; 

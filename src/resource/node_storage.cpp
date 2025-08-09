@@ -316,6 +316,21 @@ void NodeStorage::setActiveTimeoutMs(int64_t timeout_ms) {
     m_active_timeout_ms = timeout_ms;
 }
 
+int64_t NodeStorage::getActiveTimeoutMs() const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    return m_active_timeout_ms;
+}
+
+void NodeStorage::setMonitorCheckIntervalMs(int64_t interval_ms) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_monitor_check_interval_ms = interval_ms;
+}
+
+int64_t NodeStorage::getMonitorCheckIntervalMs() const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    return m_monitor_check_interval_ms;
+}
+
 void NodeStorage::updateNodeStatus(const std::string& host_ip, const std::string& status) {
     std::lock_guard<std::mutex> lock(m_mutex);
     auto it = m_nodes.find(host_ip);

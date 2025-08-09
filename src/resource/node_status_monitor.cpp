@@ -44,7 +44,8 @@ void NodeStatusMonitor::clearNodeStatusChangeCallback() {
 void NodeStatusMonitor::run() {
     while (m_running) {
         checkNodeStatus();
-        std::this_thread::sleep_for(m_check_interval);
+        auto interval_ms = m_node_storage ? m_node_storage->getMonitorCheckIntervalMs() : 1000;
+        std::this_thread::sleep_for(std::chrono::milliseconds(interval_ms));
     }
 }
 
@@ -65,8 +66,9 @@ void NodeStatusMonitor::checkNodeStatus() {
         }
         auto time_since_heartbeat = diff_ms / 1000;  // 转换为秒
 
-        // 先判断节点当前应该的状态
-        std::string expected_status = (time_since_heartbeat <= m_offline_threshold.count()) ? "online" : "offline";
+    // 先判断节点当前应该的状态（超时阈值由NodeStorage配置提供，单位秒）
+    auto offline_threshold_ms = m_node_storage->getActiveTimeoutMs();
+    std::string expected_status = (diff_ms <= offline_threshold_ms) ? "online" : "offline";
         
         // 如果状态发生变化
         if (node->status != expected_status) {

@@ -68,6 +68,8 @@ private:
     mutable std::mutex m_mutex;
     // 活跃节点判定超时时长（毫秒）
     int64_t m_active_timeout_ms = 10000; // 默认10秒
+    // 监控检查周期（毫秒）
+    int64_t m_monitor_check_interval_ms = 1000; // 默认1秒
 
 public:
     NodeStorage();
@@ -108,6 +110,13 @@ public:
 
     // 设置活跃节点判定超时时长（毫秒）
     void setActiveTimeoutMs(int64_t timeout_ms);
+    // 获取活跃节点判定超时时长（毫秒）
+    int64_t getActiveTimeoutMs() const;
+
+    // 设置监控检查周期（毫秒）
+    void setMonitorCheckIntervalMs(int64_t interval_ms);
+    // 获取监控检查周期（毫秒）
+    int64_t getMonitorCheckIntervalMs() const;
 
     // 更新节点状态（线程安全）
     void updateNodeStatus(const std::string& host_ip, const std::string& status);
